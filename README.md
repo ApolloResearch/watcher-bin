@@ -1,20 +1,10 @@
 # Watcher
 
-Monitor your AI coding agents. Learn more at [watcher.apolloresearch.ai](https://watcher.apolloresearch.ai).
+Monitor your AI coding agents. 
 
-## What is Watcher?
-
-Watcher observes AI coding agents (Claude Code and Codex) as they work. It hooks into agent sessions on your machine, sends activity to your Watcher backend for analysis, and gives you visibility into, and policy controls over, what agents are doing.
-
-For more, see [watcher.apolloresearch.ai](https://watcher.apolloresearch.ai).
+Watcher observes agents (Claude Code and Codex) as they work. It hooks into agent sessions on your machine, sends activity to your Watcher backend for analysis, and gives you visibility into, and policy controls over, what agents are doing. For more, see [watcher.apolloresearch.ai](https://watcher.apolloresearch.ai).
 
 ## Install
-
-Requires macOS on Apple Silicon.
-
-### Apollo Cloud
-
-If your organization uses Apollo's hosted Watcher:
 
 ```bash
 curl -fsSL https://github.com/ApolloResearch/watcher-bin/releases/latest/download/install.sh | bash -s -- --cloud

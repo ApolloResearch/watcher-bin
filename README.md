@@ -6,6 +6,8 @@ Watcher observes agents (Claude Code and Codex) as they work. It hooks into agen
 
 ## Install
 
+Watcher runs on macOS (Apple Silicon) and x86_64 Linux.
+
 ```bash
 curl -fsSL https://github.com/ApolloResearch/watcher-bin/releases/latest/download/install.sh | bash -s -- --cloud
 # start the watcher client

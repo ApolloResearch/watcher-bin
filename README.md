@@ -10,8 +10,20 @@ Watcher runs on macOS (Apple Silicon) and x86_64 Linux.
 
 ```bash
 curl -fsSL https://github.com/ApolloResearch/watcher-bin/releases/latest/download/install.sh | bash -s -- --cloud
-# start the watcher client
+```
+
+Open a new terminal, then start Watcher one of two ways.
+
+Run it in the current terminal (stops when you close it):
+
+```bash
 watcher
+```
+
+Or have it start automatically after the next login:
+
+```bash
+watcher autostart install
 ```
 
 ### Self-hosted
@@ -20,8 +32,6 @@ If your organization runs its own Watcher backend, pass its URL with `--watcher-
 
 ```bash
 curl -fsSL https://github.com/ApolloResearch/watcher-bin/releases/latest/download/install.sh | bash -s -- --watcher-api-url https://watcher.veidt.enterprises
-# start the watcher client
-watcher
 ```
 
 The installer downloads the latest release, verifies its checksum, installs the binary to `~/.local/bin/watcher`, records your chosen backend, and registers agent hooks (with a consent prompt where config changes are needed). If `~/.local/bin` isn't on your `PATH`, the installer prints the command to add it.

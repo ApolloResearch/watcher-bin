@@ -30,12 +30,6 @@ watcher --foreground
 
 Watcher stops when that terminal closes.
 
-## Uninstall
-
-```bash
-watcher uninstall
-```
-
 ### Self-hosted
 
 If your organization runs its own Watcher backend, pass its URL with `--watcher-api-url`:
@@ -47,6 +41,12 @@ curl -fsSL https://github.com/ApolloResearch/watcher-bin/releases/latest/downloa
 The installer downloads the latest release, verifies its checksum, installs the binary to `~/.local/bin/watcher`, records your chosen backend, and registers agent hooks (with a consent prompt where config changes are needed). If `~/.local/bin` isn't on your `PATH`, the installer prints the command to add it.
 
 The first time you run `watcher`, it opens a sign-in page in your browser; monitoring starts once you've signed in with your organization's credentials.
+
+## Uninstall
+
+```bash
+watcher uninstall
+```
 
 ### Installing a specific version
 

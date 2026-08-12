@@ -20,10 +20,20 @@ Run it in the current terminal (stops when you close it):
 watcher
 ```
 
-Or have it start automatically after the next login:
+Watcher starts in the background and automatically starts on future logins.
+
+To run Watcher only in the current terminal, without enabling start-on-login:
 
 ```bash
-watcher autostart install
+watcher --foreground
+```
+
+Watcher stops when that terminal closes.
+
+## Uninstall
+
+```bash
+watcher uninstall
 ```
 
 ### Self-hosted

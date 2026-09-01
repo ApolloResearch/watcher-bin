@@ -2,7 +2,7 @@
 
 This document lists the third-party packages bundled in the prebuilt Watcher CLI binary distributed via this repository's GitHub Releases, with the license under which each is redistributed.
 
-The Watcher CLI is shipped as a self-contained binary for Apple Silicon macOS. Each bundled package's full LICENSE text is preserved inside the distributed binary alongside the package, under its `*.dist-info/LICENSE` (Python) or package directory (JavaScript).
+The Watcher CLI is shipped as a self-contained binary for Apple Silicon macOS and x86_64 Linux. Each bundled package's full LICENSE text is preserved inside the distributed binary alongside the package, under its `*.dist-info/LICENSE` (Python) or package directory (JavaScript).
 
 ---
 

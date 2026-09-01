@@ -40,6 +40,16 @@ watcher uninstall
 
 See the full command reference [here](https://watcher-docs.apolloresearch.ai/client/#command-reference).
 
+## Python SDK
+
+Every release also ships the Watcher Python SDK as a wheel. Download `watcher_sdk-<version>-py3-none-any.whl` from the [latest release](https://github.com/ApolloResearch/watcher-bin/releases/latest), then:
+
+```bash
+pip install ./watcher_sdk-<version>-py3-none-any.whl
+```
+
+See the [SDK docs](https://watcher-docs.apolloresearch.ai/api/python-sdk/) for usage.
+
 ## Licenses
 
 Third-party license attributions are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

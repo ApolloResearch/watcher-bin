@@ -1,0 +1,228 @@
+from http import HTTPStatus
+from typing import Any
+
+import httpx
+
+from ... import errors
+from ...client import AuthenticatedClient, Client
+from ...models.http_validation_error import HTTPValidationError
+from ...models.monitor_customization_response import MonitorCustomizationResponse
+from ...models.update_monitor_customization_request import (
+    UpdateMonitorCustomizationRequest,
+)
+from ...types import Response
+
+
+def _get_kwargs(
+    *,
+    body: UpdateMonitorCustomizationRequest,
+) -> dict[str, Any]:
+    headers: dict[str, Any] = {}
+
+    _kwargs: dict[str, Any] = {
+        "method": "put",
+        "url": "/v1/monitors/customization",
+    }
+
+    _kwargs["json"] = body.to_dict()
+
+    headers["Content-Type"] = "application/json"
+
+    _kwargs["headers"] = headers
+    return _kwargs
+
+
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> HTTPValidationError | MonitorCustomizationResponse | None:
+    if response.status_code == 200:
+        response_200 = MonitorCustomizationResponse.from_dict(response.json())
+
+        return response_200
+
+    if response.status_code == 422:
+        response_422 = HTTPValidationError.from_dict(response.json())
+
+        return response_422
+
+    if client.raise_on_unexpected_status:
+        raise errors.UnexpectedStatus(response.status_code, response.content)
+    else:
+        return None
+
+
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[HTTPValidationError | MonitorCustomizationResponse]:
+    return Response(
+        status_code=HTTPStatus(response.status_code),
+        content=response.content,
+        headers=response.headers,
+        parsed=_parse_response(client=client, response=response),
+    )
+
+
+def sync_detailed(
+    *,
+    client: AuthenticatedClient | Client,
+    body: UpdateMonitorCustomizationRequest,
+) -> Response[HTTPValidationError | MonitorCustomizationResponse]:
+    """Update Monitor Customization
+
+     Set the org's monitor customization (an empty instructions string clears it).
+
+    The instructions are injected into every monitor's prompt inside a
+    delimited org-policy section, so they are validated here for the length cap
+    and for the reserved delimiter sequences the injection fence cannot safely
+    carry; an invalid document returns 422 and stores nothing. Overwrites in
+    place — customization history is deliberately not retained (grade
+    reproducibility is out of scope), and the write is audit-logged without
+    content.
+
+    Args:
+        body (UpdateMonitorCustomizationRequest): Request body for PUT /v1/monitors/customization.
+
+            An empty ``instructions`` string clears the instructions. Content
+            validation (length cap, reserved delimiter sequences) happens in the route
+            via ``validate_monitor_instructions``; the cap is mirrored here only as a
+            coarse schema bound so the OpenAPI spec documents it.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[HTTPValidationError | MonitorCustomizationResponse]
+    """
+
+    kwargs = _get_kwargs(
+        body=body,
+    )
+
+    response = client.get_httpx_client().request(
+        **kwargs,
+    )
+
+    return _build_response(client=client, response=response)
+
+
+def sync(
+    *,
+    client: AuthenticatedClient | Client,
+    body: UpdateMonitorCustomizationRequest,
+) -> HTTPValidationError | MonitorCustomizationResponse | None:
+    """Update Monitor Customization
+
+     Set the org's monitor customization (an empty instructions string clears it).
+
+    The instructions are injected into every monitor's prompt inside a
+    delimited org-policy section, so they are validated here for the length cap
+    and for the reserved delimiter sequences the injection fence cannot safely
+    carry; an invalid document returns 422 and stores nothing. Overwrites in
+    place — customization history is deliberately not retained (grade
+    reproducibility is out of scope), and the write is audit-logged without
+    content.
+
+    Args:
+        body (UpdateMonitorCustomizationRequest): Request body for PUT /v1/monitors/customization.
+
+            An empty ``instructions`` string clears the instructions. Content
+            validation (length cap, reserved delimiter sequences) happens in the route
+            via ``validate_monitor_instructions``; the cap is mirrored here only as a
+            coarse schema bound so the OpenAPI spec documents it.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        HTTPValidationError | MonitorCustomizationResponse
+    """
+
+    return sync_detailed(
+        client=client,
+        body=body,
+    ).parsed
+
+
+async def asyncio_detailed(
+    *,
+    client: AuthenticatedClient | Client,
+    body: UpdateMonitorCustomizationRequest,
+) -> Response[HTTPValidationError | MonitorCustomizationResponse]:
+    """Update Monitor Customization
+
+     Set the org's monitor customization (an empty instructions string clears it).
+
+    The instructions are injected into every monitor's prompt inside a
+    delimited org-policy section, so they are validated here for the length cap
+    and for the reserved delimiter sequences the injection fence cannot safely
+    carry; an invalid document returns 422 and stores nothing. Overwrites in
+    place — customization history is deliberately not retained (grade
+    reproducibility is out of scope), and the write is audit-logged without
+    content.
+
+    Args:
+        body (UpdateMonitorCustomizationRequest): Request body for PUT /v1/monitors/customization.
+
+            An empty ``instructions`` string clears the instructions. Content
+            validation (length cap, reserved delimiter sequences) happens in the route
+            via ``validate_monitor_instructions``; the cap is mirrored here only as a
+            coarse schema bound so the OpenAPI spec documents it.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[HTTPValidationError | MonitorCustomizationResponse]
+    """
+
+    kwargs = _get_kwargs(
+        body=body,
+    )
+
+    response = await client.get_async_httpx_client().request(**kwargs)
+
+    return _build_response(client=client, response=response)
+
+
+async def asyncio(
+    *,
+    client: AuthenticatedClient | Client,
+    body: UpdateMonitorCustomizationRequest,
+) -> HTTPValidationError | MonitorCustomizationResponse | None:
+    """Update Monitor Customization
+
+     Set the org's monitor customization (an empty instructions string clears it).
+
+    The instructions are injected into every monitor's prompt inside a
+    delimited org-policy section, so they are validated here for the length cap
+    and for the reserved delimiter sequences the injection fence cannot safely
+    carry; an invalid document returns 422 and stores nothing. Overwrites in
+    place — customization history is deliberately not retained (grade
+    reproducibility is out of scope), and the write is audit-logged without
+    content.
+
+    Args:
+        body (UpdateMonitorCustomizationRequest): Request body for PUT /v1/monitors/customization.
+
+            An empty ``instructions`` string clears the instructions. Content
+            validation (length cap, reserved delimiter sequences) happens in the route
+            via ``validate_monitor_instructions``; the cap is mirrored here only as a
+            coarse schema bound so the OpenAPI spec documents it.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        HTTPValidationError | MonitorCustomizationResponse
+    """
+
+    return (
+        await asyncio_detailed(
+            client=client,
+            body=body,
+        )
+    ).parsed

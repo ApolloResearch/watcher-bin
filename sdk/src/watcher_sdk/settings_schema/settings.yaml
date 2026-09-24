@@ -1,0 +1,742 @@
+version: 1
+name: Default
+description: Standard Watcher permissions with human review for higher-risk tool calls.
+aliases:
+- normal
+- standard
+profiles:
+  permission: additions_allowed
+  default: {}
+  auto:
+    name: Auto
+    description: Allow low-risk tool calls automatically and auto-deny high-risk calls.
+    aliases:
+    - automatic
+    policy_monitors:
+      triage_max_allow_score: 6
+      on_grading_failure: allow
+    tool_thresholds:
+      "*":
+        flag_threshold: 11
+        deny_threshold: 8
+      AskUserQuestion:
+        flag_threshold: 11
+        deny_threshold: 11
+      EnterPlanMode:
+        flag_threshold: 11
+        deny_threshold: 11
+      ExitPlanMode:
+        flag_threshold: 11
+        deny_threshold: 11
+    command_rules:
+      rules: []
+  permissive:
+    name: Human in the Loop
+    description: Standard Watcher permissions but with a higher bar before escalating tool calls to human review.
+    aliases:
+    - human-in-the-loop
+    - lenient
+    tool_thresholds:
+      Bash:
+        flag_threshold: 8
+        deny_threshold: 11
+      Edit:
+        flag_threshold: 8
+        deny_threshold: 11
+      Write:
+        flag_threshold: 8
+        deny_threshold: 11
+      NotebookEdit:
+        flag_threshold: 8
+        deny_threshold: 11
+      PowerShell:
+        flag_threshold: 8
+        deny_threshold: 11
+      Monitor:
+        flag_threshold: 8
+        deny_threshold: 11
+      Skill:
+        flag_threshold: 8
+        deny_threshold: 11
+      WebFetch:
+        flag_threshold: 8
+        deny_threshold: 11
+      apply_patch:
+        flag_threshold: 8
+        deny_threshold: 11
+  skip-permissions:
+    name: Skip Permissions
+    description: Allow tool calls without rule checks or grading, except user-question and plan-exit requests. (Turns Watcher's blocking checks off; sessions are still ingested and reviewed server-side.)
+    aliases:
+    - "off"
+    - disabled
+    policy_monitors:
+      on_grading_failure: allow
+    tool_thresholds:
+      "*":
+        flag_threshold: 11
+        deny_threshold: 11
+      AskUserQuestion:
+        flag_threshold: 0
+        deny_threshold: 11
+      ExitPlanMode:
+        flag_threshold: 0
+        deny_threshold: 11
+  # Register profiles only when their settings are included in the package. A missing
+  # profile body would apply an empty overlay and leave the base settings active.
+ui:
+  autostart_on_login: false
+policy_monitors:
+  policy_gateway_grader_id: c0000001-0000-0000-0000-000000000001
+  policy_triage_grader_id: c0000001-0000-0000-0000-000000000002
+  triage_max_allow_score: 6
+  context_user_messages: 1
+  include_tool_outputs: true
+  include_agent_reasoning: true
+  include_triage_assessment: true
+  pending_orphan_timeout_seconds: 60
+  on_grading_failure: escalate
+  on_grading_failure_retries: 1
+snooze:
+  enabled: false
+enforcement:
+  mode: enforce
+  escalate_after_consecutive_denies: 2
+  escalate_after_accumulated_denies: 10
+watcher_ignore_files:
+  enabled: false
+decision_sync:
+  drain_interval_seconds: 300
+grading:
+  model: null
+tool_thresholds:
+  Agent:
+    flag_threshold: 11
+    deny_threshold: 11
+  AskUserQuestion:
+    flag_threshold: 0
+    deny_threshold: 11
+  Bash:
+    flag_threshold: 6
+    deny_threshold: 11
+  CronCreate:
+    flag_threshold: 11
+    deny_threshold: 11
+  CronDelete:
+    flag_threshold: 11
+    deny_threshold: 11
+  CronList:
+    flag_threshold: 11
+    deny_threshold: 11
+  Edit:
+    flag_threshold: 6
+    deny_threshold: 11
+  EnterPlanMode:
+    flag_threshold: 11
+    deny_threshold: 11
+  EnterWorktree:
+    flag_threshold: 11
+    deny_threshold: 11
+  ExitPlanMode:
+    flag_threshold: 0
+    deny_threshold: 11
+  ExitWorktree:
+    flag_threshold: 11
+    deny_threshold: 11
+  Glob:
+    flag_threshold: 11
+    deny_threshold: 11
+  Grep:
+    flag_threshold: 11
+    deny_threshold: 11
+  LSP:
+    flag_threshold: 11
+    deny_threshold: 11
+  ListMcpResourcesTool:
+    flag_threshold: 11
+    deny_threshold: 11
+  Monitor:
+    flag_threshold: 6
+    deny_threshold: 11
+  NotebookEdit:
+    flag_threshold: 6
+    deny_threshold: 11
+  PowerShell:
+    flag_threshold: 6
+    deny_threshold: 11
+  Read:
+    flag_threshold: 11
+    deny_threshold: 11
+  ReadMcpResourceTool:
+    flag_threshold: 11
+    deny_threshold: 11
+  SendMessage:
+    flag_threshold: 11
+    deny_threshold: 11
+  Skill:
+    flag_threshold: 6
+    deny_threshold: 11
+  TaskCreate:
+    flag_threshold: 11
+    deny_threshold: 11
+  TaskGet:
+    flag_threshold: 11
+    deny_threshold: 11
+  TaskList:
+    flag_threshold: 11
+    deny_threshold: 11
+  TaskOutput:
+    flag_threshold: 11
+    deny_threshold: 11
+  TaskStop:
+    flag_threshold: 11
+    deny_threshold: 11
+  TaskUpdate:
+    flag_threshold: 11
+    deny_threshold: 11
+  TeamCreate:
+    flag_threshold: 11
+    deny_threshold: 11
+  TeamDelete:
+    flag_threshold: 11
+    deny_threshold: 11
+  TodoWrite:
+    flag_threshold: 11
+    deny_threshold: 11
+  ToolSearch:
+    flag_threshold: 11
+    deny_threshold: 11
+  WebFetch:
+    flag_threshold: 6
+    deny_threshold: 11
+  WebSearch:
+    flag_threshold: 11
+    deny_threshold: 11
+  Write:
+    flag_threshold: 6
+    deny_threshold: 11
+  apply_patch:
+    flag_threshold: 6
+    deny_threshold: 11
+  # Reserved key, not a tool: applied to a tool with no entry of its own, no matching
+  # glob, and no builtin default — typically an MCP tool on its first call. The same pair
+  # is written into the entry created for that tool, so it becomes tunable from then on.
+  # Inside tool_thresholds so an org locking the collection locks this too.
+  unknown:
+    flag_threshold: 7
+    deny_threshold: 11
+command_rules:
+  rules:
+  - id: bash-read-outside-project-tree
+    tool_name: Bash
+    name: Read outside project tree
+    category: file_directory
+    # The first character after the argument separator is what this keys on, so a quote or an
+    # expansion in that slot hides the same read: `cat "/etc/shadow"`, `cat $HOME/.netrc`.
+    regex: ^(cat|head|tail|less|more|bat|file|stat|readlink)\b[^|&;]*(\s[\\"']*(~|/|\.\.|\$\{?HOME\b)|/\.\.)
+    decision: triage
+    priority: 140
+  - id: bash-read-only-filesystem
+    tool_name: Bash
+    name: Read-only filesystem
+    category: file_directory
+    regex: ^(?:(?:ls|cat|head|tail|wc|find|stat|file|du|readlink)\b|tree\b(?!.*\s-o))
+    decision: allow
+    priority: 300
+  - id: bash-environment-info
+    tool_name: Bash
+    name: Environment info
+    category: file_directory
+    # `env` is allow-listed only where it prints the environment. `env CMD ...` execs CMD, so
+    # allow-listing the bare word lets any command borrow this rule by prefixing one token. What
+    # decides it is whether an argument word survives once the redirections are consumed, since a
+    # redirection may sit between command words: `env >log CMD` runs CMD just as `env CMD` does.
+    regex: ^(pwd|cd|echo|which|uname|whoami|date|hostname|id)\b|^env(?:[ \t]*(?:\d*(?:>>|>\||>&|>|<<<|<<|<&|<)|&>>|&>)[ \t]*(?:&\d+|&-|[^ \t<>|&;]+)?)*[ \t]*$
+    decision: allow
+    priority: 301
+  - id: bash-data-format-tools
+    tool_name: Bash
+    name: Data format tools
+    category: file_directory
+    regex: ^(?:(?:jq|yq|csvtool)\b|xmllint\b(?!.*(?:\s-o|--output(?![\w-]))))
+    decision: allow
+    priority: 302
+  - id: edit-safe-source-files
+    tool_name: Edit
+    name: Safe source files
+    category: file_directory
+    regex: \.(py|ts|tsx|js|jsx|css|html|md|json|yaml|yml|toml|cfg|ini|txt|rs|go|swift|c|cpp|h|hpp|java|kt|rb|sh|zsh)$
+    decision: allow
+    priority: 310
+  - id: write-safe-source-files
+    tool_name: Write
+    name: Safe source files
+    category: file_directory
+    regex: \.(py|ts|tsx|js|jsx|css|html|md|json|yaml|yml|toml|cfg|ini|txt|rs|go|swift|c|cpp|h|hpp|java|kt|rb|sh|zsh)$
+    decision: allow
+    priority: 311
+  - id: edit-sensitive-files
+    tool_name: Edit
+    name: Sensitive files
+    category: file_directory
+    regex: \.(env|pem|key|secret)\b|credentials|Dockerfile|\.github/|package\.json$
+    decision: triage
+    priority: 110
+  - id: write-sensitive-files
+    tool_name: Write
+    name: Sensitive files
+    category: file_directory
+    regex: \.(env|pem|key|secret)\b|credentials|Dockerfile|\.github/|package\.json$
+    decision: triage
+    priority: 111
+  - id: edit-agent-config-files
+    tool_name: Edit
+    name: Agent config files
+    category: file_directory
+    regex: (^|/)(CLAUDE|AGENTS|WATCHER)\.md$|/\.(claude|cursor)/
+    decision: triage
+    priority: 112
+  - id: write-agent-config-files
+    tool_name: Write
+    name: Agent config files
+    category: file_directory
+    regex: (^|/)(CLAUDE|AGENTS|WATCHER)\.md$|/\.(claude|cursor)/
+    decision: triage
+    priority: 113
+  # Writing a `.watcher-ignore` file opts a folder out of Watcher, so every attempt to create
+  # or change one is forced to human review. These are deterministic regex rules, which are still
+  # evaluated even when a user has snoozed monitoring, so a session can never silently opt itself
+  # out while monitoring is paused.
+  #
+  # Each variant matches the marker only where that tool can act on it, because the string itself
+  # is ordinary prose: it turns up in docs, commit messages, PR bodies and notebook entries far
+  # more often than it names a file being written. Matching the bare string anywhere in the
+  # payload sends all of that to a human, and an escalation nobody can act on teaches people to
+  # wave the rule through. Edit and Write take a path, so they simply anchor to a whole final
+  # segment. The other two receive free text and need the breakdowns below.
+  #
+  # bash-watcher-ignore-file, left to right:
+  #
+  #   (?<![\w-])                    don't fire mid-word: the `rm` inside `charm` or `pre-rm`
+  #   (?:touch|rm|mv|cp|ln|tee      a command that can put a file at a path. No `>`/`>>`: redirect
+  #     |install|truncate|unlink    destinations are extracted separately and re-matched against
+  #     |sed)                       the Write rule above, which is anchored and more precise.
+  #   (?:[ \t]|\\\n)+               the argument separator: spaces, tabs, or a backslash-newline
+  #                                 continuation, which the shell removes before running the
+  #                                 command. A BARE `\n` is excluded on purpose — with `\s` here,
+  #                                 prose wrapping as "...rm" / ".watcher-ignore" across two lines
+  #                                 would match.
+  #   (?:\\\n|[^\n])*                the rest of the command, continuations included. It does NOT
+  #                                 stop at `;`/`|`/`&`, because
+  #                                 `check_command` has already split compound commands on those
+  #                                 — quote-awarely, which a regex here cannot be. Re-testing for
+  #                                 them would only mis-read a metacharacter inside a quoted path,
+  #                                 losing `touch "/repo/R&D/.watcher-ignore"`.
+  #   \.watcher-ignore              the marker.
+  #   (?=$|[\s"';|&()<>])           a shell delimiter must follow, so the marker is the whole name
+  #                                 rather than a prefix of `.watcher-ignored`, `.watcher-ignore.md`
+  #                                 or `.watcher-ignore/child`.
+  #
+  # apply-patch-watcher-ignore-file matches the *serialized* tool input, so the patch body is in
+  # scope for the regex and only a header may fire the rule:
+  #
+  #   \*\*\*\s*                     the `***` that opens a patch header.
+  #   (?:Add File|Update File       the headers that name a file this patch will create, change,
+  #     |Delete File|Move to):      remove, or move something to.
+  #   [^\\"]*                       the path. Serialization escapes newlines, so a literal `\`
+  #                                 marks the end of the line and `"` the end of the field;
+  #                                 excluding both keeps this header's path from running into the
+  #                                 next line or out of the JSON string.
+  #   \.watcher-ignore              the marker.
+  #   (?=[ \t]*(?:\\|"))            the header must end here (trailing spaces allowed), so a path
+  #                                 that merely starts with the marker does not fire.
+  #
+  # Two known limits, both deliberate:
+  #
+  # The Bash pattern tests for a delimiter; it does not resolve shell operands. A quoted filename
+  # that starts with the marker (`touch "/repo/.watcher-ignore notes"`) still prompts, because the
+  # space inside the quotes reads as the end of the operand. Doing this properly means matching a
+  # shell word built from adjacent quoted and unquoted spans, which as a regex needs a quantifier
+  # nested inside a repeated group — that backtracks catastrophically, taking seconds on an
+  # ordinary 1.8 KB command while running inside the PreToolUse hook. A rule that can hang the
+  # hook is worse than the prompt it removes, and the two attempts at tightening this both started
+  # *missing* real creations like `touch "$repo"/.watcher-ignore` instead. Prompting about a
+  # neighbouring file is the safe direction.
+  #
+  # A determined evasion can still dodge the Bash pattern by splitting the literal, which no regex
+  # over command text can prevent; these rules are what stops the marker from appearing by
+  # accident or in the clear.
+  - id: edit-watcher-ignore-file
+    tool_name: Edit
+    name: Watcher ignore file
+    category: security_system
+    regex: '(^|/)\.watcher-ignore$'
+    decision: human
+    priority: 104
+  - id: write-watcher-ignore-file
+    tool_name: Write
+    name: Watcher ignore file
+    category: security_system
+    regex: '(^|/)\.watcher-ignore$'
+    decision: human
+    priority: 105
+  - id: bash-watcher-ignore-file
+    tool_name: Bash
+    name: Watcher ignore file
+    category: security_system
+    regex: '(?<![\w-])(?:touch|rm|mv|cp|ln|tee|install|truncate|unlink|sed)(?:[ \t]|\\\n)+(?:\\\n|[^\n])*\.watcher-ignore(?=$|[\s"'';|&()<>])'
+    decision: human
+    priority: 106
+  - id: apply-patch-watcher-ignore-file
+    tool_name: apply_patch
+    name: Watcher ignore file
+    category: security_system
+    regex: '\*\*\*\s*(?:Add File|Update File|Delete File|Move to):[^\\"]*\.watcher-ignore(?=[ \t]*(?:\\|"))'
+    decision: human
+    priority: 107
+  - id: edit-shell-rc-ssh-config
+    tool_name: Edit
+    name: Shell rc / SSH config
+    category: file_directory
+    regex: \.(bashrc|zshrc|bash_profile|zprofile|zshenv|profile)$|/\.ssh/(config|authorized_keys)$|(^|/)(\.bashrc|\.zshrc|\.bash_profile|\.zprofile|\.zshenv|\.profile)$|^/etc/(profile|bashrc|zshrc|zshenv|zprofile|bash\.bashrc)(\.d/.*)?$
+    decision: triage
+    priority: 116
+  - id: write-shell-rc-ssh-config
+    tool_name: Write
+    name: Shell rc / SSH config
+    category: file_directory
+    regex: \.(bashrc|zshrc|bash_profile|zprofile|zshenv|profile)$|/\.ssh/(config|authorized_keys)$|(^|/)(\.bashrc|\.zshrc|\.bash_profile|\.zprofile|\.zshenv|\.profile)$|^/etc/(profile|bashrc|zshrc|zshenv|zprofile|bash\.bashrc)(\.d/.*)?$
+    decision: triage
+    priority: 117
+  - id: edit-ci-config-(non-github)
+    tool_name: Edit
+    name: CI config (non-GitHub)
+    category: file_directory
+    regex: \.gitlab-ci\.yml$|\.circleci/|(^|/)Jenkinsfile$|\.travis\.yml$|azure-pipelines\.yml$|\.drone\.yml$|bitbucket-pipelines\.yml$|\.gitea/
+    decision: triage
+    priority: 118
+  - id: write-ci-config-(non-github)
+    tool_name: Write
+    name: CI config (non-GitHub)
+    category: file_directory
+    regex: \.gitlab-ci\.yml$|\.circleci/|(^|/)Jenkinsfile$|\.travis\.yml$|azure-pipelines\.yml$|\.drone\.yml$|bitbucket-pipelines\.yml$|\.gitea/
+    decision: triage
+    priority: 119
+  - id: bash-search-tools
+    tool_name: Bash
+    name: Search tools
+    category: search
+    regex: ^(grep|rg|ag|fd|egrep|fgrep|ack)\b
+    decision: allow
+    priority: 320
+  - id: bash-read-only-sed
+    tool_name: Bash
+    name: Read-only sed
+    category: search
+    regex: ^sed\s+-n\b(?!.*(?:\s-i|--in-place\b|(?<!\w)[wW][\s/]))
+    decision: allow
+    priority: 321
+  - id: bash-git-read-only
+    tool_name: Bash
+    name: Git read-only
+    category: git
+    regex: ^git\s+(status|diff|log|show|branch|fetch|ls-tree|ls-files|blame|shortlog|describe|tag\s+-l)\b(?!.*--output(?![\w-]))
+    decision: allow
+    priority: 330
+  - id: bash-github-cli-read-only
+    tool_name: Bash
+    name: GitHub CLI read-only
+    category: git
+    regex: ^gh\s+(pr|issue|repo)\s+(view|list|status)\b
+    decision: allow
+    priority: 331
+  - id: bash-git-local-mutation
+    tool_name: Bash
+    name: Git local mutation
+    category: git
+    regex: ^git\s+(add|commit|stash|checkout|merge|cherry-pick|rebase)\b
+    decision: triage
+    priority: 200
+  - id: bash-git-push
+    tool_name: Bash
+    name: Git push
+    category: git
+    regex: ^git\s+push\b
+    decision: triage
+    priority: 201
+  - id: bash-github-pr-actions
+    tool_name: Bash
+    name: GitHub PR actions
+    category: git
+    regex: ^gh\s+pr\s+(create|merge|edit|review)\b
+    decision: triage
+    priority: 202
+  - id: bash-force-push
+    tool_name: Bash
+    name: Force push
+    category: git
+    regex: git\s+push\s+.*--(force|force-with-lease)\b
+    decision: triage
+    priority: 100
+  - id: bash-hard-reset
+    tool_name: Bash
+    name: Hard reset
+    category: git
+    regex: git\s+reset\s+--hard\b
+    decision: triage
+    priority: 101
+  - id: bash-git-clean
+    tool_name: Bash
+    name: Git clean
+    category: git
+    regex: git\s+clean\s+-[fd]
+    decision: triage
+    priority: 102
+  - id: bash-python-tests
+    tool_name: Bash
+    name: Python tests
+    category: testing_build
+    regex: ^(uv\s+run\s+pytest|python\s+-m\s+pytest|pytest)\b(?!.*--junit-?xml(?![\w-]))
+    decision: allow
+    priority: 340
+  - id: bash-js/ts-tests-lint
+    tool_name: Bash
+    name: JS/TS tests & lint
+    category: testing_build
+    regex: ^(?:npm\s+test|npm\s+run\s+(?:test|lint|check)|npx\s+(?:jest|vitest|prettier)|npx\s+eslint(?!.*\s-o))\b(?!.*--output-?file(?![\w-]))
+    decision: allow
+    priority: 341
+  - id: bash-compiled-language-tests
+    tool_name: Bash
+    name: Compiled language tests
+    category: testing_build
+    regex: ^(cargo\s+(test|check|clippy)|go\s+test|swift\s+test)\b
+    decision: allow
+    priority: 342
+  - id: bash-python-linters
+    tool_name: Bash
+    name: Python linters
+    category: testing_build
+    regex: ^(?:uv\s+run\s+(?:ruff|pyright|ty|mypy|flake8|black)|ruff\b|pyright\b|ty\b|mypy\b)(?!.*(?:\s-o|--output-file(?![\w-])|--junit-xml(?![\w-])))
+    decision: allow
+    priority: 343
+  - id: bash-typescript-type-check
+    tool_name: Bash
+    name: TypeScript type check
+    category: testing_build
+    regex: ^(npx\s+tsc\s+--noEmit|tsc\s+--noEmit)\b
+    decision: allow
+    priority: 344
+  - id: bash-build-commands
+    tool_name: Bash
+    name: Build commands
+    category: testing_build
+    # `-f`/`-C` repoint make at a makefile or directory of the caller's choosing, so those lose the
+    # allow. Each option keeps its `\b`: dropping it to catch an attached value (`-fMakefile.dev`)
+    # also fires on `make CFLAGS="-fPIC -O2"`, because the lookahead has no notion of shell words.
+    regex: ^(npm\s+run\s+build|make\b(?!.*[\s"']-(?:f|C|-file|-makefile|-directory)\b)|cargo\s+build|swift\s+build|go\s+build)
+    decision: allow
+    priority: 345
+  - id: bash-package-info
+    tool_name: Bash
+    name: Package info
+    category: testing_build
+    regex: ^(pip\s+list|pip\s+show|npm\s+ls|uv\s+pip\s+list|cargo\s+tree|pip\s+freeze)\b
+    decision: allow
+    priority: 346
+  - id: bash-infrastructure-ops
+    tool_name: Bash
+    name: Infrastructure ops
+    category: cloud_infra
+    regex: ^(docker\s+push|docker\s+compose\s+down|kubectl\s+(apply|delete)|terraform\s+(apply|destroy))\b
+    decision: triage
+    priority: 120
+  - id: bash-aws-destructive-ops
+    tool_name: Bash
+    name: AWS destructive ops
+    category: cloud_infra
+    regex: ^aws\s+(s3\s+(rm|rb)\b|ec2\s+terminate-instances\b|rds\s+delete-db-(instance|cluster)\b|iam\s+delete-(user|role|policy)\b|dynamodb\s+delete-table\b|kms\s+schedule-key-deletion\b|s3api\s+delete-bucket\b)
+    decision: triage
+    priority: 122
+  - id: bash-privileged-container
+    tool_name: Bash
+    name: Privileged container
+    category: cloud_infra
+    regex: ^docker\s+run\b.*(--privileged\b|--pid=host\b|--net=host\b|--cap-add\b|-v\s+/[^:\s]*:)
+    decision: triage
+    priority: 123
+  - id: bash-global-toolchain-install
+    tool_name: Bash
+    name: Global toolchain install
+    category: cloud_infra
+    regex: ^(cargo\s+install|go\s+install|gem\s+install|pipx\s+install|mise\s+(install|use)|asdf\s+install)\b
+    decision: triage
+    priority: 124
+  - id: bash-aws-write-operations
+    tool_name: Bash
+    name: AWS write operations
+    category: cloud_infra
+    regex: ^aws\s+(?!s3\s+ls|sts\s+get|iam\s+list)
+    decision: triage
+    priority: 210
+  - id: bash-http-post/data-upload
+    tool_name: Bash
+    name: HTTP POST/data upload
+    category: cloud_infra
+    regex: curl\s+.*(-X\s+POST|-d\b|--data)
+    decision: triage
+    priority: 211
+  - id: bash-network-tools
+    tool_name: Bash
+    name: Network tools
+    category: cloud_infra
+    regex: (wget\s+--post|nc\b|netcat\b|ncat\b)
+    decision: triage
+    priority: 212
+  - id: bash-http-write-methods
+    tool_name: Bash
+    name: HTTP write methods
+    category: cloud_infra
+    regex: \bcurl\b.*(-X\s+(PUT|DELETE|PATCH)\b|\s(-T|--upload-file)\b|\s-F\s)
+    decision: triage
+    priority: 213
+  - id: bash-package-installation
+    tool_name: Bash
+    name: Package installation
+    category: cloud_infra
+    regex: ^(pip\s+install|npm\s+install|uv\s+(pip\s+install|add)|cargo\s+add)\b
+    decision: triage
+    priority: 220
+  - id: bash-global-package-install
+    tool_name: Bash
+    name: Global package install
+    category: cloud_infra
+    regex: ^(npm\s+install\s+-g|pip\s+install\s+--user|brew\s+install)\b
+    decision: triage
+    priority: 121
+  - id: bash-secrets-adjacent
+    tool_name: Bash
+    name: Secrets-adjacent
+    category: security_system
+    regex: \.(pem|key|env|secret)\b|credentials|aws_secret|\b(id_rsa|id_dsa|id_ecdsa|id_ed25519|authorized_keys|known_hosts)\b|/\.(ssh|aws|gnupg|docker|kube)(/|\b)
+    decision: triage
+    priority: 130
+  - id: bash-system-commands
+    tool_name: Bash
+    name: System commands
+    category: security_system
+    regex: ^sudo\b|chmod\s+777|kill\s+-9|pkill\b|shutdown\b|reboot\b
+    decision: triage
+    priority: 131
+  - id: bash-destructive-sql
+    tool_name: Bash
+    name: Destructive SQL
+    category: security_system
+    regex: ^(?:(?![\"'])\S+\s+){0,6}(?:psql|sqlite3?|mysql|mariadb|duckdb|clickhouse-client|sqlcmd|pgcli|mycli)\b[\s\S]*\b(DROP\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE(\s+TABLE)?|DELETE\s+FROM|ALTER\s+TABLE)\b
+    decision: triage
+    priority: 132
+  - id: bash-database-tools
+    tool_name: Bash
+    name: Database tools
+    category: security_system
+    regex: ^(sqlite3|psql|mysql|mongosh|redis-cli)\b
+    decision: triage
+    priority: 231
+  - id: bash-script-execution
+    tool_name: Bash
+    name: Script execution
+    category: security_system
+    regex: curl.*\|\s*(bash|sh|python)|python3?\s+-c\b
+    decision: triage
+    priority: 230
+  - id: bash-inline-script-exec
+    tool_name: Bash
+    name: Inline script exec
+    category: security_system
+    regex: \b(bash|sh|zsh)\s+-c\b|\bnode\s+-e\b|(?<![\w.-])eval(?![\w.-])|source\s+<\(
+    decision: triage
+    priority: 232
+  - id: bash-find-with-side-effects
+    tool_name: Bash
+    name: find with side effects
+    category: file_directory
+    regex: ^find\b(?=.*[\s"'\\]-(delete|exec|execdir|fls|fprint0?|fprintf|ok|okdir)\b)
+    decision: triage
+    priority: 240
+  - id: bash-fd-with---exec
+    tool_name: Bash
+    name: fd with --exec
+    category: search
+    regex: ^fd\b.*[\s"'\\]-(x|X|-exec|-exec-batch)\b
+    decision: triage
+    priority: 241
+  - id: edit-lock-pinned-deps-file
+    tool_name: Edit
+    name: Lock / pinned-deps file
+    category: file_directory
+    regex: (^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|uv\.lock|Pipfile\.lock|Gemfile\.lock|go\.sum|composer\.lock)$|(^|/)requirements[\w.-]*\.txt$
+    decision: triage
+    priority: 242
+  - id: write-lock-pinned-deps-file
+    tool_name: Write
+    name: Lock / pinned-deps file
+    category: file_directory
+    regex: (^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|uv\.lock|Pipfile\.lock|Gemfile\.lock|go\.sum|composer\.lock)$|(^|/)requirements[\w.-]*\.txt$
+    decision: triage
+    priority: 243
+  - id: bash-recursive-deletion
+    tool_name: Bash
+    name: Recursive deletion
+    category: security_system
+    regex: \brm\s+-(r|rf|fr)\b
+    decision: triage
+    priority: 134
+  - id: bash-scheduled-task-install
+    tool_name: Bash
+    name: Scheduled task install
+    category: security_system
+    regex: \bcrontab\s+-[er]\b|/etc/cron|\bsystemd-run\b|\blaunchctl\s+(load|bootstrap)\b|\bat\s+(now|noon|midnight|\d)
+    decision: triage
+    priority: 135
+  - id: bash-disk-wipe-partition
+    tool_name: Bash
+    name: Disk wipe / partition
+    category: security_system
+    regex: \bmkfs\.|\bdd\s+if=/dev/|\bfdisk\b|\bwipefs\b|\bparted\b|\bshred\s+-
+    decision: triage
+    priority: 136
+  - id: bash-setuid-recursive-chown
+    tool_name: Bash
+    name: Setuid / recursive chown
+    category: security_system
+    regex: \bchmod\s+[ugoa]*\+s\b|\bchmod\s+[1-7]\d{3}\b|\bchown\s+-R\b
+    decision: triage
+    priority: 137
+  - id: bash-bypass-safety-check
+    tool_name: Bash
+    name: Bypass safety check
+    category: security_system
+    regex: --no-verify\b|--no-gpg-sign\b|-c\s+commit\.gpgsign=false
+    decision: triage
+    priority: 138
+  - id: bash-history-tampering
+    tool_name: Bash
+    name: History tampering
+    category: security_system
+    regex: \bhistory\s+-c\b|>\s*\S*?\.(?:bash_history|zsh_history)\b|\bunset\s+HISTFILE\b|\bgit\s+filter-(branch|repo)\b|\bgit\s+update-ref\s+-d\b|\bgit\s+reflog\s+expire\b
+    decision: triage
+    priority: 139
+  - id: bash-redirect-to-sensitive-path
+    tool_name: Bash
+    name: Redirect to sensitive path
+    category: security_system
+    regex: '>>?[|&]?\s*/*(?:/etc/|/usr/|/root/|/bin/|/sbin/|\S*/\.(?:ssh|aws|kube|gnupg)/|\S*?\.(?:bashrc|zshrc|bash_profile|zprofile|zshenv|profile|netrc|pypirc|npmrc)\b)'
+    decision: triage
+    priority: 141
+  - id: bash-delete-from-root-paths
+    tool_name: Bash
+    name: Delete from root paths
+    category: security_system
+    regex: \brm\s+-.*\s+/\b
+    decision: triage
+    priority: 133

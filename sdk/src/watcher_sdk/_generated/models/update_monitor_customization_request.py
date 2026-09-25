@@ -13,10 +13,9 @@ T = TypeVar("T", bound="UpdateMonitorCustomizationRequest")
 class UpdateMonitorCustomizationRequest:
     """Request body for PUT /v1/monitors/customization.
 
-    An empty ``instructions`` string clears the instructions. Content
-    validation (length cap, reserved delimiter sequences) happens in the route
-    via ``validate_monitor_instructions``; the cap is mirrored here only as a
-    coarse schema bound so the OpenAPI spec documents it.
+    An empty ``instructions`` string clears the instructions. The server
+    validates content (length cap, reserved delimiter sequences); the schema
+    bound here is a coarse mirror of that cap.
 
         Attributes:
             instructions (str):

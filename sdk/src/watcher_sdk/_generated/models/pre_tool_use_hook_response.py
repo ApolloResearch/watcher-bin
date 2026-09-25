@@ -70,9 +70,9 @@ class PreToolUseHookResponse:
             decision_source (DecisionSource): Subsystem that produced the policy decision.
             enforcement_mode (EnforcementMode): Admin-set, machine-wide enforcement mode snapshot at decision time.
 
-                Stamped on every decision row — including plain allows — so observe-mode
-                would-be block rates have a queryable denominator. NULL only on rows
-                uploaded by clients that predate the posture columns.
+                Stamped on every decision — including plain allows — so observe-mode
+                would-be block rates have a denominator. Absent on decisions uploaded by
+                older clients that did not send it.
             verdict (Verdict): The decision-level view of why a call was decided, whichever stage decided it.
 
                 What a caller shows or logs regardless of `decision_source`: the deciding

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Watcher API",
-    "description": "Trajectory ingestion, grading, and query API",
+    "description": "Trajectory ingestion, grading, and query API for Watcher. Concepts and integration guides: https://watcher-docs.apolloresearch.ai",
     "version": "dev"
   },
   "paths": {
@@ -34,7 +34,7 @@
           "auth"
         ],
         "summary": "Check Permissions",
-        "description": "Report whether the current credential has every requested permission.\n\nUnknown and ungranted permission slugs have identical semantics: both are\nreturned in ``missing``. The endpoint evaluates effective authority, so\ntrusted internal identities and administrators satisfy the same checks as\nthey do on the protected API operation itself.",
+        "description": "Report whether the current credential has every requested permission.\n\nUnknown and ungranted permission slugs have identical semantics: both are\nreturned in ``missing``. The endpoint evaluates effective authority, so\nadministrators and server-side service identities satisfy the same checks\nas they do on the protected API operation itself.",
         "operationId": "check_permissions_v1_auth_check_permissions_post",
         "requestBody": {
           "content": {
@@ -118,7 +118,7 @@
           "auth"
         ],
         "summary": "Auth Device Authorize",
-        "description": "Start a device-authorization login (RFC 8628) for a headless client.\n\nUnauthenticated by design \u2014 it produces credentials. Proxies WorkOS's\ndevice-authorization endpoint so clients need nothing but this server's\nURL; the WorkOS client id stays server-side configuration. Servers\npredating this route answer 404, which clients treat as \"use the\nbrowser flow instead\".",
+        "description": "Start a device-authorization login (RFC 8628) for a headless client.\n\nUnauthenticated by design \u2014 it produces credentials. Proxies WorkOS's\ndevice-authorization endpoint so clients need nothing but this server's\nURL; the WorkOS client id stays server-side configuration.",
         "operationId": "auth_device_authorize_v1_auth_device_authorize_post",
         "responses": {
           "200": {
@@ -292,7 +292,7 @@
           "organization"
         ],
         "summary": "Update Org Settings",
-        "description": "Update organization settings.\n\nUses `exclude_unset=True` so callers can distinguish \"field absent\" (leave\nalone) from \"field set to null\" (clear it). Null is only honoured for\nfields whose DB column is nullable; null on any other field returns 400.\nThe Slack webhook URL is encrypted at rest (plaintext when KMS is\nunconfigured) and clearable via null, unless the deployment supplies it\nthrough `SLACK_WEBHOOK_URL`, in which case any body mentioning\n`slack_webhook_url` is refused whole with a 409.",
+        "description": "Update organization settings.\n\nFields omitted from the body are left unchanged; fields sent as null are\ncleared. Null is only accepted for clearable fields; null on any other\nfield returns 400. The Slack webhook URL is encrypted at rest on deployments\nwith encryption configured (Watcher Cloud is) and stored as supplied\notherwise. It is clearable via null, unless the deployment supplies it\nthrough `SLACK_WEBHOOK_URL`, in which case any body mentioning\n`slack_webhook_url` is refused whole with a 409.",
         "operationId": "update_org_settings_v1_organization_settings_patch",
         "requestBody": {
           "content": {
@@ -473,7 +473,7 @@
           "organization"
         ],
         "summary": "Resolve Org Managed Settings",
-        "description": "Return the document machines should apply for this path, or 404 when unmanaged.\n\nAny authenticated member of the org can read this (machines authenticate\nwith per-user credentials, so a member JWT need not carry the admin-only\nsettings permission). An org or user API key is the exception: it must carry\norg:settings:read, the same slug the other settings routes enforce. 404\ncovers both \"the org distributes via MDM\" and \"no document saved yet\";\nclients treat it as \"no managed settings\" and keep their last-known-good\nfile. That expected 404 carries a structured detail\n(``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell\nit apart from a routing-layer 404 (e.g. an older server without this\nroute), whose body is a plain string.",
+        "description": "Return the document machines should apply for this path, or 404 when unmanaged.\n\nAny authenticated member of the org can read this (machines authenticate\nwith per-user credentials, so a member JWT need not carry the admin-only\nsettings permission). An org or user API key is the exception: it must carry\norg:settings:read, the same slug the other settings routes enforce. 404\ncovers both \"the org distributes via MDM\" and \"no document saved yet\";\nclients treat it as \"no managed settings\" and keep their last-known-good\nfile. That expected 404 carries a structured detail\n(``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell\nit apart from a routing-layer 404, whose body is a plain string.",
         "operationId": "resolve_org_managed_settings_v1_organization_managed_settings__path__resolved_get",
         "parameters": [
           {
@@ -605,7 +605,7 @@
           "ingest"
         ],
         "summary": "Ingest",
-        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nAperture-style attribution; keys carrying only ``sessions:ingest`` write\nunattributed sessions.",
+        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nproxy-capture (Tailscale Aperture) attribution; keys carrying only\n``sessions:ingest`` write unattributed sessions.\n\nA Claude Code session id or Codex thread id names one session per\norganization. An upload attributed to a user (a signed-in user's, or one\nattributed through ``identity.login_name``) joins that session when it has\nno owner and makes the user its owner. When another user owns it, the\nrequest is rejected with 409 ``session_owner_conflict``: that trajectory\nis not stored, earlier trajectories in the request stay stored, and later\nones are not processed. An upload attributed to no user joins the session\nwhoever owns it and leaves the owner unchanged.",
         "operationId": "ingest_v1_ingest_post",
         "requestBody": {
           "content": {
@@ -627,6 +627,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "The upload names a Claude Code or Codex conversation whose session another user owns (code session_owner_conflict)"
           },
           "422": {
             "description": "Validation Error",
@@ -752,7 +755,7 @@
           "grade"
         ],
         "summary": "Grade",
-        "description": "Grade trajectories with explicitly named graders.\n\nDB-backed grading is gated by session ownership: callers may only grade\nsessions they own, unless they hold ``sessions:write:any`` (or are an\nadmin / internal-token / local-mode caller).\nFlagged-grade Slack notifications fire post-response via BackgroundTasks\nonly for DB-backed trajectory grading. Tool-call grading\n(``tool_call_run_kind``) persists the grade but does NOT notify here \u2014 its\nalert fires later, at decision ingest (``POST\n/v1/tool-call-decisions/batch``), once the coding agent and Analyzer link\nare known. Plain ephemeral grading never notifies.",
+        "description": "Grade trajectories with explicitly named graders.\n\nDB-backed grading is gated by session ownership: callers may only grade\nsessions they own, unless they hold ``sessions:write:any`` or administrator\nauthority. Flagged-grade Slack notifications are sent after the response,\nonly for DB-backed trajectory grading. Tool-call grading\n(``tool_call_run_kind``) persists the grade but does NOT notify here \u2014 its\nalert fires later, at decision ingest (``POST\n/v1/tool-call-decisions/batch``), once the coding agent and Analyzer link\nare known. Plain ephemeral grading never notifies.",
         "operationId": "grade_v1_grade_post",
         "requestBody": {
           "content": {
@@ -860,7 +863,7 @@
           "hooks"
         ],
         "summary": "Aperture Entire Request Hook",
-        "description": "Accept a supported coding-agent request/response capture for asynchronous monitoring.\n\nConfigure Aperture with events=[\"entire_request\"] and\nsend=[\"request_body\", \"response_body\"]. The API key must have\nsessions:write:any so metadata.login_name can attribute the session.\nAdmin enforcement.mode selects observation or ingestion only (paused);\nthis asynchronous transport always caps enforcement at observe. Only tool\ncalls in the response are evaluated. Text-only turns are ingested too.\n\nA 202 confirms admission, not completed grading or durable storage.\nUnsupported formats and malformed provider bodies are logged after the\nACK. Captures require recognized coding-harness identity, using the\nper-format markers documented in the hooks reference. Other applications\nare skipped.",
+        "description": "Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous monitoring.\n\nConfigure Aperture with events=[\"entire_request\"] and\nsend=[\"request_body\", \"response_body\"]. The API key must have\nsessions:write:any so metadata.login_name can attribute the session.\nAdmin enforcement.mode selects observation or ingestion only (paused);\nthis asynchronous transport always caps enforcement at observe. Only tool\ncalls in the response are evaluated. Text-only turns are ingested too.\n\nA 202 confirms admission, not completed grading or durable storage.\nUnsupported formats and malformed provider bodies are logged after the\nACK. Captures require recognized coding-harness identity, using the\nper-format markers documented in the hooks reference. Other applications\nare skipped.",
         "operationId": "aperture_entire_request_hook_v1_hooks_aperture_post",
         "requestBody": {
           "content": {
@@ -2301,7 +2304,7 @@
           "distribution"
         ],
         "title": "ActivatedMonitorsResponse",
-        "description": "Response for GET /v1/organization/managed-settings/{path}/monitors.\n\nA read-only projection of which custom or managed monitors the current\ndocument activates. Consumed by the Monitors page rollout badges and the\ndraft-assist and red-team prompts on the Managed Settings page. Managed\nidentities describe current-client routing, not observed fleet activity.\n\n`monitors` is populated only when the org distributes via Watcher: under MDM\nthe stored document is not what runs on machines, so rollout cannot be\nasserted and the list is empty. `distribution` is included so the response is\nself-interpreting (an empty list means \"nothing activated\" under `watcher`\nbut \"not applicable\" under `mdm`). `version` is the document version the list\nwas computed from (0 when none saved)."
+        "description": "Response for GET /v1/organization/managed-settings/{path}/monitors.\n\nA read-only projection of which custom or managed monitors the current\ndocument activates. Consumed by the Analyzer's Monitors and Managed\nSettings pages. Managed identities describe current-client routing, not\nobserved fleet activity.\n\n`monitors` is populated only when the org distributes via Watcher: under MDM\nthe stored document is not what runs on machines, so rollout cannot be\nasserted and the list is empty. `distribution` is included so the response is\nself-interpreting (an empty list means \"nothing activated\" under `watcher`\nbut \"not applicable\" under `mdm`). `version` is the document version the list\nwas computed from (0 when none saved)."
       },
       "ApertureHookAccepted": {
         "properties": {
@@ -2378,7 +2381,7 @@
           "url"
         ],
         "title": "ApertureHookMetadata",
-        "description": "Aperture-owned identity fields; unknown additions are accepted.\n\n``request_id`` identifies a capture, never a conversation. The provider\nkey and URL describe routing and do not identify the developer's harness.\n``user_agent`` supplies application evidence to the format parser. The\nparser applies the supported harness's marker and system-identity rules;\nselecting a wire format alone never admits an application. These fields\nclassify captured traffic; they do not authenticate the caller."
+        "description": "Tailscale Aperture-owned identity fields; unknown additions are accepted.\n\n``request_id`` identifies a capture, never a conversation. ``session_id``\nis Aperture's own session id: one it took from the client (prefix\n``xsid_`` or ``pisn_``) is recorded as the conversation id of a capture\nwithout a native one, and any other value is ignored. The provider key\nand URL describe routing and do not identify the developer's harness.\n``user_agent`` supplies application evidence to the format parser. The\nparser applies the supported harness's marker and system-identity rules;\nselecting a wire format alone never admits an application. These fields\nclassify captured traffic; they do not authenticate the caller."
       },
       "ApertureHookRequest": {
         "properties": {
@@ -2406,11 +2409,10 @@
         "type": "object",
         "required": [
           "metadata",
-          "request_body",
-          "response_body"
+          "request_body"
         ],
         "title": "ApertureHookRequest",
-        "description": "The fixed webhook envelope with both required send types enabled.\n\nRaw request and reconstructed response objects are forwarded to the selected\nformat parser. A null response represents an unsuccessful upstream\ncall and is skipped. Extra metadata and send types are ignored."
+        "description": "The fixed webhook envelope with both required send types enabled.\n\nRaw request and reconstructed response objects are forwarded to the selected\nformat parser. A null or absent response represents an upstream call that\nproduced no response body and is skipped: Aperture omits ``response_body``\nwhen the client disconnects before the provider answers (capture status 0).\nExtra metadata and send types are ignored."
       },
       "ApertureLog": {
         "properties": {
@@ -2435,7 +2437,7 @@
           "key"
         ],
         "title": "ApertureLog",
-        "description": "A single aperture log on s3."
+        "description": "A whole-file Tailscale Aperture proxy capture, referenced by its object storage location."
       },
       "AppliedDecision": {
         "type": "string",
@@ -2534,7 +2536,7 @@
           "id"
         ],
         "title": "AuthUser",
-        "description": "The signed-in user's identity as login endpoints report it.\n\n``id`` is the WorkOS user id; ``user_id`` is our own database row's id,\npresent once the login's user upsert has run (it can be absent only when\nWorkOS reported no email to upsert by)."
+        "description": "The signed-in user's identity as login endpoints report it.\n\n``id`` is the WorkOS user id; ``user_id`` is Watcher's own user id, present\nonce the login has created or matched the Watcher user (it can be absent\nonly when WorkOS reported no email to match by)."
       },
       "AvailableSessionDetailResponse": {
         "properties": {
@@ -2545,7 +2547,7 @@
           "agent_platform": {
             "type": "string",
             "title": "Agent Platform",
-            "description": "Agent platform that produced this session. Known values: 'codex', 'claude_code', 'other'. Clients must tolerate unrecognized values."
+            "description": "Agent platform that produced this session. Known values: 'claude_code', 'codex', 'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and 'other'. A session keeps the value it was created with, so sessions recorded before a harness had its own value remain 'other'. Clients must tolerate unrecognized values."
           },
           "user_id": {
             "anyOf": [
@@ -3754,7 +3756,7 @@
         "additionalProperties": true,
         "type": "object",
         "title": "CodexContentItem",
-        "description": "One item inside a ``content`` or ``output`` array.\n\nThe ``type`` annotation lists the values the parser handles. Unknown\nvalues still parse (they fall through the ``| str`` branch); handlers\nin ``product.lib.codex`` ignore items whose ``type`` they don't know."
+        "description": "One item inside a ``content`` or ``output`` array.\n\nThe ``type`` annotation lists the values the parser handles. Unknown\nvalues still parse (they fall through the ``| str`` branch) and are\nignored."
       },
       "CodexEntry": {
         "properties": {
@@ -4182,7 +4184,7 @@
         "additionalProperties": true,
         "type": "object",
         "title": "CodexPayload",
-        "description": "All payload fields the Codex JSONL parser reads, in one class with every field optional.\n\nHandlers check ``type`` to know which fields are set. The ``type``\nannotation lists the values handled by ``_response_item_handlers`` in\n``product.lib.codex``; unknown values still parse (the ``| str`` branch)\nand route to ``_handle_unknown_response_item`` with a logged warning.\n\nThe validators below clean up a few looser shapes so handlers don't need\n``isinstance`` guards. Same approach as ``ClaudeCodeEntry`` in ``claude_code.py``."
+        "description": "All payload fields the Codex JSONL parser reads, in one class with every field optional.\n\nHandlers check ``type`` to know which fields are set. The ``type``\nannotation lists the values the parser handles; unknown values still parse\n(the ``| str`` branch) and are skipped with a logged warning.\n\nValidators normalise a few looser shapes so every field has one type, as\n``ClaudeCodeEntry`` does for Claude Code transcripts."
       },
       "CodexReasoningSummaryItem": {
         "properties": {
@@ -5003,7 +5005,7 @@
           "interval"
         ],
         "title": "DeviceAuthorizationResponse",
-        "description": "Response from POST /v1/auth/device/authorize (RFC 8628 device authorization).\n\nMirrors WorkOS's device-authorization response verbatim: Xylon proxies the\ncall so headless clients need nothing but the server URL \u2014 the WorkOS\nclient id stays server-side configuration. ``device_code`` is the secret\nthe client polls with and must never be shown to the user; ``user_code``\nis the short code the user confirms in a browser on any other device."
+        "description": "Response from POST /v1/auth/device/authorize (RFC 8628 device authorization).\n\nMirrors WorkOS's device-authorization response verbatim: the Watcher API\nproxies the call so headless clients need nothing but the server URL \u2014 the WorkOS\nclient id stays server-side configuration. ``device_code`` is the secret\nthe client polls with and must never be shown to the user; ``user_code``\nis the short code the user confirms in a browser on any other device."
       },
       "DeviceTokenRequest": {
         "properties": {
@@ -5146,7 +5148,7 @@
           "paused"
         ],
         "title": "EnforcementMode",
-        "description": "Admin-set, machine-wide enforcement mode snapshot at decision time.\n\nStamped on every decision row \u2014 including plain allows \u2014 so observe-mode\nwould-be block rates have a queryable denominator. NULL only on rows\nuploaded by clients that predate the posture columns."
+        "description": "Admin-set, machine-wide enforcement mode snapshot at decision time.\n\nStamped on every decision \u2014 including plain allows \u2014 so observe-mode\nwould-be block rates have a denominator. Absent on decisions uploaded by\nolder clients that did not send it."
       },
       "ExternalIdSource": {
         "type": "string",
@@ -5157,7 +5159,7 @@
           "other"
         ],
         "title": "ExternalIdSource",
-        "description": "Where an external conversation id in a hook request comes from.\n\nKeys of `PreToolUseHookRequest.external_ids`. Each maps onto the external-id\nsource the matching ingest path already stores, so a hook-recorded decision\nconverges onto the session Watcher Live (`claude_code`, `codex`) or the\nAperture log ingest (`aperture`) created for the same conversation; `other`\nis the gateway's own id and matches only other hook calls."
+        "description": "Where an external conversation id in a hook request comes from.\n\nKeys of `PreToolUseHookRequest.external_ids`. Each maps onto the external-id\nsource the matching ingest path already stores, so a hook-recorded decision\nconverges onto the session Watcher Live (`claude_code`, `codex`) or the\nTailscale Aperture log ingest (`aperture`) created for the same\nconversation; `other` is the gateway's own id and matches only other hook\ncalls."
       },
       "GatewayResult": {
         "properties": {
@@ -5317,7 +5319,7 @@
         },
         "type": "object",
         "title": "GradeRequest",
-        "description": "Request body for POST /v1/grade.\n\nGrades with graders the caller addresses explicitly by UUID (see\n``_GradePayloadBase`` for the payload modes). ``grader_ids`` is required:\nthis endpoint never chooses a grader for the caller. To run the\nserver-managed monitors without holding grader UUIDs, use\nPOST /v1/monitors/{role}/grade instead.\n\n``tool_call_run_kind`` records an ephemeral grade as tool-call audit\nprovenance. When set, each grade result includes a ``tool_call_grade_id``\nthat can later be attached to a tool-call decision, and the caller may send\n``session_id`` + ``tool_use_id`` so the grade row records which call it\ngraded from birth."
+        "description": "Request body for POST /v1/grade.\n\nGrades with graders the caller addresses explicitly by UUID. Two payload\nmodes: ``messages`` (pre-assembled message lists, graded as sent) or\n``trajectory_ids`` plus ``session_id`` (stored trajectories). ``grader_ids``\nis required:\nthis endpoint never chooses a grader for the caller. To run the\nserver-managed monitors without holding grader UUIDs, use\nPOST /v1/monitors/{role}/grade instead.\n\n``tool_call_run_kind`` records an ephemeral grade as tool-call audit\nprovenance. When set, each grade result includes a ``tool_call_grade_id``\nthat can later be attached to a tool-call decision, and the caller may send\n``session_id`` + ``tool_use_id`` so the grade row records which call it\ngraded from birth."
       },
       "GradeResponse": {
         "properties": {
@@ -6300,7 +6302,7 @@
           "trajectory"
         ],
         "title": "IngestAppendRequest",
-        "description": "Request body for POST /v1/sessions/{session_id}/trajectories/{trajectory_id}/append.\n\nAppends a delta of raw transcript entries to an existing session's chain.\nThe session and the anchor (the trajectory_id of the last message the\nclient successfully uploaded) are named in the path; the server continues\nthe chain after the anchor, so a session ingested through any mix of full\nand append uploads stores rows identical to full-only ingestion. Aperture\nlogs are whole-file proxy captures with no client-side cursor, so they\nhave no append form."
+        "description": "Request body for POST /v1/sessions/{session_id}/trajectories/{trajectory_id}/append.\n\nAppends a delta of raw transcript entries to an existing session's chain.\nThe session and the anchor (the trajectory_id of the last message the\nclient successfully uploaded) are named in the path; the server continues\nthe chain after the anchor, so a session ingested through any mix of full\nand append uploads stores rows identical to full-only ingestion. Tailscale\nAperture logs are whole-file proxy captures with no client-side cursor, so\nthey have no append form."
       },
       "IngestRequest": {
         "properties": {
@@ -6461,7 +6463,7 @@
           "enabled"
         ],
         "title": "ModelsConfig",
-        "description": "Response shape of ``GET /v1/graders/models``, built from the model catalog.\n\n``suggested`` are registry entries carrying frontend surface tags;\n``enabled`` are the remaining allowed models (accepted by the free-text\ninput, not advertised in dropdowns). The class name predates the registry\nconsolidation and is kept for generated-client schema stability."
+        "description": "Response shape of ``GET /v1/graders/models``, built from the model catalog.\n\n``suggested`` are catalog entries advertised in the UI; ``enabled`` are the\nremaining allowed models (accepted by the free-text input, not advertised\nin dropdowns)."
       },
       "MonitorContextPolicy": {
         "properties": {
@@ -6503,7 +6505,7 @@
           "triage_max_allow_score"
         ],
         "title": "MonitorContextPolicy",
-        "description": "What of the transcript enters a client-invoked monitor's prompt.\n\nServer-owned counterparts of the ``policy_monitors`` client settings: a\nclient grading by role applies these values instead of its local settings,\nso changing what the monitors see becomes a registry edit rather than a\nclient release. Field semantics match the settings schema\n(``watcher_settings_yaml_schema.PolicyMonitorSettings``)."
+        "description": "What of the transcript enters a client-invoked monitor's prompt.\n\nServer-owned counterparts of the ``policy_monitors`` client settings: a\nclient grading by role applies these values instead of its local settings,\nso changing what the monitors see becomes a registry edit rather than a\nclient release. Field semantics match the ``policy_monitors`` section of\nthe client settings schema."
       },
       "MonitorCustomizationResponse": {
         "properties": {
@@ -6704,7 +6706,7 @@
           "tool_name"
         ],
         "title": "MonitoringInput",
-        "description": "Structured inputs for monitoring one gated tool call.\n\nThe caller sends *what the monitor looks at*; the server owns how it is\nformatted into a prompt, so prompt structure can change without a client\nrelease.\n\nThe conversation context is ``messages`` \u2014 the transcript as structured\n:class:`ChatMessage` objects. The server applies the monitor's served\ncontext policy (user-message window, tool outputs / agent reasoning\nwithheld) and renders the prompt, so a caller sends its conversation\nwithout reimplementing the calibrated renderer. When both forms are sent\n``messages`` wins.\n\n``transcript`` \u2014 the same context as pre-rendered per-message text parts,\nrendered client-side \u2014 is deprecated: current clients send only\n``messages`` (a client is never newer than its server), so the form exists\nfor clients that predate structured messages and is dropped once the\ncompatibility window moves past them.\n\n``grading_guidelines`` is the watched repository's own guidelines document\n(e.g. WATCHER.md), included verbatim as caller-side data."
+        "description": "Structured inputs for monitoring one gated tool call.\n\nThe caller sends *what the monitor looks at*; the server owns how it is\nformatted into a prompt, so prompt structure can change without a client\nrelease.\n\nThe conversation context is ``messages`` \u2014 the transcript as structured\n``ChatMessage`` objects. The server applies the monitor's served\ncontext policy (user-message window, tool outputs / agent reasoning\nwithheld) and renders the prompt, so a caller sends its conversation\nwithout reimplementing the calibrated renderer. When both forms are sent\n``messages`` wins.\n\n``transcript`` \u2014 the same context as pre-rendered per-message text parts,\nrendered client-side \u2014 is deprecated: current clients send only\n``messages`` (a client is never newer than its server), so the form exists\nfor clients that predate structured messages and is dropped once the\ncompatibility window moves past them.\n\n``grading_guidelines`` is the watched repository's own guidelines document\n(e.g. WATCHER.md), included verbatim as caller-side data."
       },
       "MonitoringRequest": {
         "properties": {
@@ -6787,7 +6789,7 @@
         },
         "type": "object",
         "title": "MonitoringRequest",
-        "description": "Request body for POST /v1/monitors/{role}/grade.\n\nNames *what* to monitor; the server owns *how*. The monitor in the path\nresolves server-side to its prompt, model, reasoning, and context policy,\nand the tool-call audit kind derives from the role.\n\nThree mutually exclusive payload modes:\n\n- ``input`` \u2014 structured monitoring of one gated tool call: the transcript\n  and the call as data, formatted into the monitor prompt server-side.\n  The mode clients are expected to use.\n- ``messages`` \u2014 pre-assembled message lists (see ``_GradePayloadBase``),\n  graded as sent.\n- ``trajectory_ids`` + ``session_id`` \u2014 DB-backed grading of stored\n  trajectories.\n\nOn the two ephemeral modes the caller may also send ``session_id`` +\n``tool_use_id`` to identify the gated call being graded (the role's run\nkind makes every ephemeral grade here a tool-call audit row)."
+        "description": "Request body for POST /v1/monitors/{role}/grade.\n\nNames *what* to monitor; the server owns *how*. The monitor in the path\nresolves server-side to its prompt, model, reasoning, and context policy,\nand the tool-call audit kind derives from the role.\n\nThree mutually exclusive payload modes:\n\n- ``input`` \u2014 structured monitoring of one gated tool call: the transcript\n  and the call as data, formatted into the monitor prompt server-side.\n  The mode clients are expected to use.\n- ``messages`` \u2014 pre-assembled message lists, graded as sent.\n- ``trajectory_ids`` + ``session_id`` \u2014 DB-backed grading of stored\n  trajectories.\n\nOn the two ephemeral modes the caller may also send ``session_id`` +\n``tool_use_id`` to identify the gated call being graded (the role's run\nkind makes every ephemeral grade here a tool-call audit row)."
       },
       "MonitorsResponse": {
         "properties": {
@@ -7199,7 +7201,7 @@
           "not_evaluated"
         ],
         "title": "PolicyDecision",
-        "description": "Legacy applied-decision vocabulary, kept for the dual-send transition.\n\n``AppliedDecision`` supersedes this enum: it adds ``deferred`` so the server can\ntell \"Watcher deliberately stood aside\" apart from \"never routed\". This enum\n(and the ``policy_decision`` column/wire field it types) survives only so\npre-``applied_decision`` clients and servers interoperate during rollout;\ndrop both together in the contract phase once the fleet floor has passed the\nrelease that introduced the posture columns."
+        "description": "Superseded applied-decision vocabulary.\n\n``AppliedDecision`` replaces this enum: it adds ``deferred`` so the server can\ntell \"Watcher deliberately stood aside\" apart from \"never routed\". This enum\nand the ``policy_decision`` field remain so clients and servers on either\nside of that change interoperate; new clients should read ``applied_decision``."
       },
       "PreToolUseHookRequest": {
         "properties": {
@@ -7623,7 +7625,7 @@
           "agent_platform": {
             "type": "string",
             "title": "Agent Platform",
-            "description": "Agent platform that produced this session. Known values: 'codex', 'claude_code', 'other'. Clients must tolerate unrecognized values."
+            "description": "Agent platform that produced this session. Known values: 'claude_code', 'codex', 'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and 'other'. A session keeps the value it was created with, so sessions recorded before a harness had its own value remain 'other'. Clients must tolerate unrecognized values."
           },
           "user_id": {
             "anyOf": [
@@ -8158,7 +8160,7 @@
         },
         "type": "object",
         "title": "SessionPermissionDecisions",
-        "description": "Per-session counts of notable Watcher permission decisions.\n\nEach field counts the tool-call decisions in the session that classify into\nthe corresponding notable category (see ``NotableDecisionCategory``). The\nclassification mirrors the Analyzer ``classifyToolDecision`` helper so the\nsession list and the transcript detail view agree on what counts as, e.g., a\nWatcher (automated) denial. Fields are zero when no such decision occurred."
+        "description": "Per-session counts of notable Watcher permission decisions.\n\nEach field counts the tool-call decisions in the session that classify into\nthe corresponding notable category (see ``NotableDecisionCategory``). The\nclassification matches the Analyzer's transcript view so the session list\nand the transcript detail agree on what counts as, e.g., a Watcher\n(automated) denial. Fields are zero when no such decision occurred."
       },
       "SessionSearchFilters": {
         "properties": {
@@ -8445,7 +8447,7 @@
           "agent_platform": {
             "type": "string",
             "title": "Agent Platform",
-            "description": "Agent platform that produced this session. Known values: 'codex', 'claude_code', 'other'. Clients must tolerate unrecognized values."
+            "description": "Agent platform that produced this session. Known values: 'claude_code', 'codex', 'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and 'other'. A session keeps the value it was created with, so sessions recorded before a harness had its own value remain 'other'. Clients must tolerate unrecognized values."
           },
           "trajectory_count": {
             "type": "integer",
@@ -10032,7 +10034,7 @@
           "instructions"
         ],
         "title": "UpdateMonitorCustomizationRequest",
-        "description": "Request body for PUT /v1/monitors/customization.\n\nAn empty ``instructions`` string clears the instructions. Content\nvalidation (length cap, reserved delimiter sequences) happens in the route\nvia ``validate_monitor_instructions``; the cap is mirrored here only as a\ncoarse schema bound so the OpenAPI spec documents it."
+        "description": "Request body for PUT /v1/monitors/customization.\n\nAn empty ``instructions`` string clears the instructions. The server\nvalidates content (length cap, reserved delimiter sequences); the schema\nbound here is a coarse mirror of that cap."
       },
       "UrlCitation": {
         "properties": {
@@ -10506,7 +10508,7 @@
           "git_sha"
         ],
         "title": "VersionResponse",
-        "description": "Response from GET /v1/version - the build stamped into this deployment.\n\nThe build stamp deliberately excludes a timestamp: it must be a pure\nfunction of the tagged commit so identical release inputs produce\nidentical artifacts (reproducible builds, stable Docker/CDK asset hashes)."
+        "description": "Response from GET /v1/version - the build stamped into this deployment.\n\nThe build stamp deliberately excludes a timestamp: it must be a pure\nfunction of the tagged commit so identical release inputs produce\nidentical, reproducible artifacts."
       }
     },
     "securitySchemes": {

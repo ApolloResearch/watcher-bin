@@ -26,12 +26,11 @@ class CodexPayload:
     """All payload fields the Codex JSONL parser reads, in one class with every field optional.
 
     Handlers check ``type`` to know which fields are set. The ``type``
-    annotation lists the values handled by ``_response_item_handlers`` in
-    ``product.lib.codex``; unknown values still parse (the ``| str`` branch)
-    and route to ``_handle_unknown_response_item`` with a logged warning.
+    annotation lists the values the parser handles; unknown values still parse
+    (the ``| str`` branch) and are skipped with a logged warning.
 
-    The validators below clean up a few looser shapes so handlers don't need
-    ``isinstance`` guards. Same approach as ``ClaudeCodeEntry`` in ``claude_code.py``.
+    Validators normalise a few looser shapes so every field has one type, as
+    ``ClaudeCodeEntry`` does for Claude Code transcripts.
 
         Attributes:
             type_ (CodexPayloadTypeType0 | None | str | Unset):

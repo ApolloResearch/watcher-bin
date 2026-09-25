@@ -79,7 +79,8 @@ def sync_detailed(
 ) -> Response[Any | ApertureHookAccepted | HTTPValidationError]:
     r"""Aperture Entire Request Hook
 
-     Accept a supported coding-agent request/response capture for asynchronous monitoring.
+     Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous
+    monitoring.
 
     Configure Aperture with events=[\"entire_request\"] and
     send=[\"request_body\", \"response_body\"]. The API key must have
@@ -99,8 +100,10 @@ def sync_detailed(
             enabled.
 
             Raw request and reconstructed response objects are forwarded to the selected
-            format parser. A null response represents an unsuccessful upstream
-            call and is skipped. Extra metadata and send types are ignored.
+            format parser. A null or absent response represents an upstream call that
+            produced no response body and is skipped: Aperture omits ``response_body``
+            when the client disconnects before the provider answers (capture status 0).
+            Extra metadata and send types are ignored.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -128,7 +131,8 @@ def sync(
 ) -> Any | ApertureHookAccepted | HTTPValidationError | None:
     r"""Aperture Entire Request Hook
 
-     Accept a supported coding-agent request/response capture for asynchronous monitoring.
+     Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous
+    monitoring.
 
     Configure Aperture with events=[\"entire_request\"] and
     send=[\"request_body\", \"response_body\"]. The API key must have
@@ -148,8 +152,10 @@ def sync(
             enabled.
 
             Raw request and reconstructed response objects are forwarded to the selected
-            format parser. A null response represents an unsuccessful upstream
-            call and is skipped. Extra metadata and send types are ignored.
+            format parser. A null or absent response represents an upstream call that
+            produced no response body and is skipped: Aperture omits ``response_body``
+            when the client disconnects before the provider answers (capture status 0).
+            Extra metadata and send types are ignored.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -172,7 +178,8 @@ async def asyncio_detailed(
 ) -> Response[Any | ApertureHookAccepted | HTTPValidationError]:
     r"""Aperture Entire Request Hook
 
-     Accept a supported coding-agent request/response capture for asynchronous monitoring.
+     Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous
+    monitoring.
 
     Configure Aperture with events=[\"entire_request\"] and
     send=[\"request_body\", \"response_body\"]. The API key must have
@@ -192,8 +199,10 @@ async def asyncio_detailed(
             enabled.
 
             Raw request and reconstructed response objects are forwarded to the selected
-            format parser. A null response represents an unsuccessful upstream
-            call and is skipped. Extra metadata and send types are ignored.
+            format parser. A null or absent response represents an upstream call that
+            produced no response body and is skipped: Aperture omits ``response_body``
+            when the client disconnects before the provider answers (capture status 0).
+            Extra metadata and send types are ignored.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -219,7 +228,8 @@ async def asyncio(
 ) -> Any | ApertureHookAccepted | HTTPValidationError | None:
     r"""Aperture Entire Request Hook
 
-     Accept a supported coding-agent request/response capture for asynchronous monitoring.
+     Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous
+    monitoring.
 
     Configure Aperture with events=[\"entire_request\"] and
     send=[\"request_body\", \"response_body\"]. The API key must have
@@ -239,8 +249,10 @@ async def asyncio(
             enabled.
 
             Raw request and reconstructed response objects are forwarded to the selected
-            format parser. A null response represents an unsuccessful upstream
-            call and is skipped. Extra metadata and send types are ignored.
+            format parser. A null or absent response represents an upstream call that
+            produced no response body and is skipped: Aperture omits ``response_body``
+            when the client disconnects before the provider answers (capture status 0).
+            Extra metadata and send types are ignored.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

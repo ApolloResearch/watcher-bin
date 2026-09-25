@@ -13,8 +13,8 @@ T = TypeVar("T", bound="DeviceAuthorizationResponse")
 class DeviceAuthorizationResponse:
     """Response from POST /v1/auth/device/authorize (RFC 8628 device authorization).
 
-    Mirrors WorkOS's device-authorization response verbatim: Xylon proxies the
-    call so headless clients need nothing but the server URL — the WorkOS
+    Mirrors WorkOS's device-authorization response verbatim: the Watcher API
+    proxies the call so headless clients need nothing but the server URL — the WorkOS
     client id stays server-side configuration. ``device_code`` is the secret
     the client polls with and must never be shown to the user; ``user_code``
     is the short code the user confirms in a browser on any other device.

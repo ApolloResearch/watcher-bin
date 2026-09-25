@@ -183,7 +183,6 @@ from watcher_sdk.errors import (
     WatcherTimeoutError,
     raise_for_status,
 )
-from watcher_sdk.settings_schema import merge_admin
 from watcher_sdk.settings_schema.command_rules_eval import (
     TERMINAL_THRESHOLD_LABEL,
     TERMINAL_THRESHOLD_PATTERN,
@@ -195,12 +194,17 @@ from watcher_sdk.settings_schema.command_rules_eval import (
     resolve_tool_thresholds_from_tree,
     terminal_rule_action,
 )
-from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import get_path_or_none, unwrap
+from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
+    RESERVED_TOOL_THRESHOLD_KEYS,
+    get_path_or_none,
+    unwrap,
+)
 from watcher_sdk.settings_schema.watcher_settings_yaml_layers import (
     builtin_settings_digest,
     load_builtin_settings,
     load_settings_yaml,
     merge_local_overrides,
+    merge_policy_settings,
 )
 
 _HookInputMapping = TypeVar("_HookInputMapping", bound=Mapping[str, Any])
@@ -238,6 +242,32 @@ _LOCAL_JUDGMENTS: dict[str, str] = {
     RuleAction.DENY: "deny",
     RuleAction.ESCALATE_HUMAN: "escalate",
 }
+
+# `external_ids` keys naming a harness whose own tool names the hook endpoint
+# translates onto Claude Code's before its deterministic checks (Codex's
+# `exec_command` is evaluated as `Bash`, for instance).
+_TRANSLATED_HARNESS_KEYS = frozenset({"claude_code", "codex"})
+
+
+@functools.cache
+def _builtin_tool_names() -> frozenset[str]:
+    """The tool names the packaged settings configure, which the hook evaluates as sent."""
+    return frozenset(load_builtin_settings("settings.yaml")["tool_thresholds"]) - RESERVED_TOOL_THRESHOLD_KEYS
+
+
+def _hook_may_translate(external_ids: Mapping[str, str | None] | None, tool_name: str) -> bool:
+    """Whether the hook endpoint may evaluate this call under a different tool name than the local stage would.
+
+    The endpoint translates harness-specific tool names (Codex's
+    `exec_command`, Claude Cowork's `mcp__workspace__bash`) for requests whose
+    `external_ids` name Claude Code or Codex. This client carries no
+    translation table, so for those requests any name the packaged settings do
+    not configure goes to the server rather than being judged locally under a
+    name the server would not use.
+    """
+    if not external_ids or _TRANSLATED_HARNESS_KEYS.isdisjoint(external_ids):
+        return False
+    return tool_name not in _builtin_tool_names()
 
 
 def _validate_local_hook_identity(
@@ -1242,9 +1272,8 @@ class AsyncWatcherClient:
         cannot see, so treating 404 as "builtins" could enforce the wrong rules
         locally. A 403 (an API key without `org:settings:read` — the hook
         endpoint itself needs no such permission) declines the same way rather
-        than failing the caller's hook. An unparseable document degrades to
-        builtins exactly as the server does, so evaluating it locally stays
-        consistent.
+        than failing the caller's hook. An unparseable document retains builtin
+        restrictions but disables command-rule approvals, matching the server.
 
         A result — tree or decline — serves for `_HOOK_BASELINE_TTL_SECONDS`;
         past the TTL a failed re-fetch falls back to the last-known-good result
@@ -1256,7 +1285,7 @@ class AsyncWatcherClient:
         cached = self._hook_baseline_cache
         if cached is not None and (now - cached[1]) < _HOOK_BASELINE_TTL_SECONDS:
             return cached[0]
-        overlay: dict[str, Any] = {}
+        overlay: dict[str, Any] | None = None
         version_token: str | None = None
         declined = False
         try:
@@ -1268,10 +1297,12 @@ class AsyncWatcherClient:
             parsed = load_settings_yaml(resolved.yaml)
             if isinstance(parsed, dict):
                 overlay = parsed
+            elif parsed is None:
+                overlay = {}
         except WatcherNotFoundError:
             declined = True  # unmanaged or MDM: only the server can tell which
         except (YAMLError, ValueError):
-            pass  # unparseable document: degrade to builtins, as the server does
+            pass  # unreadable policy keeps known restrictions but cannot approve by rule
         except WatcherAPIError as e:
             if e.status_code == 403:
                 declined = True  # this key cannot read settings; the endpoint can
@@ -1289,7 +1320,8 @@ class AsyncWatcherClient:
             None
             if declined or version_token is None
             else _HookBaseline(
-                settings=merge_admin(load_builtin_settings("settings.yaml"), overlay), version_token=version_token
+                settings=merge_policy_settings(load_builtin_settings("settings.yaml"), overlay),
+                version_token=version_token,
             )
         )
         self._hook_baseline_cache = (baseline, now)
@@ -1353,7 +1385,11 @@ class AsyncWatcherClient:
         than deciding — the same containment the endpoint applies.
 
         The local stage runs only with a readable administrator baseline;
-        locally returned decisions use that cached policy. When it cannot be read — the
+        locally returned decisions use that cached policy. It also steps aside
+        for a request whose `external_ids` name Claude Code or Codex when the
+        tool name is not one the packaged settings configure: the endpoint
+        evaluates such calls under a translated Claude Code tool name (Codex's
+        `exec_command` as `Bash`), which this client cannot reproduce. When it cannot be read — the
         org has no readable settings document (which also covers MDM-distributed
         settings the endpoint may still resolve differently), or the caller's
         key cannot read settings — every call goes to the server, which owns
@@ -1463,6 +1499,22 @@ class AsyncWatcherClient:
                 settings_overrides=settings_overrides,
             )
         tool_name = str(input["tool_name"])
+        if _hook_may_translate(external_ids, tool_name):
+            # The server evaluates this call under a translated name the local
+            # stage cannot reproduce, so it runs every stage there. It requires
+            # a transcript even for an ephemeral call, which the local stage did
+            # not, so an ephemeral call sent without one carries an empty one.
+            no_transcript = messages is None and input.get("messages") is None
+            return await self.pre_tool_use_hook(
+                input,
+                messages=[] if no_transcript and ephemeral is True else messages,
+                external_ids=external_ids,
+                tool_use_id=tool_use_id,
+                user=user,
+                ephemeral=ephemeral,
+                mode=mode,
+                settings_overrides=settings_overrides,
+            )
         tool_input = input.get("tool_input")
         thresholds = resolve_tool_thresholds_from_tree(tree, tool_name)
         terminal = terminal_rule_action(thresholds.flag_threshold, thresholds.deny_threshold)
@@ -1734,7 +1786,8 @@ class AsyncWatcherClient:
             external_ids: Filter by external ID mappings. Keys are namespace strings,
                 values are lists of IDs to match within that namespace. Example:
                 {"anthropic-claude-code": ["cc-123", "cc-456"], "tailscale-aperture": ["ancc_789"]}
-            agent_platforms: Filter by agent platforms. Known values: 'codex', 'claude_code',
+            agent_platforms: Filter by agent platforms. Known values: 'claude_code', 'codex',
+                'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and
                 'other'; any string is accepted and unknown values match no sessions.
             grading_statuses: Filter by derived grading status.
             categories: Filter by score category names.
@@ -2238,7 +2291,8 @@ class AsyncWatcherClient:
             end_date: Include only sessions that started on or before this datetime.
             external_ids: Filter by external ID mappings. Keys are namespace strings,
                 values are lists of IDs to match within that namespace.
-            agent_platforms: Filter by agent platforms. Known values: 'codex', 'claude_code',
+            agent_platforms: Filter by agent platforms. Known values: 'claude_code', 'codex',
+                'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and
                 'other'; any string is accepted and unknown values match no sessions.
             grading_statuses: Filter by derived grading status.
             categories: Filter by score category names.

@@ -17,9 +17,9 @@ class SessionPermissionDecisions:
 
     Each field counts the tool-call decisions in the session that classify into
     the corresponding notable category (see ``NotableDecisionCategory``). The
-    classification mirrors the Analyzer ``classifyToolDecision`` helper so the
-    session list and the transcript detail view agree on what counts as, e.g., a
-    Watcher (automated) denial. Fields are zero when no such decision occurred.
+    classification matches the Analyzer's transcript view so the session list
+    and the transcript detail agree on what counts as, e.g., a Watcher
+    (automated) denial. Fields are zero when no such decision occurred.
 
         Attributes:
             human_denied (int | Unset):  Default: 0.

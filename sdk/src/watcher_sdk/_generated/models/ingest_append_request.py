@@ -22,9 +22,9 @@ class IngestAppendRequest:
     The session and the anchor (the trajectory_id of the last message the
     client successfully uploaded) are named in the path; the server continues
     the chain after the anchor, so a session ingested through any mix of full
-    and append uploads stores rows identical to full-only ingestion. Aperture
-    logs are whole-file proxy captures with no client-side cursor, so they
-    have no append form.
+    and append uploads stores rows identical to full-only ingestion. Tailscale
+    Aperture logs are whole-file proxy captures with no client-side cursor, so
+    they have no append form.
 
         Attributes:
             source (str):

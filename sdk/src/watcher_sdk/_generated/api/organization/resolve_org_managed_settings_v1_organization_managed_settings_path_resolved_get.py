@@ -72,8 +72,7 @@ def sync_detailed(
     clients treat it as \"no managed settings\" and keep their last-known-good
     file. That expected 404 carries a structured detail
     (``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell
-    it apart from a routing-layer 404 (e.g. an older server without this
-    route), whose body is a plain string.
+    it apart from a routing-layer 404, whose body is a plain string.
 
     Args:
         path (str):
@@ -114,8 +113,7 @@ def sync(
     clients treat it as \"no managed settings\" and keep their last-known-good
     file. That expected 404 carries a structured detail
     (``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell
-    it apart from a routing-layer 404 (e.g. an older server without this
-    route), whose body is a plain string.
+    it apart from a routing-layer 404, whose body is a plain string.
 
     Args:
         path (str):
@@ -151,8 +149,7 @@ async def asyncio_detailed(
     clients treat it as \"no managed settings\" and keep their last-known-good
     file. That expected 404 carries a structured detail
     (``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell
-    it apart from a routing-layer 404 (e.g. an older server without this
-    route), whose body is a plain string.
+    it apart from a routing-layer 404, whose body is a plain string.
 
     Args:
         path (str):
@@ -191,8 +188,7 @@ async def asyncio(
     clients treat it as \"no managed settings\" and keep their last-known-good
     file. That expected 404 carries a structured detail
     (``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell
-    it apart from a routing-layer 404 (e.g. an older server without this
-    route), whose body is a plain string.
+    it apart from a routing-layer 404, whose body is a plain string.
 
     Args:
         path (str):

@@ -16,8 +16,8 @@ class MonitorContextPolicy:
     Server-owned counterparts of the ``policy_monitors`` client settings: a
     client grading by role applies these values instead of its local settings,
     so changing what the monitors see becomes a registry edit rather than a
-    client release. Field semantics match the settings schema
-    (``watcher_settings_yaml_schema.PolicyMonitorSettings``).
+    client release. Field semantics match the ``policy_monitors`` section of
+    the client settings schema.
 
         Attributes:
             context_user_messages (int | str): A positive count of recent user messages, or 'all' for the whole transcript.

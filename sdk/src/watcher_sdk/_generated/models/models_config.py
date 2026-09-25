@@ -17,10 +17,9 @@ T = TypeVar("T", bound="ModelsConfig")
 class ModelsConfig:
     """Response shape of ``GET /v1/graders/models``, built from the model catalog.
 
-    ``suggested`` are registry entries carrying frontend surface tags;
-    ``enabled`` are the remaining allowed models (accepted by the free-text
-    input, not advertised in dropdowns). The class name predates the registry
-    consolidation and is kept for generated-client schema stability.
+    ``suggested`` are catalog entries advertised in the UI; ``enabled`` are the
+    remaining allowed models (accepted by the free-text input, not advertised
+    in dropdowns).
 
         Attributes:
             suggested (list[SuggestedModel]):

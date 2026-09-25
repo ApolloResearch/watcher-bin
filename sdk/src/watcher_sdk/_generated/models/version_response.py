@@ -15,7 +15,7 @@ class VersionResponse:
 
     The build stamp deliberately excludes a timestamp: it must be a pure
     function of the tagged commit so identical release inputs produce
-    identical artifacts (reproducible builds, stable Docker/CDK asset hashes).
+    identical, reproducible artifacts.
 
         Attributes:
             version (str):

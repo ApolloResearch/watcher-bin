@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "watcher-sdk"
-version = "0.36.0"
+version = "0.37.0"
 description = "Python SDK for the Watcher API (Watcher monitoring platform)"
 readme = "README.md"
 license = "MIT"

@@ -38,6 +38,7 @@ from watcher_sdk.settings_schema.watcher_settings_yaml_schema import (
 )
 from watcher_sdk.settings_schema.watcher_settings_yaml_validation import (
     add_settings_load_issue,
+    command_rule_overlay_error,
     repair_settings_tree,
     sanitize_overlay,
     validate_settings_tree,
@@ -127,8 +128,8 @@ def _reject_unprojectable_override_rules(data: dict[str, Any], merged: dict[str,
         if projected_rule.id not in touched:
             continue
         try:
-            # The evaluator's engine (see command_rules_eval._pattern_matches),
-            # which skips uncompilable patterns at match time.
+            # The evaluator's engine and flags (see command_rules_eval._valid_rules),
+            # where an uncompilable active pattern suppresses every allow rule.
             regex_module.compile(projected_rule.pattern, regex_module.IGNORECASE)
         except regex_module.error as e:
             raise SettingsOverridesError(
@@ -160,20 +161,48 @@ def _reject_unmergeable_override_rules(data: dict[str, Any]) -> None:
     way leaves the caller enforcing under a policy it merely believes is in
     force (the same reasoning as the locked-path rejection).
     """
-    rules = get_path_or_none(data, ("command_rules", "rules"))
-    rules = unwrap(rules)
-    if rules is None:
-        return
-    if not isinstance(rules, list):
-        raise SettingsOverridesError("settings_overrides command_rules.rules must be a list")
-    for position, rule in enumerate(rules):
-        # Raw-shape check, deliberately without unwrap: merge_rule_lists keys on
-        # the raw value, so an id written in settings-value form ({value: x})
-        # would pass an unwrapped check here and still be skipped by the merge.
-        if not isinstance(rule, dict) or not isinstance(rule.get("id"), str):
-            raise SettingsOverridesError(
-                f"settings_overrides command_rules.rules[{position}] must be a mapping with a string id"
-            )
+    error = command_rule_overlay_error(data)
+    if error is not None:
+        raise SettingsOverridesError(f"settings_overrides {error}")
+
+
+def merge_policy_settings(base: dict[str, Any], overlay: dict[str, Any] | None) -> dict[str, Any]:
+    """Merge a stored policy while retaining malformed rules for conservative evaluation.
+
+    ``base`` is the complete packaged settings tree. ``None`` means a stored
+    document could not be read; an empty mapping is a valid empty overlay.
+    The ordinary id-based merge drops malformed identities. Keeping those
+    entries lets rule evaluation suppress approvals while preserving known
+    restrictions, including after a caller reprojects the merged settings.
+    """
+    source = unwrap(overlay)
+    if not isinstance(source, dict):
+        source = {"command_rules": {"rules": None}}
+    elif "command_rules" in source:
+        # Only the rule group needs its `{value: ...}` wrappers removed. Removing
+        # them everywhere would also drop `permission: locked` from wrapped lists
+        # and mappings such as `aliases`, letting a per-request override replace
+        # a value the admin locked.
+        source = {**source, "command_rules": unwrap_composite_wrappers(source["command_rules"])}
+    merged = merge_admin(base, source)
+    if "command_rules" not in source:
+        return merged
+    source_group = source["command_rules"]
+    if isinstance(source_group, dict) and "rules" not in source_group and "value" not in source_group:
+        return merged
+    source_rules = source_group["rules"] if isinstance(source_group, dict) and "rules" in source_group else source_group
+    if isinstance(source_group, dict) and "rules" in source_group and isinstance(source_rules, list):
+        dropped = [rule for rule in source_rules if not isinstance(rule, dict) or not isinstance(rule.get("id"), str)]
+        if not dropped:
+            return merged
+        rules = [*merged["command_rules"]["rules"], *dropped]
+    else:
+        rules = [*base["command_rules"]["rules"], {"rules": source_rules}]
+    merged_group = merged["command_rules"]
+    if not isinstance(merged_group, dict):
+        merged_group = base["command_rules"]
+    merged["command_rules"] = {**merged_group, "rules": rules}
+    return merged
 
 
 def merge_local_overrides(base: dict[str, Any], overrides: str | dict[str, Any]) -> dict[str, Any]:

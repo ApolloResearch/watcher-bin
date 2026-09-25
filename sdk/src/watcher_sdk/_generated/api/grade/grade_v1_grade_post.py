@@ -74,9 +74,8 @@ def sync_detailed(
      Grade trajectories with explicitly named graders.
 
     DB-backed grading is gated by session ownership: callers may only grade
-    sessions they own, unless they hold ``sessions:write:any`` (or are an
-    admin / internal-token / local-mode caller).
-    Flagged-grade Slack notifications fire post-response via BackgroundTasks
+    sessions they own, unless they hold ``sessions:write:any`` or administrator
+    authority. Flagged-grade Slack notifications are sent after the response,
     only for DB-backed trajectory grading. Tool-call grading
     (``tool_call_run_kind``) persists the grade but does NOT notify here — its
     alert fires later, at decision ingest (``POST
@@ -86,8 +85,10 @@ def sync_detailed(
     Args:
         body (GradeRequest): Request body for POST /v1/grade.
 
-            Grades with graders the caller addresses explicitly by UUID (see
-            ``_GradePayloadBase`` for the payload modes). ``grader_ids`` is required:
+            Grades with graders the caller addresses explicitly by UUID. Two payload
+            modes: ``messages`` (pre-assembled message lists, graded as sent) or
+            ``trajectory_ids`` plus ``session_id`` (stored trajectories). ``grader_ids``
+            is required:
             this endpoint never chooses a grader for the caller. To run the
             server-managed monitors without holding grader UUIDs, use
             POST /v1/monitors/{role}/grade instead.
@@ -127,9 +128,8 @@ def sync(
      Grade trajectories with explicitly named graders.
 
     DB-backed grading is gated by session ownership: callers may only grade
-    sessions they own, unless they hold ``sessions:write:any`` (or are an
-    admin / internal-token / local-mode caller).
-    Flagged-grade Slack notifications fire post-response via BackgroundTasks
+    sessions they own, unless they hold ``sessions:write:any`` or administrator
+    authority. Flagged-grade Slack notifications are sent after the response,
     only for DB-backed trajectory grading. Tool-call grading
     (``tool_call_run_kind``) persists the grade but does NOT notify here — its
     alert fires later, at decision ingest (``POST
@@ -139,8 +139,10 @@ def sync(
     Args:
         body (GradeRequest): Request body for POST /v1/grade.
 
-            Grades with graders the caller addresses explicitly by UUID (see
-            ``_GradePayloadBase`` for the payload modes). ``grader_ids`` is required:
+            Grades with graders the caller addresses explicitly by UUID. Two payload
+            modes: ``messages`` (pre-assembled message lists, graded as sent) or
+            ``trajectory_ids`` plus ``session_id`` (stored trajectories). ``grader_ids``
+            is required:
             this endpoint never chooses a grader for the caller. To run the
             server-managed monitors without holding grader UUIDs, use
             POST /v1/monitors/{role}/grade instead.
@@ -175,9 +177,8 @@ async def asyncio_detailed(
      Grade trajectories with explicitly named graders.
 
     DB-backed grading is gated by session ownership: callers may only grade
-    sessions they own, unless they hold ``sessions:write:any`` (or are an
-    admin / internal-token / local-mode caller).
-    Flagged-grade Slack notifications fire post-response via BackgroundTasks
+    sessions they own, unless they hold ``sessions:write:any`` or administrator
+    authority. Flagged-grade Slack notifications are sent after the response,
     only for DB-backed trajectory grading. Tool-call grading
     (``tool_call_run_kind``) persists the grade but does NOT notify here — its
     alert fires later, at decision ingest (``POST
@@ -187,8 +188,10 @@ async def asyncio_detailed(
     Args:
         body (GradeRequest): Request body for POST /v1/grade.
 
-            Grades with graders the caller addresses explicitly by UUID (see
-            ``_GradePayloadBase`` for the payload modes). ``grader_ids`` is required:
+            Grades with graders the caller addresses explicitly by UUID. Two payload
+            modes: ``messages`` (pre-assembled message lists, graded as sent) or
+            ``trajectory_ids`` plus ``session_id`` (stored trajectories). ``grader_ids``
+            is required:
             this endpoint never chooses a grader for the caller. To run the
             server-managed monitors without holding grader UUIDs, use
             POST /v1/monitors/{role}/grade instead.
@@ -226,9 +229,8 @@ async def asyncio(
      Grade trajectories with explicitly named graders.
 
     DB-backed grading is gated by session ownership: callers may only grade
-    sessions they own, unless they hold ``sessions:write:any`` (or are an
-    admin / internal-token / local-mode caller).
-    Flagged-grade Slack notifications fire post-response via BackgroundTasks
+    sessions they own, unless they hold ``sessions:write:any`` or administrator
+    authority. Flagged-grade Slack notifications are sent after the response,
     only for DB-backed trajectory grading. Tool-call grading
     (``tool_call_run_kind``) persists the grade but does NOT notify here — its
     alert fires later, at decision ingest (``POST
@@ -238,8 +240,10 @@ async def asyncio(
     Args:
         body (GradeRequest): Request body for POST /v1/grade.
 
-            Grades with graders the caller addresses explicitly by UUID (see
-            ``_GradePayloadBase`` for the payload modes). ``grader_ids`` is required:
+            Grades with graders the caller addresses explicitly by UUID. Two payload
+            modes: ``messages`` (pre-assembled message lists, graded as sent) or
+            ``trajectory_ids`` plus ``session_id`` (stored trajectories). ``grader_ids``
+            is required:
             this endpoint never chooses a grader for the caller. To run the
             server-managed monitors without holding grader UUIDs, use
             POST /v1/monitors/{role}/grade instead.

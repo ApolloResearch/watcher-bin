@@ -23,8 +23,10 @@ T = TypeVar("T", bound="GradeRequest")
 class GradeRequest:
     """Request body for POST /v1/grade.
 
-    Grades with graders the caller addresses explicitly by UUID (see
-    ``_GradePayloadBase`` for the payload modes). ``grader_ids`` is required:
+    Grades with graders the caller addresses explicitly by UUID. Two payload
+    modes: ``messages`` (pre-assembled message lists, graded as sent) or
+    ``trajectory_ids`` plus ``session_id`` (stored trajectories). ``grader_ids``
+    is required:
     this endpoint never chooses a grader for the caller. To run the
     server-managed monitors without holding grader UUIDs, use
     POST /v1/monitors/{role}/grade instead.

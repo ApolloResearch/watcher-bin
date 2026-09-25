@@ -71,8 +71,8 @@ def sync_detailed(
 
     Unknown and ungranted permission slugs have identical semantics: both are
     returned in ``missing``. The endpoint evaluates effective authority, so
-    trusted internal identities and administrators satisfy the same checks as
-    they do on the protected API operation itself.
+    administrators and server-side service identities satisfy the same checks
+    as they do on the protected API operation itself.
 
     Args:
         body (PermissionCheckRequest): Permissions the authenticated caller wants Watcher to
@@ -108,8 +108,8 @@ def sync(
 
     Unknown and ungranted permission slugs have identical semantics: both are
     returned in ``missing``. The endpoint evaluates effective authority, so
-    trusted internal identities and administrators satisfy the same checks as
-    they do on the protected API operation itself.
+    administrators and server-side service identities satisfy the same checks
+    as they do on the protected API operation itself.
 
     Args:
         body (PermissionCheckRequest): Permissions the authenticated caller wants Watcher to
@@ -140,8 +140,8 @@ async def asyncio_detailed(
 
     Unknown and ungranted permission slugs have identical semantics: both are
     returned in ``missing``. The endpoint evaluates effective authority, so
-    trusted internal identities and administrators satisfy the same checks as
-    they do on the protected API operation itself.
+    administrators and server-side service identities satisfy the same checks
+    as they do on the protected API operation itself.
 
     Args:
         body (PermissionCheckRequest): Permissions the authenticated caller wants Watcher to
@@ -175,8 +175,8 @@ async def asyncio(
 
     Unknown and ungranted permission slugs have identical semantics: both are
     returned in ``missing``. The endpoint evaluates effective authority, so
-    trusted internal identities and administrators satisfy the same checks as
-    they do on the protected API operation itself.
+    administrators and server-side service identities satisfy the same checks
+    as they do on the protected API operation itself.
 
     Args:
         body (PermissionCheckRequest): Permissions the authenticated caller wants Watcher to

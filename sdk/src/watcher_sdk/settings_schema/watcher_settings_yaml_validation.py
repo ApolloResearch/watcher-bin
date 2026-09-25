@@ -16,6 +16,7 @@ from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
     get_path_or_none,
     set_path,
     unwrap,
+    unwrap_composite_wrappers,
 )
 from watcher_sdk.settings_schema.watcher_settings_yaml_schema import SettingsLoadIssue, SettingsSource, WatcherSettings
 
@@ -35,8 +36,32 @@ def sanitize_overlay(
 ) -> dict[str, Any]:
     if not overlay:
         return {}
+    rule_error = command_rule_overlay_error(overlay)
+    first_issue = len(issues)
     sanitized = _sanitize_overlay_value(base, overlay, source, source_path, issues, merge, ())
+    if rule_error is not None and not any(
+        issue.setting_path is not None and issue.setting_path.startswith("command_rules")
+        for issue in issues[first_issue:]
+    ):
+        add_settings_load_issue(issues, source, source_path, ("command_rules", "rules"), rule_error)
     return sanitized if isinstance(sanitized, dict) else {}
+
+
+def command_rule_overlay_error(data: dict[str, Any]) -> str | None:
+    """Describe rule entries that would disappear during an id-keyed settings merge."""
+    rules = get_path_or_none(unwrap_composite_wrappers(data), ("command_rules", "rules"))
+    rules = unwrap(rules)
+    if rules is None:
+        return None
+    if not isinstance(rules, list):
+        return "command_rules.rules must be a list"
+    for position, rule in enumerate(rules):
+        # Raw-shape check, deliberately without unwrap: merge_rule_lists keys on
+        # the raw value, so an id written in settings-value form ({value: x})
+        # would pass an unwrapped check here and still be skipped by the merge.
+        if not isinstance(rule, dict) or not isinstance(rule.get("id"), str):
+            return f"command_rules.rules[{position}] must be a mapping with a string id"
+    return None
 
 
 def _sanitize_overlay_value(
@@ -99,7 +124,7 @@ def _sanitize_setting_value(
         if without_permission and candidate_validation_error_at_path(base, without_permission, merge, path) is None:
             add_settings_load_issue(issues, source, source_path, (*path, "permission"), validation_error)
             return without_permission
-    if "value" not in value:
+    if "value" not in value or "value" in sanitized:
         add_settings_load_issue(issues, source, source_path, path, validation_error)
     return NO_DIFF
 

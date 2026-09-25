@@ -17,8 +17,8 @@ class CodexContentItem:
     """One item inside a ``content`` or ``output`` array.
 
     The ``type`` annotation lists the values the parser handles. Unknown
-    values still parse (they fall through the ``| str`` branch); handlers
-    in ``product.lib.codex`` ignore items whose ``type`` they don't know.
+    values still parse (they fall through the ``| str`` branch) and are
+    ignored.
 
         Attributes:
             type_ (CodexContentItemTypeType0 | None | str | Unset):

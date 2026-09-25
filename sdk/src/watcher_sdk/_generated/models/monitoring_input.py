@@ -29,7 +29,7 @@ class MonitoringInput:
     release.
 
     The conversation context is ``messages`` — the transcript as structured
-    :class:`ChatMessage` objects. The server applies the monitor's served
+    ``ChatMessage`` objects. The server applies the monitor's served
     context policy (user-message window, tool outputs / agent reasoning
     withheld) and renders the prompt, so a caller sends its conversation
     without reimplementing the calibrated renderer. When both forms are sent

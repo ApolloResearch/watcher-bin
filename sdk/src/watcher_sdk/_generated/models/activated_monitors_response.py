@@ -23,9 +23,9 @@ class ActivatedMonitorsResponse:
     """Response for GET /v1/organization/managed-settings/{path}/monitors.
 
     A read-only projection of which custom or managed monitors the current
-    document activates. Consumed by the Monitors page rollout badges and the
-    draft-assist and red-team prompts on the Managed Settings page. Managed
-    identities describe current-client routing, not observed fleet activity.
+    document activates. Consumed by the Analyzer's Monitors and Managed
+    Settings pages. Managed identities describe current-client routing, not
+    observed fleet activity.
 
     `monitors` is populated only when the org distributes via Watcher: under MDM
     the stored document is not what runs on machines, so rollout cannot be

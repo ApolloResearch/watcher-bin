@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.aperture_hook_metadata import ApertureHookMetadata
     from ..models.aperture_hook_request_request_body import (
@@ -24,25 +26,30 @@ class ApertureHookRequest:
     """The fixed webhook envelope with both required send types enabled.
 
     Raw request and reconstructed response objects are forwarded to the selected
-    format parser. A null response represents an unsuccessful upstream
-    call and is skipped. Extra metadata and send types are ignored.
+    format parser. A null or absent response represents an upstream call that
+    produced no response body and is skipped: Aperture omits ``response_body``
+    when the client disconnects before the provider answers (capture status 0).
+    Extra metadata and send types are ignored.
 
         Attributes:
-            metadata (ApertureHookMetadata): Aperture-owned identity fields; unknown additions are accepted.
+            metadata (ApertureHookMetadata): Tailscale Aperture-owned identity fields; unknown additions are accepted.
 
-                ``request_id`` identifies a capture, never a conversation. The provider
-                key and URL describe routing and do not identify the developer's harness.
+                ``request_id`` identifies a capture, never a conversation. ``session_id``
+                is Aperture's own session id: one it took from the client (prefix
+                ``xsid_`` or ``pisn_``) is recorded as the conversation id of a capture
+                without a native one, and any other value is ignored. The provider key
+                and URL describe routing and do not identify the developer's harness.
                 ``user_agent`` supplies application evidence to the format parser. The
                 parser applies the supported harness's marker and system-identity rules;
                 selecting a wire format alone never admits an application. These fields
                 classify captured traffic; they do not authenticate the caller.
             request_body (ApertureHookRequestRequestBody):
-            response_body (ApertureHookRequestResponseBodyType0 | None):
+            response_body (ApertureHookRequestResponseBodyType0 | None | Unset):
     """
 
     metadata: ApertureHookMetadata
     request_body: ApertureHookRequestRequestBody
-    response_body: ApertureHookRequestResponseBodyType0 | None
+    response_body: ApertureHookRequestResponseBodyType0 | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -54,8 +61,10 @@ class ApertureHookRequest:
 
         request_body = self.request_body.to_dict()
 
-        response_body: dict[str, Any] | None
-        if isinstance(self.response_body, ApertureHookRequestResponseBodyType0):
+        response_body: dict[str, Any] | None | Unset
+        if isinstance(self.response_body, Unset):
+            response_body = UNSET
+        elif isinstance(self.response_body, ApertureHookRequestResponseBodyType0):
             response_body = self.response_body.to_dict()
         else:
             response_body = self.response_body
@@ -66,9 +75,10 @@ class ApertureHookRequest:
             {
                 "metadata": metadata,
                 "request_body": request_body,
-                "response_body": response_body,
             }
         )
+        if response_body is not UNSET:
+            field_dict["response_body"] = response_body
 
         return field_dict
 
@@ -89,8 +99,10 @@ class ApertureHookRequest:
 
         def _parse_response_body(
             data: object,
-        ) -> ApertureHookRequestResponseBodyType0 | None:
+        ) -> ApertureHookRequestResponseBodyType0 | None | Unset:
             if data is None:
+                return data
+            if isinstance(data, Unset):
                 return data
             try:
                 if not isinstance(data, dict):
@@ -102,9 +114,9 @@ class ApertureHookRequest:
                 return response_body_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(ApertureHookRequestResponseBodyType0 | None, data)
+            return cast(ApertureHookRequestResponseBodyType0 | None | Unset, data)
 
-        response_body = _parse_response_body(d.pop("response_body"))
+        response_body = _parse_response_body(d.pop("response_body", UNSET))
 
         aperture_hook_request = cls(
             metadata=metadata,

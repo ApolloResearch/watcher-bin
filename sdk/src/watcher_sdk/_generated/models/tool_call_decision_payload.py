@@ -40,14 +40,12 @@ class ToolCallDecisionPayload:
             tool_use_id (str):
             tool_name (str):
             raw_tool_call (ToolCallDecisionPayloadRawToolCall):
-            policy_decision (PolicyDecision): Legacy applied-decision vocabulary, kept for the dual-send transition.
+            policy_decision (PolicyDecision): Superseded applied-decision vocabulary.
 
-                ``AppliedDecision`` supersedes this enum: it adds ``deferred`` so the server can
+                ``AppliedDecision`` replaces this enum: it adds ``deferred`` so the server can
                 tell "Watcher deliberately stood aside" apart from "never routed". This enum
-                (and the ``policy_decision`` column/wire field it types) survives only so
-                pre-``applied_decision`` clients and servers interoperate during rollout;
-                drop both together in the contract phase once the fleet floor has passed the
-                release that introduced the posture columns.
+                and the ``policy_decision`` field remain so clients and servers on either
+                side of that change interoperate; new clients should read ``applied_decision``.
             tool_status (ToolStatus): Final execution status of the tool call.
             decision_source (DecisionSource): Subsystem that produced the policy decision.
             latency_ms (float | None | Unset):

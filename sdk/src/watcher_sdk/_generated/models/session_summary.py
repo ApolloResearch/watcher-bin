@@ -30,8 +30,10 @@ class SessionSummary:
 
     Attributes:
         session_id (str):
-        agent_platform (str): Agent platform that produced this session. Known values: 'codex', 'claude_code', 'other'.
-            Clients must tolerate unrecognized values.
+        agent_platform (str): Agent platform that produced this session. Known values: 'claude_code', 'codex',
+            'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and 'other'. A session keeps the value
+            it was created with, so sessions recorded before a harness had its own value remain 'other'. Clients must
+            tolerate unrecognized values.
         trajectory_count (int):
         message_count (int):
         started_at (datetime.datetime):

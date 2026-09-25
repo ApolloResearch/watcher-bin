@@ -30,13 +30,14 @@ import fnmatch
 import json
 import posixpath
 import re
+import shlex
 import time
 from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any, Protocol
 
 import regex as regex_module
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, ValidationError
 
 from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
     UNKNOWN_TOOL_THRESHOLD_KEY,
@@ -54,6 +55,15 @@ _LAX_INT: TypeAdapter[int] = TypeAdapter(int)
 # (always flag / always deny), 11 means "never".
 THRESHOLD_ALWAYS = 0
 THRESHOLD_DISABLED = 11
+
+RULE_MATCH_TIMEOUT_SECONDS = 0.25
+RULE_EVALUATION_BUDGET_SECONDS = 2.0
+MAX_RULE_PATTERN_LENGTH = 16_384
+MAX_COMMAND_LENGTH = 131_072
+
+
+class RuleEvaluationLimitError(Exception):
+    """The input exceeds the rule evaluator's supported resource limits."""
 
 
 class RuleAction(StrEnum):
@@ -110,6 +120,15 @@ class EvaluableCommandRule(Protocol):
     def label(self) -> str: ...
 
 
+class _CompiledPattern(Protocol):
+    """The parts of a compiled ``regex`` pattern the evaluator uses; the package ships no type stubs."""
+
+    @property
+    def pattern(self) -> str: ...
+    def search(self, string: str, *, timeout: float | None = None) -> object | None: ...
+    def match(self, string: str, *, timeout: float | None = None) -> object | None: ...
+
+
 class CommandRuleMatch(BaseModel):
     """Effective command-rule match with enough provenance to store on the decision."""
 
@@ -144,6 +163,73 @@ class ToolThresholdPair(BaseModel):
 
 
 type ToolInput = str | dict[str, Any] | list[Any] | None
+
+
+_SHELL_TOOL_NAMES = frozenset(
+    {"bash", "sh", "zsh", "shell", "shell_command", "exec_command", "powershell", "pwsh", "cmd"}
+)
+_SHELL_CONTROL_WORDS = frozenset(
+    {
+        "!",
+        ".",
+        "if",
+        "then",
+        "elif",
+        "else",
+        "fi",
+        "for",
+        "while",
+        "until",
+        "do",
+        "done",
+        "case",
+        "esac",
+        "select",
+        "in",
+        "function",
+        "time",
+        "repeat",
+        "foreach",
+        "end",
+        "coproc",
+        "builtin",
+        "command",
+        "exec",
+        "eval",
+        "source",
+        "noglob",
+        "nocorrect",
+        "export",
+        "declare",
+        "typeset",
+        "local",
+        "readonly",
+        "set",
+        "unset",
+        "alias",
+        "unalias",
+        "hash",
+        "enable",
+        "trap",
+        "setopt",
+        "unsetopt",
+        "emulate",
+    }
+)
+
+
+def is_shell_input(tool_name: str, tool_input: ToolInput) -> bool:
+    """Recognize shell input without granting aliases another tool's allow rules."""
+    if tool_name in {"Edit", "Write", "apply_patch"}:
+        return False
+    if tool_name.casefold() in _SHELL_TOOL_NAMES:
+        return True
+    if isinstance(tool_input, str):
+        try:
+            tool_input = json.loads(tool_input)
+        except ValueError:
+            return False
+    return isinstance(tool_input, dict) and ("command" in tool_input or "cmd" in tool_input)
 
 
 def _stringify_tool_input(value: Any) -> str | None:
@@ -280,16 +366,102 @@ _SAFE_RELATIVE_PATH = re.compile(r"(?:\./)?[\w.][\w./-]*")
 
 
 def cd_is_unsafe(segment: str) -> bool:
-    """Whether a Bash segment is a ``cd`` that may leave the project tree."""
+    """Whether a Bash segment changes to an unknown or out-of-project directory.
+
+    Directory stacks and wrapped directory changes need shell state the rule
+    evaluator does not have. Only a plain relative ``cd`` can use allow rules.
+    """
+    try:
+        words = shlex.split(segment)
+    except ValueError:
+        return True
+    if not words:
+        return False
+    if words[0] in {"pushd", "popd"}:
+        return True
+    if any(word in {"cd", "pushd", "popd"} for word in words[1:]) and (
+        words[0] in {"builtin", "command", "env", "!", "time", "noglob", "nocorrect"}
+        or "=" in words[0]
+        or ">" in words[0]
+    ):
+        return True
     match = _CD_SEGMENT.match(segment)
     if match is None:
-        return False  # not a `cd` segment
+        return words[0] == "cd"  # quoted command names are not plain `cd` segments
     arg = (match.group("arg") or "").strip()
     if not arg:
         return True  # bare `cd` → $HOME, outside the project
     if _SAFE_RELATIVE_PATH.fullmatch(arg) is None:
         return True  # absolute, ~, -, $VAR, quoted, multi-token, …
     return ".." in arg.split("/")  # no parent-dir escape
+
+
+def shell_command_needs_review(command: str) -> bool:
+    """Reject automatic approval when shell expansion can change the matched text.
+
+    This is a conservative syntax check, not a shell interpreter. Literal quoted
+    arguments are supported; expansions, grouped commands and escaped word
+    spellings need grading. Deny and human rules still apply.
+    """
+    quote: str | None = None
+    word_prefix = ""
+    index = 0
+    while index < len(command):
+        char = command[index]
+        index += 1
+        if quote == "'":
+            if char == "'":
+                quote = None
+                if index < len(command) and command[index] not in " \t\n;|&<>":
+                    return True
+            continue
+        if char == "\\":
+            if quote == '"' and index < len(command) and command[index] not in '$`"\\\n':
+                continue
+            if index == len(command) or command[index] not in " \t;&|\"'()<>\\$`":
+                return True
+            index += 1
+            if quote is None:
+                word_prefix += "escaped"
+            continue
+        if char in "$`":
+            return True
+        if quote == '"':
+            if char == '"':
+                quote = None
+                if index < len(command) and command[index] not in " \t\n;|&<>":
+                    return True
+            continue
+        if char in "'\"":
+            # A literal prefix glued to a quote can hide part of a flag or value
+            # from an allow rule (`git branch -v"D"` runs `-vD`). A complete
+            # `NAME=` or a lone `+` (as in `date +"%F"`) shows as much as the
+            # fully quoted spelling does, so those are accepted.
+            if (
+                word_prefix
+                and word_prefix != "+"
+                and re.fullmatch(r"(?:[a-zA-Z_][a-zA-Z_0-9]*|--?[a-zA-Z][a-zA-Z0-9-]*)=", word_prefix) is None
+            ):
+                return True
+            quote = char
+        elif char in "(){}<#" or (char.isspace() and char not in " \t\n") or ord(char) < 9:
+            return True
+        elif char in " \t\n;|&>":
+            word_prefix = ""
+        else:
+            word_prefix += char
+    if quote is not None:
+        return True
+    for segment in split_compound_command(command):
+        try:
+            words = shlex.split(segment)
+        except ValueError:
+            return True
+        if words and (
+            words[0] in _SHELL_CONTROL_WORDS or ">" in words[0] or re.match(r"[a-zA-Z_][a-zA-Z_0-9]*=", words[0])
+        ):
+            return True
+    return any(any(char in destination for char in "*?[]~=") for destination in extract_redirect_destinations(command))
 
 
 def extract_redirect_destinations(cmd: str) -> list[str]:
@@ -301,17 +473,42 @@ def extract_redirect_destinations(cmd: str) -> list[str]:
     optional fd prefix (``2>|``) is handled by the segment already excluding it.
     ``>&``/``>>&`` send stdout+stderr to a FILE (``echo A >& out`` writes
     ``out``), so the destination has to be extracted like any other; ``2>&1``,
-    ``>&2`` and ``>&-`` are fd duplications, not files, and the lookahead is
-    what keeps them out.
+    ``>&2`` and ``>&-`` are fd duplications, not files. The whole word must be a
+    descriptor; a path beginning with a digit is still a file. Zsh's ``>!``
+    variants also write files, since the Bash hook name can carry zsh commands.
     """
-    matches = re.findall(
-        r">>?(?:\||&(?![0-9-]))?\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s|;&<>]+))",
+    matches = re.finditer(
+        r"""(?P<operator>(?:&>>?|>>?&|>>?)[!|]?)\s*"""
+        r"""(?P<word>(?:[^\s|;&<>"'\\]|\\[\s\S]|"(?:[^"\\]|\\[\s\S])*"|'[^']*')+)""",
         cmd,
     )
-    return [dq or sq or bare for dq, sq, bare in matches if dq or sq or bare]
+    destinations: list[str] = []
+    for match in matches:
+        raw_word = match["word"]
+        for spelling in dict.fromkeys([raw_word, raw_word.replace("\\\n", "")]):
+            try:
+                words = shlex.split(spelling)
+            except ValueError:
+                continue
+            if not words:
+                continue
+            destination = words[0]
+            if match["operator"] in {">&", ">>&"} and re.fullmatch(r"(?:[0-9]+-?|-)", destination):
+                continue
+            destinations.append(destination)
+        # A quoted path inside an embedded program can end before the following
+        # language punctuation, which is not part of the destination filename.
+        quoted = re.match(r"""(?:"([^"]*)"|'([^']*)')""", raw_word)
+        if quoted is not None:
+            quoted_path = quoted[1] or quoted[2]
+            if quoted_path and not (
+                match["operator"] in {">&", ">>&"} and re.fullmatch(r"(?:[0-9]+-?|-)", quoted_path)
+            ):
+                destinations.append(quoted_path)
+    return list(dict.fromkeys(destinations))
 
 
-def _pattern_matches(pattern: str, segment: str, match_timeout: float | None) -> bool:
+def _pattern_matches(pattern: _CompiledPattern, segment: str, match_timeout: float, *, match_from_start: bool) -> bool:
     """Whether an org-supplied ``pattern`` matches ``segment``, execution bounded.
 
     ``pattern`` is org-authored and matched against a command string that, at
@@ -325,19 +522,71 @@ def _pattern_matches(pattern: str, segment: str, match_timeout: float | None) ->
     prevent (stdlib ``re`` and ``regex`` case-fold some Unicode differently
     under IGNORECASE). With ``match_timeout`` set the search raises
     ``TimeoutError`` past the deadline; the caller treats that as "could not
-    evaluate" and grades. An uncompilable pattern is skipped (the save-time
-    validators reject those, so one here means a hand-edited local file).
+    evaluate" and grades. Patterns arrive compiled by `_valid_rules`, once per
+    evaluation; a malformed active rule suppresses all automatic approvals for
+    this call.
+
+    ``match_from_start`` keeps normalized echo/printf output from introducing a
+    command match inside its literal arguments. Raw candidates always use search.
     """
-    try:
-        return regex_module.compile(pattern, regex_module.IGNORECASE).search(segment, timeout=match_timeout) is not None
-    except regex_module.error:
-        return False
+    match = pattern.match if match_from_start else pattern.search
+    return match(segment, timeout=match_timeout) is not None
 
 
 # Tools whose matched string is a filesystem path rather than shell text. Redirect
 # destinations are matched under "Write" and get the same treatment. Bash segments are
 # excluded: canonicalising arbitrary command text would change what the command says.
 _PATH_ARGUMENT_TOOLS = frozenset({"Edit", "Write"})
+
+
+def _remaining_time(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("command-rule evaluation passed its deadline")
+    return remaining
+
+
+class _CompiledRule(BaseModel):
+    """An applicable rule and its pattern, compiled once for one evaluation."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    rule: SkipValidation[EvaluableCommandRule]
+    compiled: SkipValidation[_CompiledPattern]
+
+
+def _valid_rules(rules: Sequence[EvaluableCommandRule], tool_names: set[str], deadline: float) -> list[_CompiledRule]:
+    """Keep applicable restrictions, suppressing allows if any active rule is invalid."""
+    valid: list[_CompiledRule] = []
+    has_invalid_rule = False
+    for rule in rules:
+        _remaining_time(deadline)
+        if rule.action == RuleAction.OFF or not any(fnmatch.fnmatchcase(name, rule.tool_name) for name in tool_names):
+            continue
+        if rule.action not in ACTION_SEVERITY or len(rule.pattern) > MAX_RULE_PATTERN_LENGTH:
+            has_invalid_rule = True
+            continue
+        try:
+            compiled = regex_module.compile(rule.pattern, regex_module.IGNORECASE)
+        except (regex_module.error, RecursionError, ValueError, OverflowError):
+            has_invalid_rule = True
+            continue
+        valid.append(_CompiledRule(rule=rule, compiled=compiled))
+    return [entry for entry in valid if entry.rule.action != RuleAction.ALLOW] if has_invalid_rule else valid
+
+
+def _decisive_rules(rules: list[_CompiledRule]) -> list[_CompiledRule]:
+    """The rules that can still change the outcome once approval is impossible.
+
+    Only a deny or human-review match decides a call that cannot be approved.
+    Every rule before the last of those stays, because each segment takes the
+    first matching rule in priority order: an earlier allow or triage rule can
+    shadow a later deny for the same segment, and dropping it would let that
+    deny fire.
+    """
+    decisive = (RuleAction.DENY, RuleAction.ESCALATE_HUMAN)
+    last = max((index for index, entry in enumerate(rules) if entry.rule.action in decisive), default=-1)
+    return rules[: last + 1]
 
 
 def match_segment(
@@ -357,7 +606,30 @@ def match_segment(
     search and also caps that search's timeout, so a call with many segments
     and many near-ceiling patterns stops at the deadline rather than at
     rules × segments × ceiling. Either bound raises ``TimeoutError``.
+    Defaults cap each search at 250 ms, with a two-second budget checked between
+    operations. Compilation of trusted policy patterns cannot be interrupted.
+    Invalid applicable rules suppress allows while preserving valid restrictions.
     """
+    if len(segment) > MAX_COMMAND_LENGTH and is_shell_input(tool_name, segment):
+        raise RuleEvaluationLimitError("command exceeds the rule input limit")
+    deadline = (
+        min(deadline, time.monotonic() + RULE_EVALUATION_BUDGET_SECONDS)
+        if deadline is not None
+        else (time.monotonic() + RULE_EVALUATION_BUDGET_SECONDS)
+    )
+    compiled_rules = _valid_rules(rules, {tool_name}, deadline)
+    return _match_segment(segment, tool_name, compiled_rules, match_timeout, deadline, normalize_shell=True)
+
+
+def _match_segment(
+    segment: str,
+    tool_name: str,
+    rules: Sequence[_CompiledRule],
+    match_timeout: float | None,
+    deadline: float,
+    *,
+    normalize_shell: bool,
+) -> EvaluableCommandRule | None:
     candidates = [segment]
     if tool_name in _PATH_ARGUMENT_TOOLS and segment:
         # `//etc/x` and `/repo/../etc/x` open the file `/etc/x` names but dodge every rule
@@ -367,17 +639,32 @@ def match_segment(
         collapsed = re.sub(r"^/+", "/", posixpath.normpath(segment))
         if collapsed != segment:
             candidates.append(collapsed)
-    for rule in rules:
+    restriction_candidates = candidates.copy()
+    output_command_candidate: str | None = None
+    if tool_name == "Bash" and normalize_shell:
+        try:
+            words = shlex.split(segment)
+        except ValueError:
+            words = None
+        if words is not None:
+            normalized = shlex.join(words)
+            if normalized != segment:
+                restriction_candidates.append(normalized)
+                if words and words[0] in {"echo", "printf"}:
+                    output_command_candidate = normalized
+    for entry in rules:
+        rule = entry.rule
         if not fnmatch.fnmatchcase(tool_name, rule.tool_name):
             continue
-        timeout = match_timeout
-        if deadline is not None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("command-rule evaluation passed its deadline")
-            timeout = remaining if timeout is None else min(timeout, remaining)
-        if any(_pattern_matches(rule.pattern, candidate, timeout) for candidate in candidates):
-            return rule
+        ceiling = (
+            RULE_MATCH_TIMEOUT_SECONDS if match_timeout is None else min(match_timeout, RULE_MATCH_TIMEOUT_SECONDS)
+        )
+        for candidate in restriction_candidates if rule.action in ESCALATION_ACTIONS else candidates:
+            timeout = min(ceiling, _remaining_time(deadline))
+            if _pattern_matches(
+                entry.compiled, candidate, timeout, match_from_start=candidate == output_command_candidate
+            ):
+                return rule
     return None
 
 
@@ -403,9 +690,12 @@ def evaluate_command_rules(
     fully allow-covered command returns its allow match.
 
     ``match_timeout`` bounds every org-pattern search and ``deadline`` the
-    evaluation as a whole (see `match_segment`); pass them on shared-infra
-    paths where the command string is attacker-influenced. Exceeding either
+    evaluation as a whole (see `match_segment`). Both have finite defaults on
+    client and server; callers can supply tighter budgets. Exceeding either
     raises ``TimeoutError`` for the caller to treat as "could not evaluate".
+    Shell input longer than ``MAX_COMMAND_LENGTH`` raises
+    ``RuleEvaluationLimitError``, because its parsing runs outside those
+    budgets. Other tools only run bounded searches, so any length is evaluated.
     """
     if terminal_action is not None:
         return CommandRuleMatch(
@@ -414,31 +704,68 @@ def evaluate_command_rules(
             pattern=TERMINAL_THRESHOLD_PATTERN,
         )
 
+    deadline = (
+        min(deadline, time.monotonic() + RULE_EVALUATION_BUDGET_SECONDS)
+        if deadline is not None
+        else (time.monotonic() + RULE_EVALUATION_BUDGET_SECONDS)
+    )
     command_str = extract_command_string(tool_name, tool_input)
     if not command_str:
         return None
+    shell_input = is_shell_input(tool_name, tool_input)
+    if shell_input and len(command_str) > MAX_COMMAND_LENGTH:
+        raise RuleEvaluationLimitError("command exceeds the rule input limit")
 
-    segments = split_compound_command(command_str) if tool_name == "Bash" else [command_str]
+    compiled_rules = _valid_rules(rules, {tool_name, "Write"} if shell_input else {tool_name}, deadline)
+    segments = split_compound_command(command_str) if shell_input else [command_str]
     # A command that is only control operators or whitespace (";", "&&", …)
     # splits to zero segments. Nothing matched anything, so no rule may allow
     # it — fall through to the grader.
     if not segments:
         return None
-    matches = [match_segment(segment, tool_name, rules, match_timeout, deadline) for segment in segments]
+    # A `cd` to an out-of-project / unknown directory can't auto-allow: later
+    # relative reads (`cd /etc` → `cat passwd`) would dodge the outside-project
+    # triage. Fall through to the grader (human escalations below still win).
+    approval_possible = not shell_input or (
+        tool_name == "Bash"
+        and not shell_command_needs_review(command_str)
+        and not any(cd_is_unsafe(segment) for segment in segments)
+    )
+    decisive_rules = _decisive_rules(compiled_rules)
+    active_rules = compiled_rules if approval_possible else decisive_rules
+    segment_matches: dict[str, EvaluableCommandRule | None] = {}
+    matches: list[EvaluableCommandRule | None] = []
+    timed_out = False
+    try:
+        for segment in segments:
+            if segment not in segment_matches:
+                segment_matches[segment] = _match_segment(
+                    segment, tool_name, active_rules, match_timeout, deadline, normalize_shell=True
+                )
+            match = segment_matches[segment]
+            matches.append(match)
+            if match is None or match.action != RuleAction.ALLOW:
+                active_rules = decisive_rules
 
-    if tool_name == "Bash":
-        # Segment splitting (including on newlines) hides rules that need the
-        # whole command for context — e.g. a destructive SQL statement inside a
-        # heredoc piped to `psql`. Re-match the full command, but only let it
-        # ESCALATE, never relax: this keeps compound-command allow-listing
-        # working while still catching multiline destructive constructs.
-        full_match = match_segment(command_str, tool_name, rules, match_timeout, deadline)
-        if full_match is not None and full_match.action in ESCALATION_ACTIONS:
-            matches.append(full_match)
-        for dest in extract_redirect_destinations(command_str):
-            redirect_match = match_segment(dest, "Write", rules, match_timeout, deadline)
-            if redirect_match is not None:
-                matches.append(redirect_match)
+        if shell_input:
+            # Segment splitting (including on newlines) hides rules that need the
+            # whole command for context — e.g. a destructive SQL statement inside a
+            # heredoc piped to `psql`. Re-match the full command, but only let it
+            # ESCALATE, never relax: this keeps compound-command allow-listing
+            # working while still catching multiline destructive constructs.
+            full_match = _match_segment(
+                command_str, tool_name, active_rules, match_timeout, deadline, normalize_shell=False
+            )
+            if full_match is not None and full_match.action in ESCALATION_ACTIONS:
+                matches.append(full_match)
+            for dest in extract_redirect_destinations(command_str):
+                redirect_match = _match_segment(
+                    dest, "Write", active_rules, match_timeout, deadline, normalize_shell=False
+                )
+                if redirect_match is not None:
+                    matches.append(redirect_match)
+    except TimeoutError:
+        timed_out = True
 
     matched_rules = [match for match in matches if match is not None]
     if matched_rules:
@@ -450,10 +777,10 @@ def evaluate_command_rules(
                 pattern=most_severe_match.pattern,
             )
 
-    # A `cd` to an out-of-project / unknown directory can't auto-allow: later
-    # relative reads (`cd /etc` → `cat passwd`) would dodge the outside-project
-    # triage. Fall through to the grader (human escalations above still win).
-    if tool_name == "Bash" and any(cd_is_unsafe(segment) for segment in segments):
+    if timed_out:
+        raise TimeoutError("command-rule evaluation exceeded its budget")
+
+    if not approval_possible:
         return None
 
     if any(match and match.action == RuleAction.ESCALATE_TRIAGE for match in matches):
@@ -618,13 +945,16 @@ def evaluate_tool_call_from_tree(
     endpoint enforces.
     """
     thresholds = resolve_tool_thresholds_from_tree(tree, tool_name)
-    return evaluate_command_rules(
-        tool_name,
-        tool_input,
-        command_rules_from_tree(tree),
-        terminal_rule_action(thresholds.flag_threshold, thresholds.deny_threshold),
-        match_timeout=match_timeout,
-    )
+    try:
+        return evaluate_command_rules(
+            tool_name,
+            tool_input,
+            command_rules_from_tree(tree),
+            terminal_rule_action(thresholds.flag_threshold, thresholds.deny_threshold),
+            match_timeout=match_timeout,
+        )
+    except (TimeoutError, RuleEvaluationLimitError):
+        return None
 
 
 def command_rules_from_tree(tree: dict[str, Any]) -> list[TreeCommandRule]:
@@ -636,9 +966,9 @@ def command_rules_from_tree(tree: dict[str, Any]) -> list[TreeCommandRule]:
     has terminal thresholds carries that terminal action instead of its own
     (matching the client store, where a tool threshold overrides every rule for
     that tool — this matters for cross-tool matching such as redirect
-    destinations checked against Write rules). Structurally malformed rules are
-    skipped: the save-time validators reject them, so one here means a
-    hand-built tree, and dropping the rule beats failing the whole evaluation.
+    destinations checked against Write rules). A malformed active entry disables
+    every allow in the list while preserving valid restrictions. Otherwise a
+    missing restriction could leave a broader approval rule in force.
     ``category`` is required even though the evaluator never reads it, because
     the client store skips rules without one — a rule enforced at the gateway
     but not on machines (or vice versa) is exactly the divergence this module
@@ -648,13 +978,39 @@ def command_rules_from_tree(tree: dict[str, Any]) -> list[TreeCommandRule]:
     if not isinstance(raw_rules, list):
         return []
     rules: list[TreeCommandRule] = []
+    has_invalid_rule = False
     for raw_rule in raw_rules:
         if not isinstance(raw_rule, dict):
+            has_invalid_rule = True
+            continue
+        if unwrap(raw_rule.get("decision", "triage")) == "off":
             continue
         rule = _tree_command_rule(tree, raw_rule)
-        if rule is not None:
-            rules.append(rule)
+        if rule is None:
+            has_invalid_rule = True
+            continue
+        rules.append(rule)
+    if has_invalid_rule:
+        rules = [rule for rule in rules if rule.action in ESCALATION_ACTIONS]
     return sorted(rules, key=lambda rule: rule.priority)
+
+
+def command_rules_have_invalid_entries(tree: dict[str, Any]) -> bool:
+    """Whether a merged tree contains active rules that cannot be evaluated.
+
+    Disabled entries need no matching fields. Validate after merging so a
+    partial override can inherit those fields from an earlier settings layer.
+    """
+    raw_rules = get_path_or_none(tree, ("command_rules", "rules"))
+    if raw_rules is None:
+        return False
+    if not isinstance(raw_rules, list):
+        return True
+    return any(
+        not isinstance(raw_rule, dict)
+        or (unwrap(raw_rule.get("decision", "triage")) != "off" and _tree_command_rule(tree, raw_rule) is None)
+        for raw_rule in raw_rules
+    )
 
 
 def _tree_command_rule(tree: dict[str, Any], raw_rule: dict[str, Any]) -> TreeCommandRule | None:
@@ -673,7 +1029,7 @@ def _tree_command_rule(tree: dict[str, Any], raw_rule: dict[str, Any]) -> TreeCo
         return None
     if not isinstance(priority, int) or isinstance(priority, bool):
         return None
-    if decision == "off" or decision not in DECISION_TO_ACTION:
+    if not isinstance(decision, str) or decision == "off" or decision not in DECISION_TO_ACTION:
         return None
     action = terminal_rule_action_for_tool(tree, tool_name) or DECISION_TO_ACTION[decision]
     return TreeCommandRule(

@@ -26,9 +26,9 @@ class DeviceTokenResponse:
             refresh_token (str):
             user (AuthUser): The signed-in user's identity as login endpoints report it.
 
-                ``id`` is the WorkOS user id; ``user_id`` is our own database row's id,
-                present once the login's user upsert has run (it can be absent only when
-                WorkOS reported no email to upsert by).
+                ``id`` is the WorkOS user id; ``user_id`` is Watcher's own user id, present
+                once the login has created or matched the Watcher user (it can be absent
+                only when WorkOS reported no email to match by).
     """
 
     access_token: str

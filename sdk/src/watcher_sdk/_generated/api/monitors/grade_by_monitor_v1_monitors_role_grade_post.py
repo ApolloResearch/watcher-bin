@@ -103,8 +103,7 @@ def sync_detailed(
             - ``input`` — structured monitoring of one gated tool call: the transcript
               and the call as data, formatted into the monitor prompt server-side.
               The mode clients are expected to use.
-            - ``messages`` — pre-assembled message lists (see ``_GradePayloadBase``),
-              graded as sent.
+            - ``messages`` — pre-assembled message lists, graded as sent.
             - ``trajectory_ids`` + ``session_id`` — DB-backed grading of stored
               trajectories.
 
@@ -164,8 +163,7 @@ def sync(
             - ``input`` — structured monitoring of one gated tool call: the transcript
               and the call as data, formatted into the monitor prompt server-side.
               The mode clients are expected to use.
-            - ``messages`` — pre-assembled message lists (see ``_GradePayloadBase``),
-              graded as sent.
+            - ``messages`` — pre-assembled message lists, graded as sent.
             - ``trajectory_ids`` + ``session_id`` — DB-backed grading of stored
               trajectories.
 
@@ -220,8 +218,7 @@ async def asyncio_detailed(
             - ``input`` — structured monitoring of one gated tool call: the transcript
               and the call as data, formatted into the monitor prompt server-side.
               The mode clients are expected to use.
-            - ``messages`` — pre-assembled message lists (see ``_GradePayloadBase``),
-              graded as sent.
+            - ``messages`` — pre-assembled message lists, graded as sent.
             - ``trajectory_ids`` + ``session_id`` — DB-backed grading of stored
               trajectories.
 
@@ -279,8 +276,7 @@ async def asyncio(
             - ``input`` — structured monitoring of one gated tool call: the transcript
               and the call as data, formatted into the monitor prompt server-side.
               The mode clients are expected to use.
-            - ``messages`` — pre-assembled message lists (see ``_GradePayloadBase``),
-              graded as sent.
+            - ``messages`` — pre-assembled message lists, graded as sent.
             - ``trajectory_ids`` + ``session_id`` — DB-backed grading of stored
               trajectories.
 

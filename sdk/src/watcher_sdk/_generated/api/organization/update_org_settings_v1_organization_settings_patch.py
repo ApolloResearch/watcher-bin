@@ -65,15 +65,15 @@ def sync_detailed(
     client: AuthenticatedClient | Client,
     body: OrgSettingsUpdate,
 ) -> Response[HTTPValidationError | OrgSettings]:
-    r"""Update Org Settings
+    """Update Org Settings
 
      Update organization settings.
 
-    Uses `exclude_unset=True` so callers can distinguish \"field absent\" (leave
-    alone) from \"field set to null\" (clear it). Null is only honoured for
-    fields whose DB column is nullable; null on any other field returns 400.
-    The Slack webhook URL is encrypted at rest (plaintext when KMS is
-    unconfigured) and clearable via null, unless the deployment supplies it
+    Fields omitted from the body are left unchanged; fields sent as null are
+    cleared. Null is only accepted for clearable fields; null on any other
+    field returns 400. The Slack webhook URL is encrypted at rest on deployments
+    with encryption configured (Watcher Cloud is) and stored as supplied
+    otherwise. It is clearable via null, unless the deployment supplies it
     through `SLACK_WEBHOOK_URL`, in which case any body mentioning
     `slack_webhook_url` is refused whole with a 409.
 
@@ -104,15 +104,15 @@ def sync(
     client: AuthenticatedClient | Client,
     body: OrgSettingsUpdate,
 ) -> HTTPValidationError | OrgSettings | None:
-    r"""Update Org Settings
+    """Update Org Settings
 
      Update organization settings.
 
-    Uses `exclude_unset=True` so callers can distinguish \"field absent\" (leave
-    alone) from \"field set to null\" (clear it). Null is only honoured for
-    fields whose DB column is nullable; null on any other field returns 400.
-    The Slack webhook URL is encrypted at rest (plaintext when KMS is
-    unconfigured) and clearable via null, unless the deployment supplies it
+    Fields omitted from the body are left unchanged; fields sent as null are
+    cleared. Null is only accepted for clearable fields; null on any other
+    field returns 400. The Slack webhook URL is encrypted at rest on deployments
+    with encryption configured (Watcher Cloud is) and stored as supplied
+    otherwise. It is clearable via null, unless the deployment supplies it
     through `SLACK_WEBHOOK_URL`, in which case any body mentioning
     `slack_webhook_url` is refused whole with a 409.
 
@@ -138,15 +138,15 @@ async def asyncio_detailed(
     client: AuthenticatedClient | Client,
     body: OrgSettingsUpdate,
 ) -> Response[HTTPValidationError | OrgSettings]:
-    r"""Update Org Settings
+    """Update Org Settings
 
      Update organization settings.
 
-    Uses `exclude_unset=True` so callers can distinguish \"field absent\" (leave
-    alone) from \"field set to null\" (clear it). Null is only honoured for
-    fields whose DB column is nullable; null on any other field returns 400.
-    The Slack webhook URL is encrypted at rest (plaintext when KMS is
-    unconfigured) and clearable via null, unless the deployment supplies it
+    Fields omitted from the body are left unchanged; fields sent as null are
+    cleared. Null is only accepted for clearable fields; null on any other
+    field returns 400. The Slack webhook URL is encrypted at rest on deployments
+    with encryption configured (Watcher Cloud is) and stored as supplied
+    otherwise. It is clearable via null, unless the deployment supplies it
     through `SLACK_WEBHOOK_URL`, in which case any body mentioning
     `slack_webhook_url` is refused whole with a 409.
 
@@ -175,15 +175,15 @@ async def asyncio(
     client: AuthenticatedClient | Client,
     body: OrgSettingsUpdate,
 ) -> HTTPValidationError | OrgSettings | None:
-    r"""Update Org Settings
+    """Update Org Settings
 
      Update organization settings.
 
-    Uses `exclude_unset=True` so callers can distinguish \"field absent\" (leave
-    alone) from \"field set to null\" (clear it). Null is only honoured for
-    fields whose DB column is nullable; null on any other field returns 400.
-    The Slack webhook URL is encrypted at rest (plaintext when KMS is
-    unconfigured) and clearable via null, unless the deployment supplies it
+    Fields omitted from the body are left unchanged; fields sent as null are
+    cleared. Null is only accepted for clearable fields; null on any other
+    field returns 400. The Slack webhook URL is encrypted at rest on deployments
+    with encryption configured (Watcher Cloud is) and stored as supplied
+    otherwise. It is clearable via null, unless the deployment supplies it
     through `SLACK_WEBHOOK_URL`, in which case any body mentioning
     `slack_webhook_url` is refused whole with a 409.
 

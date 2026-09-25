@@ -48,15 +48,13 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[DeviceAuthorizationResponse]:
-    r"""Auth Device Authorize
+    """Auth Device Authorize
 
      Start a device-authorization login (RFC 8628) for a headless client.
 
     Unauthenticated by design — it produces credentials. Proxies WorkOS's
     device-authorization endpoint so clients need nothing but this server's
-    URL; the WorkOS client id stays server-side configuration. Servers
-    predating this route answer 404, which clients treat as \"use the
-    browser flow instead\".
+    URL; the WorkOS client id stays server-side configuration.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -79,15 +77,13 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
 ) -> DeviceAuthorizationResponse | None:
-    r"""Auth Device Authorize
+    """Auth Device Authorize
 
      Start a device-authorization login (RFC 8628) for a headless client.
 
     Unauthenticated by design — it produces credentials. Proxies WorkOS's
     device-authorization endpoint so clients need nothing but this server's
-    URL; the WorkOS client id stays server-side configuration. Servers
-    predating this route answer 404, which clients treat as \"use the
-    browser flow instead\".
+    URL; the WorkOS client id stays server-side configuration.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -106,15 +102,13 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[DeviceAuthorizationResponse]:
-    r"""Auth Device Authorize
+    """Auth Device Authorize
 
      Start a device-authorization login (RFC 8628) for a headless client.
 
     Unauthenticated by design — it produces credentials. Proxies WorkOS's
     device-authorization endpoint so clients need nothing but this server's
-    URL; the WorkOS client id stays server-side configuration. Servers
-    predating this route answer 404, which clients treat as \"use the
-    browser flow instead\".
+    URL; the WorkOS client id stays server-side configuration.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -135,15 +129,13 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
 ) -> DeviceAuthorizationResponse | None:
-    r"""Auth Device Authorize
+    """Auth Device Authorize
 
      Start a device-authorization login (RFC 8628) for a headless client.
 
     Unauthenticated by design — it produces credentials. Proxies WorkOS's
     device-authorization endpoint so clients need nothing but this server's
-    URL; the WorkOS client id stays server-side configuration. Servers
-    predating this route answer 404, which clients treat as \"use the
-    browser flow instead\".
+    URL; the WorkOS client id stays server-side configuration.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

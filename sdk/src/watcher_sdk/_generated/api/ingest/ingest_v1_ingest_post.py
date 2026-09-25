@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -32,11 +32,15 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | IngestResponse | None:
+) -> Any | HTTPValidationError | IngestResponse | None:
     if response.status_code == 200:
         response_200 = IngestResponse.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 409:
+        response_409 = cast(Any, None)
+        return response_409
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -51,7 +55,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | IngestResponse]:
+) -> Response[Any | HTTPValidationError | IngestResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,15 +68,24 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: IngestRequest,
-) -> Response[HTTPValidationError | IngestResponse]:
+) -> Response[Any | HTTPValidationError | IngestResponse]:
     """Ingest
 
      Ingest one or more trajectories. Returns leaf hashes and session ID.
 
     User attribution: signed-in users write their own sessions. Service keys
     carrying ``sessions:write:any`` may honor ``identity.login_name`` for
-    Aperture-style attribution; keys carrying only ``sessions:ingest`` write
-    unattributed sessions.
+    proxy-capture (Tailscale Aperture) attribution; keys carrying only
+    ``sessions:ingest`` write unattributed sessions.
+
+    A Claude Code session id or Codex thread id names one session per
+    organization. An upload attributed to a user (a signed-in user's, or one
+    attributed through ``identity.login_name``) joins that session when it has
+    no owner and makes the user its owner. When another user owns it, the
+    request is rejected with 409 ``session_owner_conflict``: that trajectory
+    is not stored, earlier trajectories in the request stay stored, and later
+    ones are not processed. An upload attributed to no user joins the session
+    whoever owns it and leaves the owner unchanged.
 
     Args:
         body (IngestRequest): Request body for POST /v1/ingest.
@@ -82,7 +95,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | IngestResponse]
+        Response[Any | HTTPValidationError | IngestResponse]
     """
 
     kwargs = _get_kwargs(
@@ -100,15 +113,24 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
     body: IngestRequest,
-) -> HTTPValidationError | IngestResponse | None:
+) -> Any | HTTPValidationError | IngestResponse | None:
     """Ingest
 
      Ingest one or more trajectories. Returns leaf hashes and session ID.
 
     User attribution: signed-in users write their own sessions. Service keys
     carrying ``sessions:write:any`` may honor ``identity.login_name`` for
-    Aperture-style attribution; keys carrying only ``sessions:ingest`` write
-    unattributed sessions.
+    proxy-capture (Tailscale Aperture) attribution; keys carrying only
+    ``sessions:ingest`` write unattributed sessions.
+
+    A Claude Code session id or Codex thread id names one session per
+    organization. An upload attributed to a user (a signed-in user's, or one
+    attributed through ``identity.login_name``) joins that session when it has
+    no owner and makes the user its owner. When another user owns it, the
+    request is rejected with 409 ``session_owner_conflict``: that trajectory
+    is not stored, earlier trajectories in the request stay stored, and later
+    ones are not processed. An upload attributed to no user joins the session
+    whoever owns it and leaves the owner unchanged.
 
     Args:
         body (IngestRequest): Request body for POST /v1/ingest.
@@ -118,7 +140,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | IngestResponse
+        Any | HTTPValidationError | IngestResponse
     """
 
     return sync_detailed(
@@ -131,15 +153,24 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
     body: IngestRequest,
-) -> Response[HTTPValidationError | IngestResponse]:
+) -> Response[Any | HTTPValidationError | IngestResponse]:
     """Ingest
 
      Ingest one or more trajectories. Returns leaf hashes and session ID.
 
     User attribution: signed-in users write their own sessions. Service keys
     carrying ``sessions:write:any`` may honor ``identity.login_name`` for
-    Aperture-style attribution; keys carrying only ``sessions:ingest`` write
-    unattributed sessions.
+    proxy-capture (Tailscale Aperture) attribution; keys carrying only
+    ``sessions:ingest`` write unattributed sessions.
+
+    A Claude Code session id or Codex thread id names one session per
+    organization. An upload attributed to a user (a signed-in user's, or one
+    attributed through ``identity.login_name``) joins that session when it has
+    no owner and makes the user its owner. When another user owns it, the
+    request is rejected with 409 ``session_owner_conflict``: that trajectory
+    is not stored, earlier trajectories in the request stay stored, and later
+    ones are not processed. An upload attributed to no user joins the session
+    whoever owns it and leaves the owner unchanged.
 
     Args:
         body (IngestRequest): Request body for POST /v1/ingest.
@@ -149,7 +180,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | IngestResponse]
+        Response[Any | HTTPValidationError | IngestResponse]
     """
 
     kwargs = _get_kwargs(
@@ -165,15 +196,24 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
     body: IngestRequest,
-) -> HTTPValidationError | IngestResponse | None:
+) -> Any | HTTPValidationError | IngestResponse | None:
     """Ingest
 
      Ingest one or more trajectories. Returns leaf hashes and session ID.
 
     User attribution: signed-in users write their own sessions. Service keys
     carrying ``sessions:write:any`` may honor ``identity.login_name`` for
-    Aperture-style attribution; keys carrying only ``sessions:ingest`` write
-    unattributed sessions.
+    proxy-capture (Tailscale Aperture) attribution; keys carrying only
+    ``sessions:ingest`` write unattributed sessions.
+
+    A Claude Code session id or Codex thread id names one session per
+    organization. An upload attributed to a user (a signed-in user's, or one
+    attributed through ``identity.login_name``) joins that session when it has
+    no owner and makes the user its owner. When another user owns it, the
+    request is rejected with 409 ``session_owner_conflict``: that trajectory
+    is not stored, earlier trajectories in the request stay stored, and later
+    ones are not processed. An upload attributed to no user joins the session
+    whoever owns it and leaves the owner unchanged.
 
     Args:
         body (IngestRequest): Request body for POST /v1/ingest.
@@ -183,7 +223,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | IngestResponse
+        Any | HTTPValidationError | IngestResponse
     """
 
     return (

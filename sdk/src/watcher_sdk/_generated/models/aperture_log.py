@@ -16,7 +16,7 @@ T = TypeVar("T", bound="ApertureLog")
 
 @_attrs_define
 class ApertureLog:
-    """A single aperture log on s3.
+    """A whole-file Tailscale Aperture proxy capture, referenced by its object storage location.
 
     Attributes:
         format_ (Literal['aperture-log']):

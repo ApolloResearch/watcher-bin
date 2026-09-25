@@ -82,10 +82,9 @@ def sync_detailed(
     Args:
         body (UpdateMonitorCustomizationRequest): Request body for PUT /v1/monitors/customization.
 
-            An empty ``instructions`` string clears the instructions. Content
-            validation (length cap, reserved delimiter sequences) happens in the route
-            via ``validate_monitor_instructions``; the cap is mirrored here only as a
-            coarse schema bound so the OpenAPI spec documents it.
+            An empty ``instructions`` string clears the instructions. The server
+            validates content (length cap, reserved delimiter sequences); the schema
+            bound here is a coarse mirror of that cap.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -126,10 +125,9 @@ def sync(
     Args:
         body (UpdateMonitorCustomizationRequest): Request body for PUT /v1/monitors/customization.
 
-            An empty ``instructions`` string clears the instructions. Content
-            validation (length cap, reserved delimiter sequences) happens in the route
-            via ``validate_monitor_instructions``; the cap is mirrored here only as a
-            coarse schema bound so the OpenAPI spec documents it.
+            An empty ``instructions`` string clears the instructions. The server
+            validates content (length cap, reserved delimiter sequences); the schema
+            bound here is a coarse mirror of that cap.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -165,10 +163,9 @@ async def asyncio_detailed(
     Args:
         body (UpdateMonitorCustomizationRequest): Request body for PUT /v1/monitors/customization.
 
-            An empty ``instructions`` string clears the instructions. Content
-            validation (length cap, reserved delimiter sequences) happens in the route
-            via ``validate_monitor_instructions``; the cap is mirrored here only as a
-            coarse schema bound so the OpenAPI spec documents it.
+            An empty ``instructions`` string clears the instructions. The server
+            validates content (length cap, reserved delimiter sequences); the schema
+            bound here is a coarse mirror of that cap.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -207,10 +204,9 @@ async def asyncio(
     Args:
         body (UpdateMonitorCustomizationRequest): Request body for PUT /v1/monitors/customization.
 
-            An empty ``instructions`` string clears the instructions. Content
-            validation (length cap, reserved delimiter sequences) happens in the route
-            via ``validate_monitor_instructions``; the cap is mirrored here only as a
-            coarse schema bound so the OpenAPI spec documents it.
+            An empty ``instructions`` string clears the instructions. The server
+            validates content (length cap, reserved delimiter sequences); the schema
+            bound here is a coarse mirror of that cap.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

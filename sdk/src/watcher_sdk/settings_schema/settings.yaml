@@ -227,6 +227,27 @@ tool_thresholds:
     deny_threshold: 11
 command_rules:
   rules:
+  - id: bash-literal-read-pipeline-guard
+    tool_name: Bash
+    name: Review other sort, uniq, and GitHub command combinations
+    category: security_system
+    # Check the whole command before allow rules so one allowed pipeline command
+    # cannot make an unsafe command beside it eligible for automatic approval.
+    # Keep the sort/uniq and GitHub patterns in sync with their allow rules below.
+    # Keep the possessive repeats to avoid excessive backtracking on long near-matches.
+    regex: >-
+      (?x-i:\A(?!(?!\|)(?:(?:\A|\|)[ \t]*+
+      (?:sort(?:[ \t]++-[bdfhnruV]++)*+|uniq(?:[ \t]++-[cdiu]++)*+
+      |gh[ \t]++(?:pr[ \t]++(?:checks|diff)|run[ \t]++(?:list|view|watch))
+      (?:[ \t]++(?:[0-9]++|--(?:watch|fail-fast|required|patch|name-only|log-failed|log|exit-status)
+      |(?:-R|--repo)[ \t]++[A-Za-z0-9_.-]++/[A-Za-z0-9_.-]++
+      |(?:--interval|--limit|-L|--job|-j)[ \t]++[0-9]++
+      |--json[ \t]++[A-Za-z]++(?:,[A-Za-z]++)*+))*+
+      |rg[ \t]++--files|(?:head|tail)[ \t]++-[0-9]++)[ \t]*+)++\Z)
+      (?=[\s\S]*(?:\A|[|&;\n])(?:[^\S\n]|[\x1c-\x1f])*+
+      (?:sort|uniq|gh[ \t]++(?:pr[ \t]++(?:checks|diff)|run[ \t]++(?:list|view|watch)))\b))
+    decision: triage
+    priority: 299
   - id: bash-read-outside-project-tree
     tool_name: Bash
     name: Read outside project tree
@@ -261,6 +282,15 @@ command_rules:
     regex: ^(?:(?:jq|yq|csvtool)\b|xmllint\b(?!.*(?:\s-o|--output(?![\w-]))))
     decision: allow
     priority: 302
+  - id: bash-stdin-sort-uniq
+    tool_name: Bash
+    name: Sort and count stdin
+    category: file_directory
+    # Filenames let uniq write output; sort also has output and program options.
+    # Match complete forms, with case-sensitive flags, so these stay stdin-only.
+    regex: '(?-i:\Asort(?:[ \t]++-[bdfhnruV]++)*+[ \t]*+\Z|\Auniq(?:[ \t]++-[cdiu]++)*+[ \t]*+\Z)'
+    decision: allow
+    priority: 303
   - id: edit-safe-source-files
     tool_name: Edit
     name: Safe source files
@@ -450,6 +480,18 @@ command_rules:
     regex: ^gh\s+(pr|issue|repo)\s+(view|list|status)\b
     decision: allow
     priority: 331
+  - id: bash-github-checks-and-diffs
+    tool_name: Bash
+    name: GitHub checks and diffs
+    category: git
+    regex: >-
+      (?x-i:\Agh[ \t]++(?:pr[ \t]++(?:checks|diff)|run[ \t]++(?:list|view|watch))
+      (?:[ \t]++(?:[0-9]++|--(?:watch|fail-fast|required|patch|name-only|log-failed|log|exit-status)
+      |(?:-R|--repo)[ \t]++[A-Za-z0-9_.-]++/[A-Za-z0-9_.-]++
+      |(?:--interval|--limit|-L|--job|-j)[ \t]++[0-9]++
+      |--json[ \t]++[A-Za-z]++(?:,[A-Za-z]++)*+))*+[ \t]*+\Z)
+    decision: allow
+    priority: 332
   - id: bash-git-local-mutation
     tool_name: Bash
     name: Git local mutation

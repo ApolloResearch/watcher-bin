@@ -13,10 +13,13 @@ T = TypeVar("T", bound="ApertureHookMetadata")
 
 @_attrs_define
 class ApertureHookMetadata:
-    """Aperture-owned identity fields; unknown additions are accepted.
+    """Tailscale Aperture-owned identity fields; unknown additions are accepted.
 
-    ``request_id`` identifies a capture, never a conversation. The provider
-    key and URL describe routing and do not identify the developer's harness.
+    ``request_id`` identifies a capture, never a conversation. ``session_id``
+    is Aperture's own session id: one it took from the client (prefix
+    ``xsid_`` or ``pisn_``) is recorded as the conversation id of a capture
+    without a native one, and any other value is ignored. The provider key
+    and URL describe routing and do not identify the developer's harness.
     ``user_agent`` supplies application evidence to the format parser. The
     parser applies the supported harness's marker and system-identity rules;
     selecting a wire format alone never admits an application. These fields

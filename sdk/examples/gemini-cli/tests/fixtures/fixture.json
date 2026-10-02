@@ -1,0 +1,45 @@
+[
+  {
+    "id": "m1",
+    "type": "user",
+    "content": "Run two safe commands"
+  },
+  {
+    "id": "m2",
+    "type": "gemini",
+    "content": "",
+    "toolCalls": [
+      {
+        "id": "call-a",
+        "name": "run_shell_command",
+        "args": {
+          "command": "pwd"
+        },
+        "result": [
+          {
+            "text": "/workspace"
+          }
+        ],
+        "status": "success"
+      },
+      {
+        "id": "call-b",
+        "name": "run_shell_command",
+        "args": {
+          "command": "ls"
+        },
+        "result": [
+          {
+            "text": "file.txt"
+          }
+        ],
+        "status": "success"
+      }
+    ]
+  },
+  {
+    "id": "m3",
+    "type": "gemini",
+    "content": "finished"
+  }
+]

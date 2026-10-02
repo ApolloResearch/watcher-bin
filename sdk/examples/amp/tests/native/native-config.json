@@ -1,0 +1,19 @@
+{
+  "slug": "amp",
+  "distribution": "watcher-example-amp",
+  "upstream_distributions": [
+    "amp-sdk"
+  ],
+  "version_commands": {
+    "amp": [
+      "/opt/native/node_modules/.bin/amp",
+      "--version"
+    ],
+    "node": [
+      "/usr/local/bin/node",
+      "--version"
+    ]
+  },
+  "observation_script": "run_fixture.py",
+  "enforcement_script": "run_fixture.py"
+}

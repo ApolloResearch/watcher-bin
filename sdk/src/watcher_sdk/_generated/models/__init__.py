@@ -92,6 +92,8 @@ from .create_grader_request_reasoning_effort_type_0 import (
 )
 from .create_grader_request_scores import CreateGraderRequestScores
 from .decision_source import DecisionSource
+from .deep_review_request_response import DeepReviewRequestResponse
+from .deep_review_request_response_status import DeepReviewRequestResponseStatus
 from .device_authorization_response import DeviceAuthorizationResponse
 from .device_token_request import DeviceTokenRequest
 from .device_token_response import DeviceTokenResponse
@@ -183,6 +185,20 @@ from .pre_tool_use_hook_request_settings_overrides_type_1 import (
 )
 from .pre_tool_use_hook_response import PreToolUseHookResponse
 from .prior_human_decision import PriorHumanDecision
+from .raw_pre_tool_use_hook_request import RawPreToolUseHookRequest
+from .raw_pre_tool_use_hook_request_external_ids_type_0 import (
+    RawPreToolUseHookRequestExternalIdsType0,
+)
+from .raw_pre_tool_use_hook_request_mode import RawPreToolUseHookRequestMode
+from .raw_pre_tool_use_hook_request_request_body import (
+    RawPreToolUseHookRequestRequestBody,
+)
+from .raw_pre_tool_use_hook_request_response_body import (
+    RawPreToolUseHookRequestResponseBody,
+)
+from .raw_pre_tool_use_hook_request_settings_overrides_type_1 import (
+    RawPreToolUseHookRequestSettingsOverridesType1,
+)
 from .refresh_request import RefreshRequest
 from .rule_match import RuleMatch
 from .score_definition import ScoreDefinition
@@ -207,6 +223,7 @@ from .session_aggregates_response_severity_threshold import (
 )
 from .session_analytics_summary import SessionAnalyticsSummary
 from .session_analytics_trend_point import SessionAnalyticsTrendPoint
+from .session_deep_review_response import SessionDeepReviewResponse
 from .session_filter_options_response import SessionFilterOptionsResponse
 from .session_list_response import SessionListResponse
 from .session_permission_decisions import SessionPermissionDecisions
@@ -379,6 +396,8 @@ __all__ = (
     "CreateGraderRequestReasoningEffortType0",
     "CreateGraderRequestScores",
     "DecisionSource",
+    "DeepReviewRequestResponse",
+    "DeepReviewRequestResponseStatus",
     "DeviceAuthorizationResponse",
     "DeviceTokenRequest",
     "DeviceTokenResponse",
@@ -452,6 +471,12 @@ __all__ = (
     "PreToolUseHookRequestSettingsOverridesType1",
     "PreToolUseHookResponse",
     "PriorHumanDecision",
+    "RawPreToolUseHookRequest",
+    "RawPreToolUseHookRequestExternalIdsType0",
+    "RawPreToolUseHookRequestMode",
+    "RawPreToolUseHookRequestRequestBody",
+    "RawPreToolUseHookRequestResponseBody",
+    "RawPreToolUseHookRequestSettingsOverridesType1",
     "RefreshRequest",
     "RuleMatch",
     "ScoreDefinition",
@@ -466,6 +491,7 @@ __all__ = (
     "SessionAggregatesResponseSeverityThreshold",
     "SessionAnalyticsSummary",
     "SessionAnalyticsTrendPoint",
+    "SessionDeepReviewResponse",
     "SessionFilterOptionsResponse",
     "SessionListResponse",
     "SessionPermissionDecisions",

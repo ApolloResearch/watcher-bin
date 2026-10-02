@@ -1,0 +1,23 @@
+{
+  "private": true,
+  "scripts": {
+    "check": "node --check src/native.mjs"
+  },
+  "dependencies": {
+    "ai": "5.0.99"
+  },
+  "name": "watcher-vercel-ai-example",
+  "version": "0.1.0",
+  "files": [
+    "src/"
+  ],
+  "type": "module",
+  "exports": {
+    "./native": "./src/native.mjs",
+    "./synchronous": "./src/synchronous.mjs"
+  },
+  "bin": {
+    "watcher-vercel-ai-native": "src/native.mjs",
+    "watcher-vercel-ai-sync": "src/synchronous.mjs"
+  }
+}

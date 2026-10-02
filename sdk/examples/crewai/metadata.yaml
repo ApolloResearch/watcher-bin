@@ -1,0 +1,250 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: crewai
+name: CrewAI
+summary: Native tool monitoring follows configured Watcher policy, with optional awaited
+  application approval.
+category: agent-framework
+upstream_url: https://github.com/crewAIInc/crewAI
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: The native pre-tool integration observes without enforcing when server
+      mode is observe. A separate completed-history observer is also available.
+    example: demo/observe.py
+    context: conversation
+    recording: optional
+    timeout_seconds: 420
+  enforce:
+    implemented: true
+    scope: Registered application tool wrapper. Final transcript recording uses the
+      monitor timeout, configurable with a 420-second default.
+    example: demo/enforce.py
+    boundary: registered application tool wrapper
+    context: conversation
+    recording: optional
+    failure_behavior: fail-closed
+    failure_details: Transport or malformed/mismatched outcomes block. Deferred preserves
+      ordinary native permissions; configured grading-failure allow is honored. Human
+      escalation waits for an application callback, or blocks unattended.
+    timeout_seconds: 420
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: fixture-http
+  upstream_versions:
+    pip: 25.0.1
+    regex: 2026.9.10
+    openpyxl: 3.1.5
+    pytest-asyncio: 1.4.0
+    watcher-sdk: 0.1.0
+    cryptography: 50.0.1
+    jsonschema-specifications: 2025.9.1
+    httpx: 0.28.1
+    yarl: 1.24.5
+    shellingham: 1.5.4
+    python-multipart: 0.0.32
+    tomli: 2.4.1
+    json5: 0.15.0
+    et_xmlfile: 2.0.0
+    multidict: 6.8.0
+    sse-starlette: 3.4.11
+    opentelemetry-exporter-otlp-proto-http: 1.44.0
+    huggingface_hub: 1.31.0
+    aiosignal: 1.4.0
+    annotated-doc: 0.0.5
+    python-dateutil: 2.9.0.post0
+    pytest: 9.1.1
+    flatbuffers: 25.12.19
+    six: 1.17.0
+    pdfminer.six: '20260107'
+    frozenlist: 1.8.0
+    uvicorn: 0.52.4
+    tomli_w: 1.2.0
+    uv: 0.12.13
+    pillow: 12.3.0
+    importlib_resources: 7.1.0
+    Jinja2: 3.1.6
+    kubernetes: 36.0.3
+    httptools: 0.8.0
+    tenacity: 9.1.4
+    watchfiles: 1.2.0
+    pyproject_hooks: 1.2.0
+    pydantic: 2.13.5
+    appdirs: 1.4.4
+    markdown-it-py: 4.2.0
+    pdfplumber: 0.11.10
+    requests-oauthlib: 2.0.0
+    googleapis-common-protos: 1.75.3
+    rpds-py: 2026.6.3
+    truststore: 0.10.4
+    pybase64: 1.5.0
+    httpx2: 2.12.0
+    typer: 0.27.2
+    rich: 14.3.4
+    filelock: 3.32.6
+    grpcio: 1.83.1
+    h11: 0.16.0
+    requests: 2.34.2
+    referencing: 0.37.0
+    certifi: 2026.7.22
+    uvloop: 0.22.1
+    tokenizers: 0.23.2
+    instructor: 1.17.0
+    websockets: '17.1'
+    attrs: 26.1.0
+    charset-normalizer: 3.5.1
+    mcp-types: 2.2.0
+    fsspec: 2026.7.0
+    numpy: 2.5.3
+    propcache: 0.5.2
+    typing_extensions: 4.16.0
+    aiohttp: 3.14.3
+    onnxruntime: 1.30.0
+    mdurl: 0.1.2
+    httpcore2: 2.12.0
+    Pygments: 2.21.0
+    opentelemetry-proto: 1.44.0
+    starlette: 1.6.0
+    json_repair: 0.25.2
+    mcp: 2.2.0
+    MarkupSafe: 3.0.3
+    opentelemetry-exporter-otlp-proto-common: 1.44.0
+    opentelemetry-api: 1.44.0
+    typing-inspection: 0.4.4
+    opentelemetry-exporter-otlp-proto-grpc: 1.44.0
+    PyPika: 0.51.1
+    build: 1.6.1
+    python-dotenv: 1.2.3
+    iniconfig: 2.3.0
+    jsonref: 1.1.0
+    websocket-client: 1.9.2
+    portalocker: 2.7.0
+    jiter: 0.14.0
+    PyJWT: 2.13.0
+    click: 8.5.0
+    opentelemetry-semantic-conventions: 0.65b0
+    orjson: 3.12.0
+    watcher-crewai-example: 0.1.0
+    opentelemetry-sdk: 1.44.0
+    PyYAML: 6.0.3
+    pluggy: 1.6.0
+    docstring_parser: 0.18.0
+    pycparser: '3.0'
+    aiohappyeyeballs: 2.7.1
+    posthog: 5.4.0
+    openai: 3.3.0
+    idna: '3.19'
+    pydantic_core: 2.46.5
+    jsonschema: 4.26.0
+    pydantic-settings: 2.15.0
+    chromadb: 1.1.1
+    httpcore: 1.0.9
+    mmh3: 5.3.0
+    crewai: 1.3.0
+    overrides: 7.7.0
+    distro: 1.9.0
+    hf-xet: 1.6.0
+    sniffio: 1.3.1
+    pypdfium2: 5.13.0
+    tqdm: 4.70.0
+    annotated-types: 0.8.0
+    backoff: 2.2.1
+    bcrypt: 5.0.0
+    oauthlib: 3.3.1
+    durationpy: '0.11'
+    packaging: '26.3'
+    urllib3: 2.7.0
+    protobuf: 7.36.1
+    cffi: 2.1.1
+    anyio: 4.15.1
+  runtimes:
+    python: 3.12.13
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - native
+    enforce:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - native
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: scope-03
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: The separate post-run observation path cannot prevent side effects;
+    organization policy can reject the observe override.
+- id: scope-04
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Only finalized text and object-shaped arguments; full retained history
+    required.
+- id: scope-05
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Native function dispatch, streaming, parallel crews, compaction, multimodal
+    content and result_as_answer=True are unverified.
+- id: scope-06
+  mode: both
+  cause: upstream
+  kind: constraint
+  description: Parsed actions have no native execution IDs. The adapter retains one
+    application UUID per completed action; recreating the trace creates new IDs.
+- id: scope-07
+  mode: both
+  cause: upstream
+  kind: constraint
+  description: CrewAI attempts hosted trace initialization despite process-start telemetry
+    flags and Crew(tracing=False); runtime fixtures require external-network isolation.
+- id: deployed-verification
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: This example has no deployed Watcher storage, grading or Analyzer visibility
+    verification; local fixtures simulate server outcomes.
+- id: asynchronous-recording
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: Hook responses do not acknowledge durable storage. Authorized transcript/decision
+    recording runs after response; query Watcher to confirm persistence.
+- id: application-approval
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Human approval uses an awaited application callback followed by a public
+    decision upload and readback. This requires session-read plus owner/write-any
+    access. No approval UI, durable interrupt/resume, or automatic-review model is
+    included.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native

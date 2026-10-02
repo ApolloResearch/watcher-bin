@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: llamaindex
+name: LlamaIndex
+summary: Native tool monitoring follows configured Watcher policy, with optional awaited
+  application approval.
+category: agent-framework
+upstream_url: https://github.com/run-llama/llama_index
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: The native pre-tool integration observes without enforcing when server
+      mode is observe. A separate completed-history observer is also available.
+    example: demo/observe.py
+    context: conversation
+    recording: optional
+    timeout_seconds: 420
+  enforce:
+    implemented: true
+    scope: MonitoredFunctionAgent gates all model-selected tool calls before the native
+      FunctionAgent.run runner schedules them.
+    example: demo/enforce.py
+    boundary: LlamaIndex public take_step extension
+    context: conversation
+    recording: optional
+    failure_behavior: fail-closed
+    failure_details: Transport or malformed/mismatched outcomes block. Deferred preserves
+      ordinary native permissions; configured grading-failure allow is honored. Human
+      escalation waits for an application callback, or blocks unattended.
+    timeout_seconds: 420
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: mocked-sdk-transport
+  upstream_versions:
+    llama-index-core: 0.14.6
+    llama-index-workflows: 2.23.3
+  runtimes:
+    python: 3.12.3
+  platform: linux-x86_64
+  results:
+    observe:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - python
+    enforce:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - python
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: scope-01
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Historical tool prefixes exclude future text; incomplete outcomes raise,
+    and final recording is attempted even after judgment failure.
+- id: scope-04
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: The separate post-run observation path cannot prevent side effects.
+- id: scope-05
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Text and function content only; full retained history required.
+- id: scope-06
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: This mapper covers FunctionAgent memory with OpenAI-shaped tool_calls
+    in additional_kwargs. Other provider-specific additional_kwargs conventions are
+    explicitly rejected.
+- id: deployed-verification
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Hosted model-provider behavior and deployed Watcher behavior are not
+    verified by the isolated native model fixtures.
+- id: asynchronous-recording
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: Hook responses do not acknowledge durable storage. Authorized transcript/decision
+    recording runs after response; query Watcher to confirm persistence.
+- id: application-approval
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: An async application callback obtains the human choice. The public
+    SDK records and reads back that choice before approval releases execution. No
+    approval UI or durable approval queue is included.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: native-fixture
+    checks:
+    - python
+  enforce:
+    coverage: native-fixture
+    checks:
+    - python

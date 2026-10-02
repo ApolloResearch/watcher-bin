@@ -12,7 +12,6 @@ from watcher_sdk.settings_schema.agents import ALL_AGENTS, AgentName
 type Permission = Literal["locked", "modifiable", "additions_allowed"]
 type ScalarPermission = Literal["locked", "modifiable"]
 type Decision = Literal["off", "human", "triage", "allow", "deny"]
-type LayoutPreset = Literal["claude-in-watcher", "claude-outside-watcher"]
 type SettingsSource = Literal["admin", "local"]
 type GradingFailureDecision = Literal["allow", "deny", "escalate"]
 type SettingsWriteScope = Literal["profile", "global"]
@@ -56,7 +55,6 @@ type BoolSetting = bool | SettingWithPermission[bool]
 type StrSetting = str | SettingWithPermission[str]
 type OptionalStrSetting = str | None | SettingWithPermission[str | None]
 type DecisionSetting = Decision | SettingWithPermission[Decision]
-type LayoutPresetSetting = LayoutPreset | SettingWithPermission[LayoutPreset]
 type GradingFailureDecisionSetting = GradingFailureDecision | SettingWithPermission[GradingFailureDecision]
 type EnforcementModeSetting = EnforcementMode | SettingWithPermission[EnforcementMode]
 # The grading context window: a count of trailing user messages, or the whole transcript (literal "all").
@@ -69,6 +67,13 @@ def _setting_value[T](setting: T | SettingWithPermission[T]) -> T:
     if isinstance(setting, SettingWithPermission):
         return setting.value
     return setting
+
+
+def _setting_locked(setting: object) -> bool:
+    """Whether a scalar carries its own ``locked`` permission. Inherited locks live on the
+    enclosing nodes, so a caller that cares about those has to check them too.
+    """
+    return isinstance(setting, SettingWithPermission) and setting.permission == "locked"
 
 
 THRESHOLD_ORDER_ERROR = "flag_threshold must be less than deny_threshold when both thresholds are active"
@@ -377,14 +382,18 @@ class UiSettings(PermissionedSettingsModel):
         description="Legacy field, accepted and ignored.",
         json_schema_extra={"deprecated": True},
     )
-    window_management: LayoutPresetSetting = Field(
+    window_management: StrSetting = Field(
         default="claude-outside-watcher",
         description="Legacy field, accepted and ignored.",
         json_schema_extra={"deprecated": True},
     )
+    # deprecated(0.32.3, 2026-10-31): autostart is a machine-wide toggle, so its home is the
+    # document's top level, but every client through 0.32.x persisted it here. Unlike the
+    # tombstones above this key is still interpreted: a document with no top-level
+    # autostart_on_login falls through to this one, so an existing machine keeps its toggle.
     autostart_on_login: BoolSetting = Field(
         default=False,
-        description="Launch Watcher automatically at login.",
+        description="Deprecated home for autostart; read only when the top-level key is absent.",
     )
 
 
@@ -483,6 +492,13 @@ class WatcherSettings(StrictSettingsModel):
     profiles: dict[str, ProfileCatalogEntry | Permission] = Field(
         description="Named profiles that layer overrides on top of these settings.",
     )
+    autostart_on_login: BoolSetting | None = Field(
+        default=None,
+        description=(
+            "Launch Watcher automatically at login. Omit it (or set null) to fall back to the "
+            "deprecated ui.autostart_on_login."
+        ),
+    )
     ui: UiSettings = Field(description="Watcher desktop UI preferences.")
     statusline: StatuslineSettings = Field(
         default=StatuslineSettings(),
@@ -535,6 +551,34 @@ class WatcherSettings(StrictSettingsModel):
         description="Which coding agents Watcher integrates with.",
     )
 
+    def autostart_on_login_enabled(self) -> bool:
+        """Whether Watcher launches at login, resolved across the two places the key can live.
+
+        The top-level key is autostart's home; ``ui.autostart_on_login`` is where clients
+        through 0.32.x wrote it. Only an explicitly set top-level value wins, which is why the
+        field is optional: a top-level default would permanently shadow a machine that still
+        carries the nested value. Every reader resolves through here so no caller can disagree
+        about which location applies.
+
+        Top-level precedence holds only between values of equal authority: an admin lock binds
+        whichever of the two locations the admin wrote it on, or a machine could shake off a
+        lock on the nested key just by having saved the top-level one.
+        """
+        if self.autostart_on_login is None or self._autostart_locked_on_the_nested_key_only():
+            return _setting_value(self.ui.autostart_on_login)
+        return _setting_value(self.autostart_on_login)
+
+    def _autostart_locked_on_the_nested_key_only(self) -> bool:
+        """Whether an admin lock reaches ``ui.autostart_on_login`` but not the top-level key.
+
+        Both a ``ui`` section lock and a document-wide one are inherited by the leaves beneath
+        them, and a document-wide lock covers both locations, leaving the two equally binding.
+        """
+        if self.permission == "locked":
+            return False
+        nested_locked = self.ui.permission == "locked" or _setting_locked(self.ui.autostart_on_login)
+        return nested_locked and not _setting_locked(self.autostart_on_login)
+
 
 # Settings that describe the whole machine rather than one profile's behavior. A
 # machine reads these from the admin baseline's top level and nowhere else, so a copy
@@ -542,6 +586,23 @@ class WatcherSettings(StrictSettingsModel):
 # never takes effect. Both the client's diagnostic scan and the server's save-time
 # validation work from this one set, so the two cannot drift apart.
 ADMIN_ONLY_TOP_LEVEL_KEYS: frozenset[str] = frozenset({"enforcement", "snooze", "watcher_ignore_files"})
+
+# Both document locations the autostart toggle can occupy, for the callers that ask about the
+# key itself rather than its value. A lock on either one binds the machines whose value lives
+# there, so a permission check has to consider both.
+AUTOSTART_ON_LOGIN_PATHS: tuple[tuple[str, ...], ...] = (("autostart_on_login",), ("ui", "autostart_on_login"))
+
+# Alias groups for the permission engine. This is what makes an admin lock unbypassable: a write
+# to one alias is refused while any member of its group is locked.
+_PERMISSION_ALIAS_GROUPS: tuple[tuple[tuple[str, ...], ...], ...] = (AUTOSTART_ON_LOGIN_PATHS,)
+
+
+def permission_alias_paths(path: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
+    """Every document location whose permission binds ``path``, ``path`` itself included."""
+    for group in _PERMISSION_ALIAS_GROUPS:
+        if path in group:
+            return group
+    return (path,)
 
 
 @lru_cache(maxsize=1)

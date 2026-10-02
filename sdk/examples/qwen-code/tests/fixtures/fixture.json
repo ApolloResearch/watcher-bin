@@ -1,0 +1,72 @@
+[
+  {
+    "type": "user",
+    "message": {
+      "parts": [
+        {
+          "text": "Run two safe commands"
+        }
+      ]
+    }
+  },
+  {
+    "type": "assistant",
+    "message": {
+      "parts": [
+        {
+          "functionCall": {
+            "id": "call-a",
+            "name": "run_shell_command",
+            "args": {
+              "command": "pwd"
+            }
+          }
+        },
+        {
+          "functionCall": {
+            "id": "call-b",
+            "name": "run_shell_command",
+            "args": {
+              "command": "ls"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "tool_result",
+    "message": {
+      "parts": [
+        {
+          "functionResponse": {
+            "id": "call-b",
+            "name": "run_shell_command",
+            "response": {
+              "output": "file.txt"
+            }
+          }
+        },
+        {
+          "functionResponse": {
+            "id": "call-a",
+            "name": "run_shell_command",
+            "response": {
+              "output": "/workspace"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "assistant",
+    "message": {
+      "parts": [
+        {
+          "text": "finished"
+        }
+      ]
+    }
+  }
+]

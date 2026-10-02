@@ -1,0 +1,5 @@
+[[hooks]]
+name = "watcher-archive"
+type = "post_agent"
+command = "__WATCHER_PYTHON__ -m watcher_mistral_vibe.integration"
+timeout = 15

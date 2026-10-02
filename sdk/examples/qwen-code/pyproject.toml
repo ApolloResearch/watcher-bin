@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-example-qwen-code"
+version = "0.1.0"
+description = "Experimental qwen-code integration using the public Watcher SDK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["typer==0.25.1", "watcher-sdk>=0.1,<1"]
+
+[project.scripts]
+"watcher-qwen-code-enforce" = "watcher_qwen_code.pre_tool:main"
+"watcher-qwen-code-observe" = "watcher_qwen_code.integration:main"
+"watcher-qwen-code-observe-settings" = "watcher_qwen_code.configuration:observe_settings"
+"watcher-qwen-code-enforce-settings" = "watcher_qwen_code.configuration:enforce_settings"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "httpx==0.28.1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_qwen_code"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+
+[tool.uv]
+exclude-newer = "7 days"

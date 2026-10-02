@@ -1,0 +1,77 @@
+[
+  {
+    "message": {
+      "role": "user",
+      "content": "Run two safe commands"
+    },
+    "contextItems": []
+  },
+  {
+    "message": {
+      "role": "assistant",
+      "content": "",
+      "toolCalls": [
+        {
+          "id": "call-a",
+          "type": "function",
+          "function": {
+            "name": "bash",
+            "arguments": "{\"command\": \"pwd\"}"
+          }
+        },
+        {
+          "id": "call-b",
+          "type": "function",
+          "function": {
+            "name": "bash",
+            "arguments": "{\"command\": \"ls\"}"
+          }
+        }
+      ]
+    },
+    "contextItems": [],
+    "toolCallStates": [
+      {
+        "toolCallId": "call-b",
+        "status": "done",
+        "toolCall": {
+          "id": "call-b",
+          "type": "function",
+          "function": {
+            "name": "bash",
+            "arguments": "{\"command\": \"ls\"}"
+          }
+        },
+        "output": [
+          {
+            "content": "\"file.txt\""
+          }
+        ]
+      },
+      {
+        "toolCallId": "call-a",
+        "status": "done",
+        "toolCall": {
+          "id": "call-a",
+          "type": "function",
+          "function": {
+            "name": "bash",
+            "arguments": "{\"command\": \"pwd\"}"
+          }
+        },
+        "output": [
+          {
+            "content": "\"/workspace\""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "message": {
+      "role": "assistant",
+      "content": "finished"
+    },
+    "contextItems": []
+  }
+]

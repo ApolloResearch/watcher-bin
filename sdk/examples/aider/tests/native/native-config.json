@@ -1,0 +1,10 @@
+{
+  "slug": "aider",
+  "distribution": "watcher-example-aider",
+  "upstream_distributions": [
+    "aider-chat"
+  ],
+  "version_commands": {},
+  "observation_script": "run_fixture.py",
+  "enforcement_script": null
+}

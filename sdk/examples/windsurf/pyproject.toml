@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-example-windsurf"
+version = "0.1.0"
+description = "Experimental windsurf integration using the public Watcher SDK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1"]
+
+[project.scripts]
+"watcher-windsurf-enforce" = "watcher_windsurf.pre_tool_ephemeral:main"
+"watcher-windsurf-observe" = "watcher_windsurf.integration:main"
+"watcher-windsurf-observe-settings" = "watcher_windsurf.configuration:observe_settings"
+"watcher-windsurf-enforce-settings" = "watcher_windsurf.configuration:enforce_settings"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "httpx==0.28.1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_windsurf"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+
+[tool.uv]
+exclude-newer = "7 days"

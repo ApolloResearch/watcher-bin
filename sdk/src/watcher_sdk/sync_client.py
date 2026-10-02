@@ -163,6 +163,7 @@ class WatcherClient:
         session_name_contains: str | None = None,
         *,
         users: UserFilter | None = None,
+        sources: list[str] | None = None,
     ) -> Iterator[SessionSummary]:
         """Iterate over search results, auto-paginating.
 
@@ -189,6 +190,8 @@ class WatcherClient:
             users: Owner selection, forwarded on every page. See
                 AsyncWatcherClient.search_sessions for include/exclude semantics,
                 validation, and required permissions.
+            sources: Ingestion sources to match, forwarded on every page. See
+                AsyncWatcherClient.search_sessions for retained-message semantics.
         """
         offset = 0
         while True:
@@ -208,6 +211,7 @@ class WatcherClient:
                 session_id_contains=session_id_contains,
                 session_name_contains=session_name_contains,
                 users=users,
+                sources=sources,
             )
             yield from response.sessions
             offset += page_size

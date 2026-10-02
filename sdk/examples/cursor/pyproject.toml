@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-example-cursor"
+version = "0.1.0"
+description = "Experimental cursor integration using the public Watcher SDK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["typer==0.25.1", "watcher-sdk>=0.1,<1"]
+
+[project.scripts]
+"watcher-cursor-enforce" = "watcher_cursor.pre_tool:main"
+"watcher-cursor-observe" = "watcher_cursor.integration:main"
+"watcher-cursor-observe-settings" = "watcher_cursor.configuration:observe_settings"
+"watcher-cursor-enforce-settings" = "watcher_cursor.configuration:enforce_settings"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "httpx==0.28.1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_cursor"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+
+[tool.uv]
+exclude-newer = "7 days"

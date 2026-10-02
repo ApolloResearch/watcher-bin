@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: mastra
+name: Mastra
+summary: Native Mastra output processing waits for configured Watcher policy and optional
+  recorded human approval through a Python SDK sidecar.
+category: agent-framework
+upstream_url: https://github.com/mastra-ai/mastra
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: Native Agent tool history routed through the supplied Node/Python observation
+      bridge.
+    example: demo/observe.mjs
+    recording: optional
+  enforce:
+    boundary: native-processor-and-tool-callback
+    context: conversation
+    recording: optional
+    failure_behavior: fail-closed
+    timeout_seconds: 420
+    implemented: true
+    scope: Tools using the supplied processor and matching createTool execution callback.
+    example: demo/enforce.mjs
+    failure_details: Transport, malformed or mismatched outcomes block. Deferred preserves
+      ordinary native dispatch. Escalations require an optional Node application approval
+      callback followed by public SDK human-outcome upload and readback.
+manifests:
+- packages/node/package.json
+- packages/python/pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    '@mastra/core': 1.66.0
+    ai: 6.0.182
+    zod: 4.6.5
+  runtimes:
+    python: 3.12.13
+    node: v24.11.1
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: scope-01
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: The retained observation bridge runs after execution; the separate
+    synchronous path waits before tools.
+- id: scope-02
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Snapshots contain full conversations; local private storage and retention
+    are caller responsibilities.
+- id: scope-03
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Model outputs and grader verdicts are local fixtures; hosted providers,
+    production grading quality and deployed Watcher behavior remain unverified.
+- id: scope-04
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Synchronous enforcement controls only registered client-executed callbacks;
+    provider-hosted tools and other clients are outside scope.
+- id: scope-05
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Synchronous monitoring inherits organization mode; optional Python
+    Monitor overrides may be admin-locked. Session-write permission is required for
+    recording. Human audit additionally requires session-read and owner/write-any
+    authority.
+- id: scope-06
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: No durable execution ledger or automatic replay after process restart
+    is provided.
+- id: asynchronous-recording
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: Hook success does not acknowledge durable transcript storage; use public
+    readback to confirm.
+- id: application-approval
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: The Node approve callback must obtain an authorized human choice. The
+    sidecar uploads and verifies it before execution; no approval UI, durable queue,
+    automatic-review model or terminal execution-status reporting is included.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks: &id001
+    - native
+  enforce:
+    coverage: native-fixture
+    checks: *id001

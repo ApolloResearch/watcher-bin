@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: goose
+name: Goose
+summary: Native pre-tool monitoring follows configured Watcher policy; completion
+  submits the final transcript without regrading.
+category: coding-harness
+upstream_url: https://github.com/aaif-goose/goose
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Native Stop/export transcript with tool IDs, results and final text.
+    example: demo/hooks.json
+    timeout_seconds: 10
+    native_timeout_seconds: 30
+    recording: optional
+  enforce:
+    implemented: true
+    scope: Native PreToolUse with on_failure block after the plugin is loaded.
+    example: demo/enforce.example.json
+    boundary: native-hook
+    context: native visible transcript and pending tool
+    recording: optional
+    failure_behavior: mixed
+    timeout_seconds: 420
+    native_timeout_seconds: 480
+    failure_details: Loaded hooks block process failures; invalid plugin configuration
+      or matchers can prevent hook loading. Valid observation/paused deferral preserves
+      ordinary native dispatch; denials and escalations block. Malformed/mismatched
+      responses and transport failures withhold execution.
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    goose: 1.50.0
+  runtimes:
+    python: 3.12.13
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: observation-final-save-deadline
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Each completion awaits historical tool checks before the final save.
+    The 30-second Stop limit includes native export, which has its own 10-second timeout.
+    Expiry can leave newest results or final text unrecorded even if earlier prefixes
+    reached Watcher.
+- id: deployed-server-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Local fixtures do not establish deployed Watcher persistence, grading
+    quality or latency.
+- id: asynchronous-recording
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: Hook success confirms evaluation or acceptance, not durable storage.
+    Query Watcher for persisted messages and decisions.
+- id: human-approval-ui
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: This native hook does not supply a human approval interface. Unattended
+    allow proceeds; escalation is withheld. Existing harness permissions and other
+    hooks remain active.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native

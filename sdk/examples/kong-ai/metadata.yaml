@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: kong-ai
+name: Kong AI Proxy
+summary: Monitor ordinary gateway clients through a native plugin and the public Watcher
+  SDK.
+category: gateway
+upstream_url: https://developer.konghq.com/plugins/ai-proxy/examples/openai-chat-route/
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Submit complete visible textual Chat exchanges and grade returned client
+      tool proposals according to server policy.
+    example: gateway/kong.yaml
+  enforce:
+    implemented: true
+    scope: Withhold the complete gateway response until every returned client tool
+      proposal is allowed under server enforcement.
+    example: gateway/kong.yaml
+    boundary: gateway-response-delivery
+    context: complete exchange snapshot
+    recording: optional
+    failure_behavior: follows-server-policy
+    failure_details: Bridge, transport and malformed-response errors withhold delivery;
+      server grading-error decisions follow administrator policy. Hook success acknowledges
+      submission, not durable storage.
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    kong: 3.9.3
+  runtimes:
+    python: 3.12.13
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+limitations:
+- id: tool-boundary
+  mode: enforce
+  cause: integration-scope
+  description: The gateway can withhold client tool proposals. It cannot stop tools
+    already executed by the provider or unrelated actions outside this route.
+- id: approval
+  mode: enforce
+  cause: integration-scope
+  description: Escalation withholds the response. This example has no human approval
+    interface or resume mechanism.
+- id: exchange-identity
+  mode: both
+  cause: integration-scope
+  description: Ordinary generic Chat clients get a separate Watcher session per exchange,
+    containing their supplied full-history snapshot. Decisions stay with that exchange.
+    Supported Chat-compatible harness traffic may group by a backend-recognized native
+    session ID.
+- id: format
+  mode: both
+  cause: integration-scope
+  description: The route accepts buffered Chat Completions and client function tools;
+    streaming, protocol upgrades and other API routes are rejected. The deployment
+    requires ai-proxy and key-auth. Local native verification covers text. Watcher
+    handles provider message conversion.
+- id: storage
+  mode: both
+  cause: watcher
+  description: Hook success does not prove durable storage. Verify transcripts and
+    decisions through public readback; no durable delivery queue is provided.
+- id: deployment
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Production deployment, live provider behavior and model quality are
+    not established by deterministic local tests.
+- id: native-tool-id-reuse
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Tool-call IDs must be unique across the full conversation; reusing
+    an earlier ID for a new call is rejected.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native

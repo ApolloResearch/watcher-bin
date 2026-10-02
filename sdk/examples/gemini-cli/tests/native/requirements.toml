@@ -1,0 +1,5 @@
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "/usr/local/bin/python /opt/fixture/hook_entry.py"
+timeout = 60

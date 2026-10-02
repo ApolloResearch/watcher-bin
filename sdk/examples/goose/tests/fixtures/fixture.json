@@ -1,0 +1,86 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Run two safe commands"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "toolRequest",
+        "id": "call-a",
+        "toolCall": {
+          "status": "success",
+          "value": {
+            "name": "developer__shell",
+            "arguments": {
+              "command": "pwd"
+            }
+          }
+        }
+      },
+      {
+        "type": "toolRequest",
+        "id": "call-b",
+        "toolCall": {
+          "status": "success",
+          "value": {
+            "name": "developer__shell",
+            "arguments": {
+              "command": "ls"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "toolResponse",
+        "id": "call-b",
+        "toolResult": {
+          "status": "success",
+          "value": {
+            "content": [
+              {
+                "type": "text",
+                "text": "file.txt"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "toolResponse",
+        "id": "call-a",
+        "toolResult": {
+          "status": "success",
+          "value": {
+            "content": [
+              {
+                "type": "text",
+                "text": "/workspace"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "finished"
+      }
+    ]
+  }
+]

@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: claude-compliance
+name: Claude Compliance API
+summary: Import retained Claude Enterprise chat and session transcripts into Watcher.
+category: compliance-api
+direction: to-watcher
+upstream_url: https://platform.claude.com/docs/en/manage-claude/compliance-api
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: Retrospective transcript recording for one selected chat, local session
+      or remote session.
+    example: demo/import_session.py
+    context: conversation
+    recording: optional
+  enforce:
+    implemented: false
+    scope: The source exposes historical transcripts and cannot block actions.
+    example: null
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: fixture-http
+  upstream_versions:
+    claude-compliance: null
+  runtimes:
+    python: 3.12.14
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: contract
+      checks:
+      - native
+    enforce:
+      result: not-run
+      coverage: null
+      checks: []
+    export: null
+limitations:
+- id: retrospective
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: The Compliance API exposes historical content, with no synchronous
+    veto.
+- id: incomplete-source
+  mode: observe
+  cause: upstream
+  kind: constraint
+  description: Deleted chats, truncated arguments and missing tool IDs stop the import.
+    Contentless messages and other capture limitations are represented explicitly.
+- id: asynchronous-recording
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: The hook schedules persistence after responding. The local receipt
+    proves submission only; verify stored content through Watcher's query API or Analyzer.
+- id: historical-time
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: Original timestamps remain message metadata; Watcher dates generic
+    imported messages at ingestion time.
+- id: live-access
+  mode: observe
+  cause: unverified
+  kind: verification-gap
+  description: Enterprise API access and deployed Watcher persistence require verification
+    in the operator's environment.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: contract
+    checks:
+    - native
+  enforce: null

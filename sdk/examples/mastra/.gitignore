@@ -1,0 +1,7 @@
+.venv/
+node_modules/
+target/
+.pytest_cache/
+__pycache__/
+dist/
+*.egg-info/

@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: amp
+name: Amp
+summary: Public Amp Python SDK execute stream after completion; service-backed native
+  CLI completion is unverified.
+category: coding-harness
+upstream_url: https://ampcode.com/docs/markdown/sdk/python
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Public Amp Python SDK execute stream after completion; service-backed native
+      CLI completion is unverified.
+    example: demo/observe.py
+  enforce:
+    implemented: false
+    scope: 'Unavailable: delegate decision protocol and native identities remain unverified.'
+    example: null
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: mocked-sdk-transport
+  upstream_versions:
+    amp-sdk: 0.1.20260823161440
+  runtimes:
+    python: 3.12.3
+  platform: linux-x86_64
+  results:
+    observe:
+      result: passed
+      coverage: contract
+      checks:
+      - python
+    enforce:
+      result: not-run
+      coverage: null
+      checks: []
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: deployed-server-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Local fixtures do not establish deployed Watcher persistence, grading
+    quality or latency.
+- id: native-dispatch-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: The real CLI requires Amp getUserInfo/loadPlugins service initialization
+    before tools; a local model fixture is insufficient.
+- id: delegate-contract-unverified
+  mode: enforce
+  cause: unverified
+  kind: verification-gap
+  description: The public SDK serializes delegate permission configuration, but native
+    stdin/decision and identity protocols are not verified.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: contract
+    checks:
+    - python
+  enforce: null

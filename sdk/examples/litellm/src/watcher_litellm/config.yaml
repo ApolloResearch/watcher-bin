@@ -1,0 +1,12 @@
+model_list:
+  - model_name: monitored-model
+    litellm_params:
+      model: os.environ/LITELLM_MODEL
+      api_key: os.environ/PROVIDER_API_KEY
+
+litellm_settings:
+  callbacks: watcher_litellm.callback.watcher_callback
+  telemetry: false
+
+general_settings:
+  disable_spend_logs: true

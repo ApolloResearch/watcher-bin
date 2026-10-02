@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: smolagents
+name: smolagents
+summary: Native tool monitoring follows configured Watcher policy, with optional awaited
+  application approval.
+category: agent-framework
+upstream_url: https://github.com/huggingface/smolagents
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: The native pre-tool integration observes without enforcing when server
+      mode is observe. A separate completed-history observer is also available.
+    example: demo/observe.py
+    context: conversation
+    recording: optional
+    timeout_seconds: 420
+  enforce:
+    implemented: true
+    scope: Native stream consumption boundary. Final transcript recording uses the
+      monitor timeout, configurable with a 420-second default.
+    example: demo/enforce.py
+    boundary: native stream consumption boundary
+    context: conversation
+    recording: optional
+    failure_behavior: fail-closed
+    failure_details: Transport or malformed/mismatched outcomes block. Deferred preserves
+      ordinary native permissions; configured grading-failure allow is honored. Human
+      escalation waits for an application callback, or blocks unattended.
+    timeout_seconds: 420
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: mocked-sdk-transport
+  upstream_versions:
+    smolagents: 1.22.0
+  runtimes:
+    python: 3.12.3
+  platform: linux-x86_64
+  results:
+    observe:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - python
+    enforce:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - python
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: scope-01
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Historical tool prefixes exclude future text; incomplete outcomes raise,
+    and final recording is attempted even after judgment failure.
+- id: scope-04
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: The separate post-run observation path cannot prevent side effects.
+- id: scope-05
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Text and function content only; full retained history required.
+- id: scope-06
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Completed ActionStep objects supply actual model prompts/response text;
+    ToolOutput events retain individual parallel-result IDs. Incomplete steps, planning,
+    failures and multimedia are rejected.
+- id: deployed-verification
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: This example has no deployed Watcher storage or grading verification;
+    local fixtures simulate server outcomes.
+- id: asynchronous-recording
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: Hook responses do not acknowledge durable storage. Authorized transcript/decision
+    recording runs after response; query Watcher to confirm persistence.
+- id: application-approval
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Human approval uses an awaited application callback followed by a public
+    decision upload and readback. This requires session-read plus owner/write-any
+    access. No approval UI, durable interrupt/resume, or automatic-review model is
+    included.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: native-fixture
+    checks:
+    - python
+  enforce:
+    coverage: native-fixture
+    checks:
+    - python

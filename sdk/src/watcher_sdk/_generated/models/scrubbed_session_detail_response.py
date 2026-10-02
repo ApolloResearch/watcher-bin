@@ -37,10 +37,9 @@ class ScrubbedSessionDetailResponse:
 
     Attributes:
         session_id (str):
-        agent_platform (str): Agent platform that produced this session. Known values: 'claude_code', 'codex',
-            'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and 'other'. A session keeps the value
-            it was created with, so sessions recorded before a harness had its own value remain 'other'. Clients must
-            tolerate unrecognized values.
+        agent_platform (str): Reported coding agent. Retained SDK adapter identities can name the agent, including for
+            historical sessions stored as 'other'. Reporting does not change the stored ingestion identity. Clients must
+            tolerate additional platform strings.
         started_at (datetime.datetime):
         ended_at (datetime.datetime):
         message_count (int):
@@ -52,6 +51,8 @@ class ScrubbedSessionDetailResponse:
         user_email (None | str | Unset):
         external_ids (None | ScrubbedSessionDetailResponseExternalIdsType0 | Unset):
         metadata (None | ScrubbedSessionDetailResponseMetadataType0 | Unset):
+        sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted; same
+            values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone.
         content_state (Literal['scrubbed'] | Unset):  Default: 'scrubbed'.
         is_content_scrubbed (bool | Unset):  Default: True.
         latest_trajectory_id (None | Unset):
@@ -72,6 +73,7 @@ class ScrubbedSessionDetailResponse:
     user_email: None | str | Unset = UNSET
     external_ids: None | ScrubbedSessionDetailResponseExternalIdsType0 | Unset = UNSET
     metadata: None | ScrubbedSessionDetailResponseMetadataType0 | Unset = UNSET
+    sources: list[str] | Unset = UNSET
     content_state: Literal["scrubbed"] | Unset = "scrubbed"
     is_content_scrubbed: bool | Unset = True
     latest_trajectory_id: None | Unset = UNSET
@@ -148,6 +150,10 @@ class ScrubbedSessionDetailResponse:
         else:
             metadata = self.metadata
 
+        sources: list[str] | Unset = UNSET
+        if not isinstance(self.sources, Unset):
+            sources = self.sources
+
         content_state = self.content_state
 
         is_content_scrubbed = self.is_content_scrubbed
@@ -193,6 +199,8 @@ class ScrubbedSessionDetailResponse:
             field_dict["external_ids"] = external_ids
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
+        if sources is not UNSET:
+            field_dict["sources"] = sources
         if content_state is not UNSET:
             field_dict["content_state"] = content_state
         if is_content_scrubbed is not UNSET:
@@ -325,6 +333,8 @@ class ScrubbedSessionDetailResponse:
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
 
+        sources = cast(list[str], d.pop("sources", UNSET))
+
         content_state = cast(Literal["scrubbed"] | Unset, d.pop("content_state", UNSET))
         if content_state != "scrubbed" and not isinstance(content_state, Unset):
             raise ValueError(
@@ -367,6 +377,7 @@ class ScrubbedSessionDetailResponse:
             user_email=user_email,
             external_ids=external_ids,
             metadata=metadata,
+            sources=sources,
             content_state=content_state,
             is_content_scrubbed=is_content_scrubbed,
             latest_trajectory_id=latest_trajectory_id,

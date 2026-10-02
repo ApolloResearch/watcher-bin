@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-openclaw-bridge"
+version = "0.1.0"
+description = "Watcher SDK example for openclaw-bridge"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1", "filelock>=3.19,<4"]
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "httpx==0.28.1"]
+
+[project.scripts]
+watcher-openclaw-bridge = "watcher_openclaw_bridge.integration:main"
+
+[tool.uv.sources]
+watcher-sdk = { path = "../../../.." }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_openclaw_bridge"]
+
+[tool.uv]
+exclude-newer = "7 days"
+package = true
+
+[tool.uv.workspace]
+members = []

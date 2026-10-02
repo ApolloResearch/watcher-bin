@@ -1,0 +1,25 @@
+{
+  "name": "watcher-openclaw-example",
+  "version": "0.1.0",
+  "type": "module",
+  "files": [
+    "src",
+    "openclaw.plugin.json"
+  ],
+  "peerDependencies": {
+    "openclaw": "2026.9.4"
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/plugin.mjs"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.9.4",
+      "minGatewayVersion": "2026.9.4"
+    },
+    "build": {
+      "openclawVersion": "2026.9.4",
+      "pluginSdkVersion": "2026.9.4"
+    }
+  }
+}

@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: kilocode
+name: Kilo Code
+summary: Supported linear text/tool parts from native session snapshots.
+category: coding-harness
+upstream_url: https://github.com/Kilo-Org/kilocode
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Supported linear text/tool parts from native session snapshots.
+    example: demo/observe.mjs
+    timeout_seconds: 10
+    recording: required
+    native_timeout_seconds: 15
+  enforce:
+    implemented: true
+    scope: Awaited tool.execute.before callback for the captured file-tool path.
+    example: demo/enforce.mjs
+    boundary: native-tool-hook
+    context: visible-linear-history
+    recording: required
+    failure_behavior: mixed
+    timeout_seconds: 420
+    native_timeout_seconds: 460
+    failure_details: A loaded awaited callback withholds on SDK/process refusal; plugin
+      loading failures and later argument mutations are outside verified scope.
+manifests:
+- packages/python/pyproject.toml
+- packages/node/package.json
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    '@kilocode/cli': 7.6.2
+  runtimes:
+    python: 3.12.13
+    node: v24.11.1
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: scope-01
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Native dispatch verified for the captured file-tool conversation; deployed
+    Watcher persistence and real grading remain unverified.
+- id: scope-02
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Only supported text/tool content; attachments and branch replay are
+    not covered
+- id: scope-03
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Tool results are projected in stored part order; no live completion
+    ordering is claimed
+- id: scope-04
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: The retained observer is retrospective; the separately selected enforcement
+    adapter can veto within its documented boundary.
+- id: observation-final-save-deadline
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Each completion awaits historical tool checks before the final save.
+    The Python observation process has a 15-second limit. Expiry can leave newest
+    results or final text unrecorded even if earlier prefixes reached Watcher. Node
+    callback completion is not a recording acknowledgement.
+- id: native-failure-boundary
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Later argument-mutating plugins and plugin loading failures are outside
+    the verified boundary.

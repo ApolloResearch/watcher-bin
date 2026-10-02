@@ -1,0 +1,12 @@
+[[hooks]]
+name = "watcher-archive"
+type = "post_agent"
+command = "__WATCHER_PYTHON__ -m watcher_mistral_vibe.integration"
+timeout = 60
+
+[[hooks]]
+name = "watcher-enforcement"
+type = "pre_tool"
+command = "env WATCHER_EPHEMERAL_PRE_TOOL=1 __WATCHER_PYTHON__ -m watcher_mistral_vibe.pre_tool"
+timeout = 480
+strict = true

@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: opentelemetry
+name: OpenTelemetry
+summary: Export Watcher decisions, flagged-session summaries and optional transcripts
+  through OpenTelemetry to Grafana/Loki, Datadog, Elastic, New Relic, Dynatrace, CloudWatch
+  Logs or OpenSearch.
+category: observability
+direction: from-watcher
+upstream_url: https://opentelemetry.io/docs/specs/otlp/
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: false
+    scope: This example exports Watcher records rather than ingesting agent activity.
+    example: null
+  enforce:
+    implemented: false
+    scope: Log export cannot synchronously prevent agent actions.
+    example: null
+  export:
+    implemented: true
+    scope: Finite occurrence-time windows of tool-call decisions, activity-overlap
+      windows of flagged-session summaries, and explicitly opted-in complete transcripts.
+    example: demo/export.py
+    context: stored decisions, session summaries and optional transcripts
+    recording: none
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: fixture-http
+  upstream_versions:
+    opentelemetry-proto: 1.44.0
+    otelcol-contrib: 0.134.0
+  runtimes:
+    python: 3.12.14
+    otelcol-contrib: otelcol-contrib version 0.134.0
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: not-run
+      coverage: null
+      checks: []
+    enforce:
+      result: not-run
+      coverage: null
+      checks: []
+    export:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - native
+limitations:
+- id: source-pagination
+  mode: export
+  cause: watcher
+  kind: constraint
+  description: Offset pagination and occurrence-time filters do not expose an immutable
+    snapshot or decision-change cursor.
+- id: replay
+  mode: export
+  cause: integration-scope
+  kind: constraint
+  description: Replays and ambiguous delivery can duplicate logs; no exactly-once
+    or complete-audit-feed guarantee is provided.
+- id: collector-delivery
+  mode: export
+  cause: integration-scope
+  kind: constraint
+  description: Collector upstream acknowledgment can hide downstream partial rejection;
+    inspect Collector logs and destination records. No durable queue is configured.
+- id: hosted-indexing
+  mode: export
+  cause: unverified
+  kind: verification-gap
+  description: Hosted indexing, account permissions and alert rules require verification
+    in the operator's environment; local protocol fixtures do not establish these.
+- id: notification-feed
+  mode: export
+  cause: watcher
+  description: The public SDK exposes stored decisions and sessions, but no notification-delivery
+    feed. These exports are snapshots, not notification events.
+- id: transcript-content
+  mode: export
+  cause: integration-scope
+  description: Transcripts are excluded by default. Opting in exports their content
+    and any sensitive information they contain; filter or redact it before destination
+    delivery as required.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe: null
+  enforce: null
+  export:
+    coverage: native-fixture
+    checks:
+    - native

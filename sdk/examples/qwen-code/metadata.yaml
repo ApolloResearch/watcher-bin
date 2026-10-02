@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: qwen-code
+name: Qwen Code
+summary: Supported native text/tool history with exact model call IDs.
+category: coding-harness
+upstream_url: https://github.com/QwenLM/qwen-code
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Supported native text/tool history with exact model call IDs.
+    example: demo/hooks.example.json
+    timeout_seconds: 10
+    native_timeout_seconds: 15
+  enforce:
+    implemented: true
+    scope: Native PreToolUse with model tool_call_id; configured file-tool boundary.
+    example: demo/hooks.enforce.example.json
+    boundary: native-hook
+    context: supported native history and model tool_call_id
+    recording: required
+    failure_behavior: native-may-allow
+    timeout_seconds: 420
+    native_timeout_seconds: 480
+    failure_details: Caught SDK failures refuse the call; native hook startup, crash
+      or deadline handling is upstream-owned and may allow execution.
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    qwen-code: 0.23.4
+  runtimes:
+    python: 3.12.13
+    node: v24.11.1
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: observation-final-save-deadline
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Each completion awaits historical tool checks before the final save.
+    The outer observation limit is 15 seconds. Expiry can leave newest results or
+    final text unrecorded even if earlier prefixes reached Watcher.
+- id: deployed-server-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Local fixtures do not establish deployed Watcher persistence, grading
+    quality or latency.
+- id: transcript-scope
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Only the documented linear text/tool histories are supported; attachments,
+    compaction and branch/subagent replay need separate handling.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native

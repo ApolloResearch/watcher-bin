@@ -1,0 +1,120 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: vercel-ai
+name: Vercel AI SDK
+summary: Native generateText tool callbacks await configured Watcher policy through
+  a Python SDK sidecar.
+category: agent-framework
+upstream_url: https://github.com/vercel/ai
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: Native Vercel AI SDK text/function history after execution.
+    example: demo/observe.py
+    recording: optional
+  enforce:
+    implemented: true
+    scope: Awaited tool.execute with a Python sidecar; registered local tools only.
+    example: demo/enforce.py
+    boundary: native-tool-callback
+    context: conversation
+    recording: optional
+    failure_behavior: fail-closed
+    timeout_seconds: 420
+    failure_details: Transport or malformed/mismatched outcomes withhold the tool
+      body; deferred preserves ordinary native dispatch. Human approval can be provided
+      to the Python monitor and must be recorded/read back before execution.
+manifests:
+- packages/python/pyproject.toml
+- packages/node/package.json
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    ai: 5.0.99
+    zod: 4.6.5
+  runtimes:
+    python: 3.12.13
+    node: v24.11.1
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: scope-01
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Historical tool prefixes exclude future text; incomplete outcomes raise,
+    and final recording is attempted even after judgment failure.
+- id: scope-03
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Model outputs and grader verdicts are local fixtures; hosted providers,
+    production grading quality and deployed Watcher behavior remain unverified.
+- id: scope-04
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: The separate post-run observation path cannot prevent side effects.
+- id: scope-05
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Text and function content only; full retained history required.
+- id: scope-06
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: The Node adapter requires the separately installed Python bridge, which
+    converts native response.messages JSON before calling the public SDK.
+- id: asynchronous-recording
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: Hook response acceptance does not confirm durable transcript storage;
+    use public readback to confirm.
+- id: application-approval
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: An optional Python application callback supplies the human choice,
+    then public outcome upload/readback confirms it before tool execution. Requires
+    session-read and owner/write-any access; no approval UI, durable resume or automatic-review
+    model is included.

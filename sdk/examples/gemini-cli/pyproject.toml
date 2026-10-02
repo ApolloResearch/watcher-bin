@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-example-gemini-cli"
+version = "0.1.0"
+description = "Experimental gemini-cli integration using the public Watcher SDK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1"]
+
+[project.scripts]
+"watcher-gemini-cli-enforce" = "watcher_gemini_cli.pre_tool:main"
+"watcher-gemini-cli-observe" = "watcher_gemini_cli.integration:main"
+"watcher-gemini-cli-observe-settings" = "watcher_gemini_cli.configuration:observe_settings"
+"watcher-gemini-cli-enforce-settings" = "watcher_gemini_cli.configuration:enforce_settings"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "httpx==0.28.1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_gemini_cli"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+
+[tool.uv]
+exclude-newer = "7 days"

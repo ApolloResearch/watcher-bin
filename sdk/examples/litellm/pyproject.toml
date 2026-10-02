@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-litellm-example"
+version = "0.2.0"
+description = "Experimental LiteLLM proxy guardrail that sends raw provider exchanges to Watcher"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1", "litellm[proxy]>=1.100.1,<2"]
+
+[dependency-groups]
+dev = ["anthropic>=0.70,<1", "pytest==9.1.1", "pytest-asyncio==1.4.0", "pytest-cov>=6,<8", "pyyaml==6.0.3"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_litellm"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
+markers = ["live: needs a running Watcher server and real providers or agent CLIs"]
+
+[project.scripts]
+watcher-litellm-config = "watcher_litellm.config:main"
+
+[tool.uv]
+exclude-newer = "7 days"

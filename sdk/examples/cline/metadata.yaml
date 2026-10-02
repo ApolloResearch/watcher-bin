@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: cline
+name: Cline
+summary: Public canonical history of a local root session at TaskComplete.
+category: coding-harness
+upstream_url: https://github.com/cline/cline
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Public canonical history of a local root session at TaskComplete.
+    example: demo/observe.sh
+    timeout_seconds: 10
+    recording: required
+  enforce:
+    implemented: true
+    scope: Native PreToolUse cancellation using public root-session history.
+    example: demo/enforce.sh
+    boundary: native-pre-tool-hook
+    context: root-session-history
+    recording: required
+    failure_behavior: native-may-allow
+    timeout_seconds: 60
+    native_timeout_seconds: 120
+manifests:
+- packages/python/pyproject.toml
+- packages/node/package.json
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    cline: 3.0.61
+    '@cline/core': 0.0.82
+  runtimes:
+    python: 3.12.13
+    node: v24.11.1
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: scope-01
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Stored canonical history excludes some generated system context; only
+    linear local root sessions verified
+- id: scope-02
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Subagent callbacks are rejected; remote/hub history and compaction
+    require separate verification
+- id: scope-03
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: The retained observer is retrospective; deployed Watcher grading and
+    persistence remain unverified.
+- id: native-failure-boundary
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Native startup/crash/invalid-output/timeout failures are logged and
+    ignored by Cline; a delivered cancel aborts the task without final answer.
+- id: history-deadline
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: The public history reader has a 25-second timeout; grading is capped
+    at 60 seconds within the native 120-second hook deadline.

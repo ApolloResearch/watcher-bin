@@ -1,0 +1,16 @@
+[project]
+name = "watcher-mistral-vibe-native-fixture"
+version = "0.1.0"
+description = "Isolated pinned Mistral Vibe runtime for the native integration fixture"
+requires-python = ">=3.12"
+dependencies = ["mistral-vibe==2.25.4"]
+
+[tool.uv]
+package = false
+exclude-newer = "7 days"
+
+[tool.uv.sources]
+mistral-vibe = { git = "https://github.com/mistralai/mistral-vibe.git", rev = "d4b3223bbd74f83cbc08da4b9c3776c8ad196955" }
+
+[tool.uv.workspace]
+members = []

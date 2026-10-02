@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "exportedAt": "2026-09-14T18:44:02.982Z",
+  "session": {
+    "sessionId": "b71fe14c-9a87-49cf-a086-c34f288c0afa",
+    "title": "Untitled Session",
+    "workspaceDirectory": "/tmp/native-workspace",
+    "history": [
+      {
+        "message": {
+          "role": "user",
+          "content": "Read fixture.txt with Read then say sdk50 native completed"
+        },
+        "contextItems": [],
+        "editorState": "Read fixture.txt with Read then say sdk50 native completed"
+      },
+      {
+        "message": {
+          "role": "assistant",
+          "content": "",
+          "toolCalls": [
+            {
+              "id": "sdk50-native-call",
+              "type": "function",
+              "function": {
+                "name": "Read",
+                "arguments": "{\"filepath\":\"/tmp/native-workspace/fixture.txt\"}"
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "model": "gpt-4o",
+            "cost_cents": 0
+          }
+        },
+        "contextItems": [],
+        "toolCallStates": [
+          {
+            "toolCallId": "sdk50-native-call",
+            "toolCall": {
+              "id": "sdk50-native-call",
+              "type": "function",
+              "function": {
+                "name": "Read",
+                "arguments": "{\"filepath\":\"/tmp/native-workspace/fixture.txt\"}"
+              }
+            },
+            "status": "done",
+            "parsedArgs": {
+              "filepath": "/tmp/native-workspace/fixture.txt"
+            },
+            "output": [
+              {
+                "content": "Content of /tmp/native-workspace/fixture.txt:\nSDK50_FILE_CONTENT_MARKER\n",
+                "name": "Tool Result",
+                "description": "Tool execution result"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "message": {
+          "role": "assistant",
+          "content": "sdk50 native completed",
+          "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "model": "gpt-4o",
+            "cost_cents": 0
+          }
+        },
+        "contextItems": []
+      }
+    ],
+    "usage": {
+      "totalCost": 0.00015000000000000001,
+      "promptTokens": 20,
+      "completionTokens": 10,
+      "promptTokensDetails": {
+        "cachedTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    }
+  }
+}

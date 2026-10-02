@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: groq
+name: Groq
+summary: Send original provider HTTP exchanges to Watcher; gate application-owned
+  function calls using configured policy.
+category: provider-library
+upstream_url: https://github.com/groq/groq-python
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: Complete buffered provider exchanges through this application wrapper;
+      Watcher converts the native format.
+    example: demo/observe.py
+    recording: optional
+  enforce:
+    implemented: true
+    scope: Complete buffered provider exchanges through this application wrapper;
+      Watcher converts the native format.
+    example: demo/enforce.py
+    boundary: application-dispatch
+    context: conversation
+    recording: optional
+    failure_behavior: fail-closed
+    timeout_seconds: 420
+    failure_details: Missing, malformed or mismatched decisions and transport errors
+      withhold the batch. Configured observe/paused and grading-failure allow preserve
+      application dispatch. Escalations block without a human approval interface.
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: mocked-sdk-transport
+  upstream_versions:
+    groq: 1.7.0
+    httpx: 0.28.1
+  runtimes:
+    python: 3.12.3
+  platform: linux-x86_64
+  results:
+    observe:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - python
+    enforce:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - python
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: local-fixtures
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Native provider SDK with local HTTP replies; hosted-provider behavior
+    and deployed Watcher persistence are unverified.
+- id: buffered-client-tools
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Full native history and buffered client function tools only. Other
+    clients, streaming and provider-hosted actions are not controlled.
+- id: asynchronous-ingestion
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: Hook success schedules ingestion; it does not acknowledge durable recording.
+    Recording requires sessions:ingest.
+- id: result-tail
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Tool results enter Watcher with the next successful provider exchange;
+    a between-turn stop or generation failure can leave the latest results absent.
+- id: human-approval
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Escalations withhold the batch; no human approval callback or automatic
+    replanning is included.
+- id: admin-locks
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Explicit mode overrides may be rejected by administrator locks. Synchronous
+    monitors inherit server policy by default.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: native-fixture
+    checks:
+    - python
+  enforce:
+    coverage: native-fixture
+    checks:
+    - python

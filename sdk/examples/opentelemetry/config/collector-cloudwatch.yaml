@@ -1,0 +1,31 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+extensions:
+  sigv4auth:
+    region: ${env:AWS_REGION}
+    service: logs
+exporters:
+  otlphttp/cloudwatch:
+    logs_endpoint: ${env:CLOUDWATCH_OTLP_LOGS_ENDPOINT}
+    encoding: proto
+    compression: none
+    headers:
+      x-aws-log-group: ${env:CLOUDWATCH_LOG_GROUP}
+      x-aws-log-stream: ${env:CLOUDWATCH_LOG_STREAM}
+    auth:
+      authenticator: sigv4auth
+    sending_queue:
+      enabled: false
+    retry_on_failure:
+      initial_interval: 1s
+      max_interval: 2s
+      max_elapsed_time: 10s
+service:
+  extensions: [sigv4auth]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      exporters: [otlphttp/cloudwatch]

@@ -1,0 +1,22 @@
+{
+  "name": "watcher-roo-example",
+  "publisher": "local-example",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "main": "./src/extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionDependencies": [
+    "RooVeterinaryInc.roo-cline"
+  ],
+  "private": true,
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "check": "node --check src/extension.cjs"
+  }
+}

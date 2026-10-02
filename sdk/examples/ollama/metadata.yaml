@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: ollama
+name: Ollama
+summary: Monitor application-owned native tool callbacks using configured Watcher
+  policy and submit full native histories.
+category: provider-library
+upstream_url: https://github.com/ollama/ollama-python
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: Buffered native requests made through the instrumented client, with full
+      visible history.
+    example: demo/observe.py
+    recording: optional
+  enforce:
+    implemented: true
+    scope: Registered application tools dispatched through the supplied monitor.
+    example: demo/enforce.py
+    boundary: application-dispatch
+    context: conversation
+    recording: optional
+    failure_behavior: fail-closed
+    timeout_seconds: 420
+    failure_details: Transport, malformed and mismatched outcomes block the batch.
+      Deferred preserves ordinary application dispatch; configured grading-failure
+      allow is honored. Escalations await application approval or block unattended.
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: mocked-sdk-transport
+  upstream_versions:
+    ollama: 0.6.2
+    httpx: 0.28.1
+  runtimes:
+    python: 3.12.3
+  platform: linux-x86_64
+  results:
+    observe:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - python
+    enforce:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - python
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: scope-01
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: No live provider or Watcher server was used; SDK transport responses
+    are mocked.
+- id: scope-02
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Full buffered history required; streaming and incremental-delta ingestion
+    unsupported.
+- id: scope-03
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Observation is bounded and ordered but not durable; overload is explicitly
+    reported.
+- id: scope-04
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Only distinct outstanding tool names can be linked; assigned IDs require
+    unchanged full history.
+- id: scope-05
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Synchronous enforcement controls only registered client-executed callbacks;
+    provider-hosted tools and other clients are outside scope.
+- id: scope-06
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Full grading requires a permitted enforce override and recording permission;
+    locked overrides and incomplete outcomes fail closed.
+- id: scope-07
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: No durable execution ledger or automatic replay after process restart
+    is provided.
+- id: same-name-parallel-results
+  mode: both
+  cause: upstream
+  kind: blocker
+  description: Native history lacks call IDs for simultaneous same-name tool results;
+    this example rejects ambiguous correlation.
+- id: asynchronous-recording
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: Hook responses confirm acceptance, not durable storage. Query Watcher
+    to verify persisted messages and decisions.
+- id: application-approval
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Human approval requires an application callback. No built-in approval
+    UI, durable interrupt/resume, automatic-review model or persisted human-choice
+    audit is included.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: native-fixture
+    checks:
+    - python
+  enforce:
+    coverage: native-fixture
+    checks:
+    - python

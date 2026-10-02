@@ -1,0 +1,24 @@
+{
+  "id": "watcher-openclaw-example",
+  "name": "Watcher SDK example",
+  "description": "Observe conversations or await Watcher before embedded tool calls.",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "mode": {
+        "type": "string",
+        "enum": [
+          "observe",
+          "enforce"
+        ]
+      }
+    },
+    "required": [
+      "mode"
+    ]
+  }
+}

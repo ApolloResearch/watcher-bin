@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: mistral-vibe
+name: Mistral Vibe
+summary: Supported native file-tool conversation and final response.
+category: coding-harness
+upstream_url: https://github.com/mistralai/mistral-vibe
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Supported native file-tool conversation and final response.
+    example: demo/hooks.example.toml
+    timeout_seconds: 10
+    native_timeout_seconds: 15
+  enforce:
+    implemented: true
+    scope: Opt-in ephemeral pre_tool veto with tool-only context and preserved native
+      call ID.
+    example: demo/hooks.enforce.example.toml
+    boundary: native-hook
+    context: tool-only; messages=[]
+    recording: none
+    failure_behavior: fail-closed
+    timeout_seconds: 420
+    native_timeout_seconds: 480
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    mistral-vibe: 2.25.4
+  runtimes:
+    python: 3.12.13
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: observation-final-save-deadline
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Each completion awaits historical tool checks before the final save.
+    The outer limit is 15 seconds for observe-only post_agent, or 60 seconds for completion
+    with enforcement. Expiry can leave newest results or final text unrecorded even
+    if earlier prefixes reached Watcher.
+- id: deployed-server-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Local fixtures do not establish deployed Watcher persistence, grading
+    quality or latency.
+- id: ephemeral-decision
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Early veto is ephemeral and does not record a decision; completion
+    observation is independent.
+- id: transcript-scope
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Only the documented linear text/tool histories are supported; attachments,
+    compaction and branch/subagent replay need separate handling.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native

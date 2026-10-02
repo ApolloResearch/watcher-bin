@@ -1,0 +1,17 @@
+{
+  "slug": "continue",
+  "distribution": "watcher-example-continue",
+  "upstream_distributions": [],
+  "version_commands": {
+    "continue": [
+      "/opt/native/node_modules/.bin/cn",
+      "--version"
+    ],
+    "node": [
+      "/usr/local/bin/node",
+      "--version"
+    ]
+  },
+  "observation_script": "run_export_fixture.py",
+  "enforcement_script": "run_fixture.py"
+}

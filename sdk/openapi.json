@@ -800,13 +800,28 @@
           "hooks"
         ],
         "summary": "Pre Tool Use Hook",
-        "description": "Evaluate one or several pending calls, or accept a transcript with no pending call.\n\nScalar input returns one decision or an HTTP refusal. A batch returns an\nordered result per input; a refused input carries status_code/detail while\nother inputs continue. Null or empty input returns an empty list and only\ningests the top-level `messages`. All inputs share one transcript, recorded\nonce along with successful judgments.\nDecisions attach to each input's `tool_use_id`. For evaluated requests,\n`ephemeral` skips transcript, decision, and grade persistence while retaining\nusage accounting. Enforce and observe both return completed judgments,\nincluding when ephemeral or the caller cannot record sessions.\n\n`settings_overrides` accepts YAML text or a JSON object and uses the normal\nadministrator permission rules. Locked settings reject any override with\nHTTP 422. The effective `enforcement.mode` selects enforcement, observation,\nor ingestion only. Observe returns the completed judgment with a deferred\napplied decision. Paused and unnamed calls do not evaluate; authorized\ncallers still record the transcript. HTTP 422 errors use a list of detail\nentries, including validation and settings overrides.\n\nThe caller enforces returned decisions; this endpoint does not execute or\nblock tools itself. Deterministic stages precede triage and gateway grading.\n`mode=triage_only` bounds grading depth, while `skip_rules` and\n`policy_version` support clients that already evaluated deterministic stages.\nStage waits are bounded in both enforce and observe, but detached grades\ncan finish and count usage after a timeout or disconnect.\nCallers own transport-failure handling.\n\nCompleted evaluations are reused per org, session and tool-use ID when the\nstored name and JSON arguments match. Current enforcement posture is applied\nto the original judgment; policy or grading-depth changes do not invalidate\nit. `force_regrade=true` evaluates again and permits replacing the recorded\ndecision, including with an observation. Failed and unjudged evaluations\nretry normally. Reuse requires known external IDs, ingestion authority and\npermission to read the resolved session; id-less, ephemeral and write-only\ncallers evaluate normally, as do unknown stored call metadata shapes.\nReuse creates no new grades, usage or alerts, though the transcript still\ningests. Concurrent misses and retries before post-response recording may\nevaluate more than once. Paused mode never evaluates, even when forced.",
+        "description": "Evaluate one or several pending calls, or accept a transcript with no pending call.\n\nScalar input returns one decision or an HTTP refusal. A batch returns an\nordered result per input; a refused input carries status_code/detail while\nother inputs continue. Null or empty input returns an empty list and only\ningests the top-level `messages`. All inputs share one transcript, recorded\nonce along with successful judgments.\nDecisions attach to each input's `tool_use_id`. For evaluated requests,\n`ephemeral` skips transcript, decision, and grade persistence while retaining\nusage accounting. Enforce and observe both return completed judgments,\nincluding when ephemeral or the caller cannot record sessions.\n\n`settings_overrides` accepts YAML text or a JSON object and uses the normal\nadministrator permission rules. Locked settings reject any override with\nHTTP 422. The effective `enforcement.mode` selects enforcement, observation,\nor ingestion only. Observe returns the completed judgment with a deferred\napplied decision. Paused and unnamed calls do not evaluate; authorized\ncallers still record the transcript. HTTP 422 errors use a list of detail\nentries, including validation and settings overrides.\n\nThe caller enforces returned decisions; this endpoint does not execute or\nblock tools itself. Deterministic stages precede triage and gateway grading.\n`mode=triage_only` bounds grading depth, while `skip_rules` and\n`policy_version` support clients that already evaluated deterministic stages.\nStage waits are bounded in both enforce and observe, but detached grades\ncan finish and count usage after a timeout or disconnect.\nCallers own transport-failure handling.\n\nCompleted evaluations are reused per org, session and tool-use ID when the\nstored name and JSON arguments match. Current enforcement posture is applied\nto the original judgment; policy or grading-depth changes do not invalidate\nit. `force_regrade=true` evaluates again and permits replacing the recorded\ndecision, including with an observation. Failed and unjudged evaluations\nretry normally. Reuse requires known external IDs, ingestion authority and\npermission to read the resolved session; id-less, ephemeral and write-only\ncallers evaluate normally, as do unknown stored call metadata shapes.\nReuse creates no new grades, usage or alerts, though the transcript still\ningests. Concurrent misses and retries before post-response recording may\nevaluate more than once. Paused mode never evaluates, even when forced.\n\nWith `format=\"raw\"`, send a provider request (`request_body`) and its\ncomplete response (`response_body`) in one supported wire format (OpenAI\nChat Completions or Responses, Anthropic Messages, Gemini generateContent\nor Bedrock Converse) plus the client-facing endpoint path in `url`, instead\nof `messages` and `input`. Watcher converts the pair and evaluates the\nselected new client calls. The response is a list, one output per selected\ncall in response order; each `tool_use_id` is the provider's call ID.\nGemini calls get generated IDs and are matched by order within the selected\ncandidate. `response_index` selects by zero-based array position and is\nrequired when there are multiple alternatives. Deliver only the selected\nchoice or candidate. Match every\nexecutable client call to exactly one output before applying its decision.\nWithhold the response if a call has no output, IDs are duplicated, or an\noutput cannot be matched to a call. For Gemini, require equal call and output\ncounts. An error output is not permission to execute a call.\n\nAnthropic calls before the final `fallback` block have no output. An empty\nlist means no client calls were selected, not that the original response\ncontains none. There is no limit on the number of tool calls in one response.\nKnown coding harnesses are recognized from the request and `user_agent` and\ncontribute their session IDs. Their own helper requests without selected\nclient calls (Claude Code background requests, Codex thread titles,\napproval reviews and memory extraction, Antigravity titles) return `[]`\nand are not recorded. The gateway still checks those responses for\nexecutable calls.",
         "operationId": "pre_tool_use_hook_v1_hooks_pre_tool_use_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PreToolUseHookRequest"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PreToolUseHookRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RawPreToolUseHookRequest"
+                  }
+                ],
+                "title": "Request",
+                "discriminator": {
+                  "propertyName": "format",
+                  "mapping": {
+                    "watcher": "#/components/schemas/PreToolUseHookRequest",
+                    "raw": "#/components/schemas/RawPreToolUseHookRequest"
+                  }
+                }
               }
             }
           },
@@ -1544,6 +1559,146 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MessageDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/deep-review": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Request Session Deep Review",
+        "description": "Queue a deep review of the session's latest transcript, or return the one already queued.\n\nRepeating the request for an unchanged transcript returns the same operation.\nIf that review failed, a fresh attempt is queued. 402 when the organization\nis over its monthly grading cap.",
+        "operationId": "request_session_deep_review_v1_sessions__session_id__deep_review_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeepReviewRequestResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session has nothing to review, or a review cannot be started for it"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Current Session Deep Review",
+        "description": "Return the deep-review work to show when opening the session; 404 if the session is not visible.",
+        "operationId": "get_current_session_deep_review_v1_sessions__session_id__deep_review_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDeepReviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/deep-review/{operation_id}": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Session Deep Review Request",
+        "description": "Poll one on-demand deep review; 404 if it is not this session's review or the session is not visible.",
+        "operationId": "get_session_deep_review_request_v1_sessions__session_id__deep_review__operation_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Operation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeepReviewRequestResponse"
                 }
               }
             }
@@ -2547,7 +2702,7 @@
           "agent_platform": {
             "type": "string",
             "title": "Agent Platform",
-            "description": "Agent platform that produced this session. Known values: 'claude_code', 'codex', 'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and 'other'. A session keeps the value it was created with, so sessions recorded before a harness had its own value remain 'other'. Clients must tolerate unrecognized values."
+            "description": "Reported coding agent. Retained SDK adapter identities can name the agent, including for historical sessions stored as 'other'. Reporting does not change the stored ingestion identity. Clients must tolerate additional platform strings."
           },
           "user_id": {
             "anyOf": [
@@ -2638,6 +2793,14 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "Distinct canonical ingestion sources among retained session messages, sorted; same values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone."
           },
           "content_state": {
             "type": "string",
@@ -4967,6 +5130,42 @@
         ],
         "title": "DecisionSource",
         "description": "Subsystem that produced the policy decision."
+      },
+      "DeepReviewRequestResponse": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Operation Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "trajectory_hash": {
+            "type": "string",
+            "title": "Trajectory Hash"
+          },
+          "can_retry": {
+            "type": "boolean",
+            "title": "Can Retry"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation_id",
+          "status",
+          "trajectory_hash",
+          "can_retry"
+        ],
+        "title": "DeepReviewRequestResponse",
+        "description": "Queue state of an on-demand deep review, for polling until it finishes.\n\n``queued`` and ``running`` are in progress. ``succeeded`` means the review\nfinished; its report is published as the session's deep-review grade unless\na newer review already replaced it. ``failed`` means the review gave up after\nits retries or was cancelled; send the request again to start a new review\n(refused with 409 once this transcript has failed too many times)."
       },
       "DeviceAuthorizationResponse": {
         "properties": {
@@ -7494,6 +7693,165 @@
         "title": "PriorHumanDecision",
         "description": "One recent human-reviewed decision on this session, as data.\n\n``response`` is the human's verdict (e.g. ``allow``/``deny``);\n``tool_input`` is the gated call's input as it was stored. The server\nrenders the list into the monitor prompt's recent-decisions section,\noldest first."
       },
+      "RawPreToolUseHookRequest": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "const": "raw",
+            "title": "Format"
+          },
+          "request_body": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Request Body"
+          },
+          "response_body": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Response Body"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Client-facing endpoint path or URL, e.g. /v1/chat/completions.",
+            "default": ""
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider",
+            "description": "Gateway route or model alias, recorded as provenance."
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent",
+            "description": "The client's User-Agent header, used to recognize harnesses."
+          },
+          "response_index": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Index",
+            "description": "Zero-based array position of the Chat choice or Gemini candidate; required for multiple alternatives."
+          },
+          "external_ids": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "propertyNames": {
+                  "$ref": "#/components/schemas/ExternalIdSource"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ids"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "full",
+              "triage_only"
+            ],
+            "title": "Mode",
+            "default": "full"
+          },
+          "ephemeral": {
+            "type": "boolean",
+            "title": "Ephemeral",
+            "default": false
+          },
+          "force_regrade": {
+            "type": "boolean",
+            "title": "Force Regrade",
+            "default": false
+          },
+          "skip_rules": {
+            "type": "boolean",
+            "title": "Skip Rules",
+            "default": false
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          },
+          "settings_overrides": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 65536
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings Overrides"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "format",
+          "request_body",
+          "response_body"
+        ],
+        "title": "RawPreToolUseHookRequest",
+        "description": "A pre-tool-use hook request carrying one provider request and its complete response.\n\n``request_body`` is the JSON the client sent to the gateway and\n``response_body`` the assembled JSON response the gateway would return,\nboth in the same wire format: OpenAI Chat Completions or Responses,\nAnthropic Messages, Gemini generateContent or Bedrock Converse. Streams must\nbe assembled into the equivalent non-streaming body first. ``url`` is the\nclient-facing endpoint path or URL; it breaks ties between formats and is\nrecorded without credentials, query or fragment.\n\n``external_ids`` carries the gateway's own conversation ID, typically under\n``other``. A recognized harness's native ID is added to it; the caller\ncannot replace a native ID the harness supplied. With neither, the session\nis found by transcript prefix. ``user`` is honored only for callers allowed\nto impersonate. The remaining fields have the pre-tool-use hook's meaning.\n\nThe response is a list with one output per selected new client call, in\nresponse order. Each ``tool_use_id`` is the provider's own call ID, except\nfor Gemini, whose calls get stable generated IDs and are matched by order\nwithin the selected candidate. Only the selected choice or candidate may\nbe delivered. The gateway must match every executable client call it will\ndeliver to exactly one output before applying its decision. Withhold the\nresponse if a call has no output, IDs are duplicated, or an output cannot\nbe matched to a call. Gemini requires equal call and output counts.\n\nAnthropic calls before the final ``fallback`` block have no output. An\nempty list means no client calls were selected, not that the original\nresponse contains none. There is no limit on the number of tool calls in\none response (the watcher format accepts at most 32 inputs), because a\ngateway does not control how many calls a provider returns."
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -7625,7 +7983,7 @@
           "agent_platform": {
             "type": "string",
             "title": "Agent Platform",
-            "description": "Agent platform that produced this session. Known values: 'claude_code', 'codex', 'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and 'other'. A session keeps the value it was created with, so sessions recorded before a harness had its own value remain 'other'. Clients must tolerate unrecognized values."
+            "description": "Reported coding agent. Retained SDK adapter identities can name the agent, including for historical sessions stored as 'other'. Reporting does not change the stored ingestion identity. Clients must tolerate additional platform strings."
           },
           "user_id": {
             "anyOf": [
@@ -7716,6 +8074,14 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "Distinct canonical ingestion sources among retained session messages, sorted; same values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone."
           },
           "content_state": {
             "type": "string",
@@ -8062,6 +8428,26 @@
         "title": "SessionAnalyticsTrendPoint",
         "description": "Bucketed trend counts for aggregate charts.\n\nBoth are daily-active session counts (distinct sessions with activity in the\nbucket), so ``matching_count`` reads directly as a slice of ``total_count``:\nthose whose deep-review severity meets the requested threshold."
       },
+      "SessionDeepReviewResponse": {
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeepReviewRequestResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "current"
+        ],
+        "title": "SessionDeepReviewResponse",
+        "description": "The deep-review work a session viewer should see on load.\n\n``current`` is an unfinished review if one exists, whoever queued it;\notherwise the latest review of the session's current transcript; otherwise\nnull, meaning no review was ever requested for it."
+      },
       "SessionDetailResponse": {
         "oneOf": [
           {
@@ -8232,6 +8618,22 @@
               }
             ],
             "title": "Agent Platforms"
+          },
+          "sources": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sources",
+            "description": "Match any selected canonical ingestion source among retained session messages. Open set of exact source keys, combined with other filters using AND. The source match covers the full session regardless of the date window."
           },
           "grading_statuses": {
             "anyOf": [
@@ -8447,7 +8849,7 @@
           "agent_platform": {
             "type": "string",
             "title": "Agent Platform",
-            "description": "Agent platform that produced this session. Known values: 'claude_code', 'codex', 'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and 'other'. A session keeps the value it was created with, so sessions recorded before a harness had its own value remain 'other'. Clients must tolerate unrecognized values."
+            "description": "Reported coding agent. Retained SDK adapter identities can name the agent, including for historical sessions stored as 'other'. Reporting does not change the stored ingestion identity. Clients must tolerate additional platform strings."
           },
           "trajectory_count": {
             "type": "integer",
@@ -8629,6 +9031,14 @@
                 "type": "null"
               }
             ]
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources",
+            "description": "Distinct canonical ingestion sources among retained session messages, sorted. Known values: 'watcher' (Watcher Live upload), 'tailscale-aperture' (Aperture ingestion), and three keys for other hook ingest, including raw pre-tool-use captures, chosen by the session's retained 'other' conversation ID: 'watcher-gateway' (a gateway integration's prefix, such as 'litellm:'), 'watcher-sdk' (a registered SDK agent's prefix, such as 'github-copilot-cli:'), and 'watcher-hook' (any other ID or none). Hook captures marked as Aperture, and legacy captures without a transport marker, are classified as 'tailscale-aperture'; other source keys pass through. Classification is for reporting only: stored message sources are unchanged. Empty for scrubbed sessions or sessions without stored messages. This is not a complete ingestion history."
           }
         },
         "type": "object",

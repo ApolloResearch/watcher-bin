@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: continue
+name: Continue CLI
+summary: Explicit public version-one terminal export after the run; no automatic hook
+  delivery.
+category: coding-harness
+upstream_url: https://github.com/continuedev/continue
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Explicit public version-one terminal export after the run; no automatic
+      hook delivery.
+    example: demo/observe.py
+  enforce:
+    implemented: false
+    scope: 'Unavailable: configured hooks did not dispatch on the pinned release.'
+    example: null
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: fixture-http
+  upstream_versions:
+    continue: 1.5.47
+  runtimes:
+    python: 3.12.13
+    node: v24.11.1
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - native
+    enforce:
+      result: not-run
+      coverage: null
+      checks: []
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: deployed-server-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Local fixtures do not establish deployed Watcher persistence, grading
+    quality or latency.
+- id: no-tested-pre-tool-seam
+  mode: enforce
+  cause: upstream
+  kind: blocker
+  description: Pinned hooks did not dispatch; public tool overrides and static permissions
+    do not supply an awaited external decision callback.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce: null

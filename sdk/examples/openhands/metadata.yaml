@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: openhands
+name: OpenHands
+summary: Native Conversation callback messages and completed tool results.
+category: coding-harness
+upstream_url: https://github.com/OpenHands/software-agent-sdk
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Native Conversation callback messages and completed tool results.
+    example: demo/observe.py
+  enforce:
+    implemented: true
+    scope: Synchronous ActionEvent callback holding dispatch before registered tools
+      execute.
+    example: demo/enforce.py
+    boundary: synchronous-callback
+    context: native LLM-convertible messages and pending ActionEvent
+    recording: required
+    failure_behavior: fail-closed
+    timeout_seconds: 420
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    openhands-sdk: 1.46.0
+  runtimes:
+    python: 3.12.13
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: deployed-server-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Local fixtures do not establish deployed Watcher persistence, grading
+    quality or latency.
+- id: synchronous-run-only
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Bind the recorder before conversation.run(); conversation.arun() is
+    unverified. Watcher allow never clears another actor's block.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native

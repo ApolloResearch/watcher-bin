@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-langchain4j-bridge"
+version = "0.1.0"
+description = "Experimental public Watcher SDK bridge for langchain4j"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1", "typer==0.25.1"]
+
+[dependency-groups]
+dev = ["httpx==0.28.1", "pytest==9.1.1", "pytest-asyncio==1.4.0"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../../../.." }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_langchain4j_bridge"]
+
+[tool.uv]
+exclude-newer = "7 days"
+package = true
+
+[tool.uv.workspace]
+members = []

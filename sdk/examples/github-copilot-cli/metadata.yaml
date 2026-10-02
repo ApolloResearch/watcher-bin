@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: github-copilot-cli
+name: GitHub Copilot CLI
+summary: Parent and subagent conversations, including reasoning, compaction and attachments, at agentStop and sessionEnd.
+category: coding-harness
+upstream_url: https://github.com/github/copilot-cli
+support_status: experimental
+updated_at: '2026-10-02'
+capabilities:
+  observe:
+    implemented: true
+    scope: Parent and subagent conversations, including reasoning, compaction, attachments, rewinds and user shell commands, at agentStop and sessionEnd.
+    example: demo/hooks.observe.json
+    timeout_seconds: 10
+    recording: required
+    native_timeout_seconds: 90
+  enforce:
+    implemented: true
+    scope: Approval of the current tool call under Claude Code tool names, judged
+      with the session's conversation and stored on the native call; escalations
+      ask the user.
+    example: demo/hooks.enforce.json
+    boundary: native-tool-hook
+    context: native transcript including the pending call, named by its native ID
+    recording: optional
+    failure_behavior: mixed
+    timeout_seconds: 420
+    native_timeout_seconds: 480
+    failure_details: Adapter failures deny. Copilot also denies when the hook command
+      cannot start or exits nonzero, runs the tool when the hook times out, and denies
+      an escalation in prompt mode, where it cannot ask. A host that approves permission
+      requests automatically approves an escalation.
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-10-02'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: fixture-http
+  upstream_versions:
+    '@github/copilot': 1.0.89
+  runtimes:
+    python: 3.12.13
+    node: v24.16.0
+  platform: Linux-7.0.0-1013-aws-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - native
+    enforce:
+      result: passed
+      coverage: native-fixture
+      checks:
+      - native
+    export: null
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: Assessment after each turn inherits the organization's mode.
+    In enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: observation-progress
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Each agentStop callback records the session, then grades the calls
+    made since the previous final answer within 40 seconds. A turn whose callback
+    failed or ran out of time is not graded by later callbacks.
+- id: retrospective-decisions
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Retrospective decisions assess completed tools and cannot prevent their
+    execution. Paused mode records the transcript without grading.
+- id: unsupported-history
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Provider-hosted tools and provider content blocks stop recording for
+    the rest of that session. Event types this sample does not know are recorded
+    as a notice without their content.
+- id: interactive-exit
+  mode: observe
+  cause: upstream
+  kind: constraint
+  description: Copilot stops sessionEnd hooks after 1.5 seconds when an interactive
+    session exits, so a detached process records the final state and its failures
+    are saved in private diagnostics. Replay recovers a failed final recording.
+- id: deployed-verification
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Deployed Watcher persistence and provider behavior are not verified
+    by local fixtures.
+- id: argument-rewrites
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Other plugins that rewrite tool arguments can change execution after
+    Watcher assessment.
+- id: native-timeout
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Copilot continues through its normal permissions if the outer command
+    hook times out.
+- id: policy-tool-names
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: The sample records and judges Copilot's tools under Claude Code names
+    so Watcher's built-in policy applies; the Analyzer shows those names. Rules
+    keyed to Copilot's own tool names do not apply to translated tools. Tools without
+    a translation keep Copilot's names, so only thresholds and rules written for those
+    names, or for any tool, apply to them.
+- id: explicit-allow
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: A Watcher approval answers Copilot with an explicit allow, which skips
+    Copilot's own permission prompt and overrides the developer's Copilot deny rules,
+    such as --deny-tool, as observed with Copilot 1.0.89.
+- id: native-identity
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: The pre-tool payload has no native tool-call ID, so the gate finds the
+    pending call through the hook record Copilot writes to its log, and stores the
+    decision only when exactly one call matches. Identical parallel calls, a log that
+    cannot be read, is damaged around the call or has no matching call, and a
+    conversation over 7 MiB are judged ephemerally, without storing the decision, and
+    the reason is saved to the diagnostics. A multi-file patch whose later file is
+    judged stricter gets its decision only after the turn is recorded, without grades.

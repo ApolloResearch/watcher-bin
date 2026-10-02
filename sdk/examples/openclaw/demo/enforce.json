@@ -1,0 +1,18 @@
+{
+  "plugins": {
+    "allow": [
+      "watcher-openclaw-example"
+    ],
+    "entries": {
+      "watcher-openclaw-example": {
+        "enabled": true,
+        "config": {
+          "mode": "enforce"
+        },
+        "hooks": {
+          "allowConversationAccess": true
+        }
+      }
+    }
+  }
+}

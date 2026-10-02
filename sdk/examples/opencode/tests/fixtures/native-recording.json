@@ -1,0 +1,227 @@
+{
+  "session_id": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+  "messages": [
+    {
+      "info": {
+        "id": "msg_0a1ae7359001E55NvOIjg7oQYf",
+        "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+        "role": "user",
+        "time": {
+          "created": 1789418959705
+        },
+        "summary": {
+          "diffs": []
+        },
+        "agent": "build",
+        "model": {
+          "providerID": "fixture",
+          "modelID": "fixture"
+        }
+      },
+      "parts": [
+        {
+          "id": "prt_0a1ae736a0016uCQTPc6NCzgTy",
+          "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+          "messageID": "msg_0a1ae7359001E55NvOIjg7oQYf",
+          "type": "text",
+          "text": "\"Read first.txt and second.txt with the read tool, then say sdk50 opencode completed.\""
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_0a1ae77f9001xuzxRBu7ww1ejf",
+        "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+        "role": "assistant",
+        "time": {
+          "created": 1789418960889,
+          "completed": 1789418962239
+        },
+        "parentID": "msg_0a1ae7359001E55NvOIjg7oQYf",
+        "modelID": "fixture",
+        "providerID": "fixture",
+        "mode": "build",
+        "agent": "build",
+        "path": {
+          "cwd": "/tmp/native-workspace",
+          "root": "/"
+        },
+        "cost": 0,
+        "tokens": {
+          "total": 15,
+          "input": 10,
+          "output": 5,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "finish": "tool-calls"
+      },
+      "parts": [
+        {
+          "id": "prt_0a1ae7ce8001Lr5FoFTm3iF7oy",
+          "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+          "messageID": "msg_0a1ae77f9001xuzxRBu7ww1ejf",
+          "type": "step-start"
+        },
+        {
+          "id": "prt_0a1ae7cee001qigVoym3adMOj8",
+          "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+          "messageID": "msg_0a1ae77f9001xuzxRBu7ww1ejf",
+          "type": "tool",
+          "callID": "call00001",
+          "tool": "read",
+          "state": {
+            "status": "completed",
+            "input": {
+              "filePath": "/tmp/native-workspace/first.txt"
+            },
+            "output": "<path>/tmp/native-workspace/first.txt</path>\n<type>file</type>\n<content>\n1: SDK50_OPENCODE_FIRST_FILE\n\n(End of file - total 1 lines)\n</content>",
+            "title": "tmp/native-workspace/first.txt",
+            "metadata": {
+              "preview": "SDK50_OPENCODE_FIRST_FILE",
+              "truncated": false,
+              "loaded": [],
+              "display": {
+                "type": "file",
+                "path": "/tmp/native-workspace/first.txt",
+                "text": "SDK50_OPENCODE_FIRST_FILE",
+                "lineStart": 1,
+                "lineEnd": 1,
+                "totalLines": 1,
+                "truncated": false
+              }
+            },
+            "time": {
+              "start": 1789418962175,
+              "end": 1789418962212
+            }
+          }
+        },
+        {
+          "id": "prt_0a1ae7d050016D5Oscqzn7wDal",
+          "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+          "messageID": "msg_0a1ae77f9001xuzxRBu7ww1ejf",
+          "type": "tool",
+          "callID": "call00002",
+          "tool": "read",
+          "state": {
+            "status": "completed",
+            "input": {
+              "filePath": "/tmp/native-workspace/second.txt"
+            },
+            "output": "<path>/tmp/native-workspace/second.txt</path>\n<type>file</type>\n<content>\n1: SDK50_OPENCODE_SECOND_FILE\n\n(End of file - total 1 lines)\n</content>",
+            "title": "tmp/native-workspace/second.txt",
+            "metadata": {
+              "preview": "SDK50_OPENCODE_SECOND_FILE",
+              "truncated": false,
+              "loaded": [],
+              "display": {
+                "type": "file",
+                "path": "/tmp/native-workspace/second.txt",
+                "text": "SDK50_OPENCODE_SECOND_FILE",
+                "lineStart": 1,
+                "lineEnd": 1,
+                "totalLines": 1,
+                "truncated": false
+              }
+            },
+            "time": {
+              "start": 1789418962191,
+              "end": 1789418962219
+            }
+          }
+        },
+        {
+          "id": "prt_0a1ae7d320015u40SpxW2EG9K3",
+          "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+          "messageID": "msg_0a1ae77f9001xuzxRBu7ww1ejf",
+          "type": "step-finish",
+          "reason": "tool-calls",
+          "cost": 0,
+          "tokens": {
+            "total": 15,
+            "input": 10,
+            "output": 5,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_0a1ae7d45001NxNM004g2d3aHn",
+        "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+        "role": "assistant",
+        "time": {
+          "created": 1789418962245,
+          "completed": 1789418962397
+        },
+        "parentID": "msg_0a1ae7359001E55NvOIjg7oQYf",
+        "modelID": "fixture",
+        "providerID": "fixture",
+        "mode": "build",
+        "agent": "build",
+        "path": {
+          "cwd": "/tmp/native-workspace",
+          "root": "/"
+        },
+        "cost": 0,
+        "tokens": {
+          "total": 15,
+          "input": 10,
+          "output": 5,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "finish": "stop"
+      },
+      "parts": [
+        {
+          "id": "prt_0a1ae7dbc001MH52CvIeJSrsDD",
+          "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+          "messageID": "msg_0a1ae7d45001NxNM004g2d3aHn",
+          "type": "step-start"
+        },
+        {
+          "id": "prt_0a1ae7dc3001fSIV9MZmD5u6O0",
+          "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+          "messageID": "msg_0a1ae7d45001NxNM004g2d3aHn",
+          "type": "text",
+          "text": "sdk50 opencode completed",
+          "time": {
+            "start": 1789418962371,
+            "end": 1789418962379
+          }
+        },
+        {
+          "id": "prt_0a1ae7dd2001dNo8nbBRbod7PA",
+          "sessionID": "ses_f5e518d0dffee4AEAGTVVYJfDn",
+          "messageID": "msg_0a1ae7d45001NxNM004g2d3aHn",
+          "type": "step-finish",
+          "reason": "stop",
+          "cost": 0,
+          "tokens": {
+            "total": 15,
+            "input": 10,
+            "output": 5,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

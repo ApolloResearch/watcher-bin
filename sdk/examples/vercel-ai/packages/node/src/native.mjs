@@ -1,0 +1,39 @@
+#!/usr/bin/env node
+// Native Vercel AI SDK lifecycle, including tool execution and response.messages.
+import { generateText, jsonSchema, stepCountIs, tool } from "ai";
+
+let turn = 0;
+const model = {
+  specificationVersion: "v2",
+  provider: "deterministic",
+  modelId: "fixture",
+  supportedUrls: {},
+  doGenerate: async () => {
+    turn += 1;
+    return {
+      content: turn === 1 ? [
+        { type: "tool-call", toolCallId: "double-2", toolName: "double", input: '{"value":2}' },
+        { type: "tool-call", toolCallId: "double-3", toolName: "double", input: '{"value":3}' },
+      ] : [{ type: "text", text: "4 and 6" }],
+      finishReason: turn === 1 ? "tool-calls" : "stop",
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      warnings: [],
+    };
+  },
+};
+const prompt = "Double 2 and 3";
+const result = await generateText({
+  model,
+  prompt,
+  stopWhen: stepCountIs(3),
+  tools: {
+    double: tool({
+      description: "Double an integer",
+      inputSchema: jsonSchema({
+        type: "object", properties: { value: { type: "integer" } }, required: ["value"],
+      }),
+      execute: async ({ value }) => String(value * 2),
+    }),
+  },
+});
+process.stdout.write(JSON.stringify([{ role: "user", content: prompt }, ...result.response.messages]));

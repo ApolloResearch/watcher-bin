@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-llamaindex-example"
+version = "0.1.0"
+description = "Experimental LlamaIndex observation and synchronous monitoring with Watcher"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1", "llama-index-core==0.14.6", "llama-index-workflows==2.23.3"]
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0", "llama-index-llms-openai==0.8.1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_llamaindex"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
+junit_family = "legacy"
+
+[tool.uv]
+exclude-newer = "7 days"

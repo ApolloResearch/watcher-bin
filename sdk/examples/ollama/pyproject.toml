@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-ollama-example"
+version = "0.1.0"
+description = "Experimental Ollama observation and synchronous monitoring"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1", "ollama==0.6.2", "httpx==0.28.1"]
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_ollama"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
+
+[tool.uv]
+exclude-newer = "7 days"

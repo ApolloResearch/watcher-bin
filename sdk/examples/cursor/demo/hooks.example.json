@@ -1,0 +1,35 @@
+{
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_cursor.integration"
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_cursor.integration"
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_cursor.integration"
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_cursor.integration"
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_cursor.integration"
+      }
+    ],
+    "stop": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_cursor.integration"
+      }
+    ]
+  },
+  "version": 1
+}

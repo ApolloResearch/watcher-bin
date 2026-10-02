@@ -1,0 +1,16 @@
+{
+  "jackson-databind-2.20.0.jar": "a70e146a6bf2cba4f9cd367169787f50adcfbb57122bc2e9c8390cd0b397ac30",
+  "slf4j-api-2.0.18.jar": "44508fd1576500688c790b190acdd16fec4f8c79a3e0b900afd70503cf055f55",
+  "jackson-core-2.22.1.jar": "941ff029bcdb93e83d209ce516c1a7fb8bbac07d0a2fa122f5bf194b2cd7b4f4",
+  "langchain4j-http-client-1.20.0.jar": "867abe5012fa5d6101f5194c076292caf56300a818f68b171f48df87959888c9",
+  "langchain4j-open-ai-1.20.0.jar": "bc357587924fb34a1902da5d6dfb20179bbe537395b5c1e7ede5ca0fc03138b9",
+  "opennlp-tools-2.5.11.jar": "58c0ee5e20d30ba47daf4cd546c6426a7fe762a7b197b2308eb0b89cf5b48c77",
+  "langchain4j-reactive-streaming-1.20.0-beta30.jar": "dc2edd7dc0dd920c38f81c00297b0449eadbc02db9123b684ed0cf17ee063be4",
+  "jackson-annotations-2.22.jar": "21ddb598807d3a51a876704eb979d9296e1c6a6f47ab1826ff88c6d6a127a2d0",
+  "jtokkit-1.1.0.jar": "1501ce0259ab897c6746ccfafa1d208acd404fb17e1ac62e157172f2678b1183",
+  "langchain4j-http-client-jdk-1.20.0.jar": "03abb346d95d956b9e02e8eddbeef6236e69108b689d9037f6a6b298f2c7c097",
+  "mutiny-zero-1.3.1.jar": "10455d395ca9e3d8256bb216672684ad9482288d331efc48db4196eba804273b",
+  "langchain4j-core-1.20.0.jar": "bd762fc911cad8ee514456672f385ecd5596dc6115faddf1db9d5340a0edcd6b",
+  "langchain4j-1.20.0.jar": "a5a0d3eeae4805e79105749039a5a6ee27c9cfde76c527e44e4a5295c20b9e30",
+  "jspecify-1.0.1.jar": "070d75f261fe4c5b8202508366715f7f2d4660f88c8ef7e6d3575e48c9683b66"
+}

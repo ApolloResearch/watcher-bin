@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "AfterAgent": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__WATCHER_PYTHON__ -m watcher_gemini_cli.integration",
+            "timeout": 60000
+          }
+        ]
+      }
+    ]
+  }
+}

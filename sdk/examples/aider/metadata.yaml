@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: aider
+name: Aider
+summary: Actual InputOutput.write_text invocations in sequential nonstreaming whole-file
+  Coder runs.
+category: coding-harness
+upstream_url: https://github.com/Aider-AI/aider
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Actual InputOutput.write_text invocations in sequential nonstreaming whole-file
+      Coder runs.
+    example: demo/observe.py
+  enforce:
+    implemented: true
+    scope: Application-owned write_text delegate; shell commands and writes outside
+      injected IO are excluded.
+    example: demo/enforce.py
+    boundary: application-dispatch
+    context: captured model context and response preceding the IO operation
+    recording: required
+    failure_behavior: fail-closed
+    timeout_seconds: 420
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    aider-chat: 0.86.2
+  runtimes:
+    python: 3.12.13
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: deployed-server-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Local fixtures do not establish deployed Watcher persistence, grading
+    quality or latency.
+- id: native-io-scope
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Only sequential nonstreaming whole-file runs and injected IO are covered;
+    dry runs, shell writes and other edit modes are outside scope. Upstream scripting
+    API is not officially stable.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native

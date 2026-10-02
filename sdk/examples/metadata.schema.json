@@ -1,0 +1,651 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Capabilities": {
+      "additionalProperties": false,
+      "description": "Always expose both modes, including an explicit unavailable mode.",
+      "properties": {
+        "observe": {
+          "$ref": "#/$defs/Capability"
+        },
+        "enforce": {
+          "$ref": "#/$defs/Capability"
+        },
+        "export": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Capability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "observe",
+        "enforce"
+      ],
+      "title": "Capabilities",
+      "type": "object"
+    },
+    "Capability": {
+      "additionalProperties": false,
+      "description": "Describe an implemented boundary, including its native failure limits.",
+      "properties": {
+        "implemented": {
+          "title": "Implemented",
+          "type": "boolean"
+        },
+        "scope": {
+          "minLength": 1,
+          "title": "Scope",
+          "type": "string"
+        },
+        "example": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Example"
+        },
+        "boundary": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Boundary"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context"
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "enum": [
+                "required",
+                "optional",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recording"
+        },
+        "failure_behavior": {
+          "anyOf": [
+            {
+              "enum": [
+                "fail-closed",
+                "native-may-allow",
+                "follows-server-policy",
+                "mixed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Behavior"
+        },
+        "failure_details": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Details"
+        },
+        "timeout_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout Seconds"
+        },
+        "native_timeout_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Native Timeout Seconds"
+        }
+      },
+      "required": [
+        "implemented",
+        "scope",
+        "example"
+      ],
+      "title": "Capability",
+      "type": "object"
+    },
+    "Limitation": {
+      "additionalProperties": false,
+      "description": "Keep scope constraints separate from demonstrated blockers and test gaps.",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "observe",
+            "enforce",
+            "export",
+            "both"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "cause": {
+          "enum": [
+            "upstream",
+            "watcher",
+            "integration-scope",
+            "unverified"
+          ],
+          "title": "Cause",
+          "type": "string"
+        },
+        "kind": {
+          "default": "constraint",
+          "enum": [
+            "constraint",
+            "blocker",
+            "verification-gap"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence"
+        }
+      },
+      "required": [
+        "id",
+        "mode",
+        "cause",
+        "description"
+      ],
+      "title": "Limitation",
+      "type": "object"
+    },
+    "ModeResult": {
+      "additionalProperties": false,
+      "description": "Name the successful checks supporting one bounded coverage claim.",
+      "properties": {
+        "result": {
+          "enum": [
+            "passed",
+            "failed",
+            "not-run"
+          ],
+          "title": "Result",
+          "type": "string"
+        },
+        "coverage": {
+          "anyOf": [
+            {
+              "enum": [
+                "contract",
+                "native-fixture",
+                "contract-local-api",
+                "native-local-api",
+                "deployed-end-to-end"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Coverage"
+        },
+        "checks": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Checks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result",
+        "coverage",
+        "checks"
+      ],
+      "title": "ModeResult",
+      "type": "object"
+    },
+    "PlannedMode": {
+      "additionalProperties": false,
+      "description": "Declare which fixed suites can establish a mode's bounded test coverage.",
+      "properties": {
+        "coverage": {
+          "enum": [
+            "contract",
+            "native-fixture",
+            "contract-local-api",
+            "native-local-api",
+            "deployed-end-to-end"
+          ],
+          "title": "Coverage",
+          "type": "string"
+        },
+        "checks": {
+          "items": {
+            "enum": [
+              "python",
+              "native"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Checks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "coverage",
+        "checks"
+      ],
+      "title": "PlannedMode",
+      "type": "object"
+    },
+    "PublicVerification": {
+      "additionalProperties": false,
+      "description": "Publish the tested environment and scope without internal CI history.",
+      "properties": {
+        "checked_at": {
+          "format": "date",
+          "title": "Checked At",
+          "type": "string"
+        },
+        "watcher_sdk": {
+          "$ref": "#/$defs/Version"
+        },
+        "watcher_server": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Version"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "watcher_test_target": {
+          "enum": [
+            "mocked-sdk-transport",
+            "fixture-http",
+            "local-api",
+            "deployed"
+          ],
+          "title": "Watcher Test Target",
+          "type": "string"
+        },
+        "upstream_versions": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Upstream Versions",
+          "type": "object"
+        },
+        "runtimes": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Runtimes",
+          "type": "object"
+        },
+        "platform": {
+          "minLength": 1,
+          "title": "Platform",
+          "type": "string"
+        },
+        "results": {
+          "$ref": "#/$defs/Results"
+        }
+      },
+      "required": [
+        "checked_at",
+        "watcher_sdk",
+        "watcher_server",
+        "watcher_test_target",
+        "upstream_versions",
+        "runtimes",
+        "platform",
+        "results"
+      ],
+      "title": "PublicVerification",
+      "type": "object"
+    },
+    "Results": {
+      "additionalProperties": false,
+      "description": "Record observation and enforcement independently for one environment.",
+      "properties": {
+        "observe": {
+          "$ref": "#/$defs/ModeResult"
+        },
+        "enforce": {
+          "$ref": "#/$defs/ModeResult"
+        },
+        "export": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModeResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "observe",
+        "enforce"
+      ],
+      "title": "Results",
+      "type": "object"
+    },
+    "VerificationPlan": {
+      "additionalProperties": false,
+      "description": "Describe the checked-in tests; this plan is never a verified outcome.",
+      "properties": {
+        "watcher_test_target": {
+          "enum": [
+            "mocked-sdk-transport",
+            "fixture-http",
+            "local-api",
+            "deployed"
+          ],
+          "title": "Watcher Test Target",
+          "type": "string"
+        },
+        "observe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlannedMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enforce": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlannedMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "export": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlannedMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "watcher_test_target",
+        "observe",
+        "enforce"
+      ],
+      "title": "VerificationPlan",
+      "type": "object"
+    },
+    "Version": {
+      "additionalProperties": false,
+      "description": "Expose a tested package version without private source identities.",
+      "properties": {
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "title": "Version",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Describe an example's capabilities, installation and actual test coverage.",
+  "properties": {
+    "schema_version": {
+      "const": 2,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "slug": {
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Slug",
+      "type": "string"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "category": {
+      "enum": [
+        "gateway",
+        "provider-library",
+        "agent-framework",
+        "coding-harness",
+        "general-agent",
+        "compliance-api",
+        "observability",
+        "bridge",
+        "other"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "direction": {
+      "default": "to-watcher",
+      "enum": [
+        "to-watcher",
+        "from-watcher"
+      ],
+      "title": "Direction",
+      "type": "string"
+    },
+    "upstream_url": {
+      "pattern": "^https://",
+      "title": "Upstream Url",
+      "type": "string"
+    },
+    "support_status": {
+      "enum": [
+        "experimental",
+        "archived"
+      ],
+      "title": "Support Status",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "maintainer": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Maintainer"
+    },
+    "capabilities": {
+      "$ref": "#/$defs/Capabilities"
+    },
+    "manifests": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Manifests",
+      "type": "array"
+    },
+    "verification": {
+      "items": {
+        "$ref": "#/$defs/PublicVerification"
+      },
+      "maxItems": 1,
+      "title": "Verification",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "$ref": "#/$defs/Limitation"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "tags": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "links": {
+      "additionalProperties": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "propertyNames": {
+        "minLength": 1
+      },
+      "title": "Links",
+      "type": "object"
+    },
+    "verification_plan": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerificationPlan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "schema_version",
+    "slug",
+    "name",
+    "summary",
+    "category",
+    "upstream_url",
+    "support_status",
+    "updated_at",
+    "capabilities",
+    "manifests",
+    "verification",
+    "limitations"
+  ],
+  "title": "Metadata",
+  "type": "object"
+}

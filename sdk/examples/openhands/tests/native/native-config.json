@@ -1,0 +1,10 @@
+{
+  "slug": "openhands",
+  "distribution": "watcher-example-openhands",
+  "upstream_distributions": [
+    "openhands-sdk"
+  ],
+  "version_commands": {},
+  "observation_script": null,
+  "enforcement_script": null
+}

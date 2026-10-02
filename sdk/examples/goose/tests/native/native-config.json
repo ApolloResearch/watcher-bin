@@ -1,0 +1,13 @@
+{
+  "slug": "goose",
+  "distribution": "watcher-example-goose",
+  "upstream_distributions": [],
+  "version_commands": {
+    "goose": [
+      "/usr/local/bin/goose",
+      "--version"
+    ]
+  },
+  "observation_script": "run_fixture.py",
+  "enforcement_script": "run_synchronous.py"
+}

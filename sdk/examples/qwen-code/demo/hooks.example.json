@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__WATCHER_PYTHON__ -m watcher_qwen_code.integration",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

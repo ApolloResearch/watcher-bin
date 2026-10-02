@@ -1,0 +1,25 @@
+{
+  "name": "watcher-mastra-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/test_*.mjs"
+  },
+  "dependencies": {
+    "@mastra/core": "1.66.0",
+    "ai": "6.0.182",
+    "zod": "4.6.5"
+  },
+  "version": "0.1.0",
+  "description": "Experimental Mastra observation and synchronous Watcher monitoring adapter",
+  "exports": {
+    "./observation": "./src/integration.mjs",
+    "./monitoring": "./src/monitoring.mjs"
+  },
+  "files": [
+    "src/"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

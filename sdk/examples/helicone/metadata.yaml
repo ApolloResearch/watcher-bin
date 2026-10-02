@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: helicone
+name: Helicone
+summary: Ingest recorded gateway transcripts from authenticated Helicone completion
+  webhooks.
+category: gateway
+upstream_url: https://docs.helicone.ai/features/webhooks
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Completion webhook ingestion of supported logged Chat Completions request/response
+      snapshots.
+    example: src/watcher_helicone/receiver.py
+  enforce:
+    implemented: false
+    scope: Completion webhooks cannot withhold a response or stop client tools.
+    example: null
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    httpx: 0.28.1
+  runtimes:
+    python: 3.12.13
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: contract-local-api
+      checks:
+      - python
+      - backend
+    enforce:
+      result: not-run
+      coverage: null
+      checks: []
+    export: null
+limitations:
+- id: post-response
+  mode: enforce
+  cause: upstream
+  kind: blocker
+  description: Helicone completion events arrive after response delivery; synchronous
+    prevention and interactive approval are unavailable.
+- id: format-scope
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Only complete textual Chat Completions snapshots and function tools
+    are supported; other formats and omitted content are rejected.
+- id: delivery-scope
+  mode: observe
+  cause: upstream
+  kind: constraint
+  description: Sampling, content retention and webhook delivery determine completeness;
+    the receiver has no durable delivery queue.
+- id: storage-receipt
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: A hook reply acknowledges scheduling rather than durable recording;
+    verify stored snapshots through a separate read-capable credential.
+- id: webhook-contract-version
+  mode: observe
+  cause: upstream
+  kind: constraint
+  description: Targets the completion-webhook contract at Helicone revision 067d9290acb4f1fc9320e902fc67b4b399b50363;
+    compatibility with a running platform is unverified.
+- id: deployment-verification
+  mode: observe
+  cause: unverified
+  kind: verification-gap
+  description: Hosted deployment authentication, object-storage configuration and
+    delivery are unverified.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: contract
+    checks:
+    - python
+  enforce: null

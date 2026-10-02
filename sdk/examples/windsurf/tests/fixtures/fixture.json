@@ -1,0 +1,24 @@
+[
+  {
+    "type": "user_input",
+    "status": "done",
+    "user_input": {
+      "user_response": "Write a greeting"
+    }
+  },
+  {
+    "type": "code_action",
+    "status": "done",
+    "code_action": {
+      "path": "hello.py",
+      "new_content": "print(\"hello\")"
+    }
+  },
+  {
+    "type": "planner_response",
+    "status": "done",
+    "planner_response": {
+      "response": "finished"
+    }
+  }
+]

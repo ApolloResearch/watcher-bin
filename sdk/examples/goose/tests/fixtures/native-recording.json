@@ -1,0 +1,138 @@
+[
+  {
+    "id": "msg_b7c556cb-e9a4-46f4-8dc2-e4b02989a4b3",
+    "role": "user",
+    "created": 1789409361,
+    "content": [
+      {
+        "type": "text",
+        "text": "Run pwd then say sdk50 native completed"
+      }
+    ],
+    "metadata": {
+      "userVisible": true,
+      "agentVisible": true
+    }
+  },
+  {
+    "id": "msg_d29d65a8-3dfd-4f32-8c78-00954d8add93",
+    "role": "user",
+    "created": 1789409362,
+    "content": [
+      {
+        "type": "text",
+        "text": "<turn-context>\n<current-time>2026-09-14 18:09:00 +00:00</current-time>\n<working-directory>/tmp/native-workspace</working-directory>\n\nCurrent tasks and notes:\nOnce given a task, immediately update your todo with all explicit and implicit requirements\n\n</turn-context>"
+      }
+    ],
+    "metadata": {
+      "userVisible": false,
+      "agentVisible": true,
+      "turnContext": true
+    }
+  },
+  {
+    "id": "chatcmpl-fixture",
+    "role": "assistant",
+    "created": 1789409362,
+    "content": [
+      {
+        "type": "toolRequest",
+        "id": "sdk50-native-call",
+        "toolCall": {
+          "status": "success",
+          "value": {
+            "name": "shell",
+            "arguments": {
+              "command": "pwd"
+            }
+          }
+        },
+        "_meta": {
+          "goose.toolCall.providerIndex": 0,
+          "goose_extension": "developer"
+        }
+      }
+    ],
+    "metadata": {
+      "userVisible": true,
+      "agentVisible": true,
+      "inference": {
+        "provider": "openai",
+        "requestedModel": "gpt-4o"
+      },
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15,
+        "cost": 7.5e-05,
+        "costSource": "estimated",
+        "elapsedMs": 3,
+        "timeToFirstTokenMs": 3
+      }
+    }
+  },
+  {
+    "id": "msg_f0a17d35-ee99-4f66-8bc0-17c17f4e7131",
+    "role": "user",
+    "created": 1789409362,
+    "content": [
+      {
+        "type": "toolResponse",
+        "id": "sdk50-native-call",
+        "toolResult": {
+          "status": "success",
+          "value": {
+            "resultType": "complete",
+            "content": [
+              {
+                "type": "text",
+                "text": "/tmp/native-workspace",
+                "annotations": {
+                  "priority": 0.0
+                }
+              }
+            ],
+            "structuredContent": {
+              "stdout": "/tmp/native-workspace",
+              "stderr": "",
+              "exit_code": 0
+            },
+            "isError": false
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "userVisible": true,
+      "agentVisible": true
+    }
+  },
+  {
+    "id": "chatcmpl-fixture",
+    "role": "assistant",
+    "created": 1789409362,
+    "content": [
+      {
+        "type": "text",
+        "text": "sdk50 native completed"
+      }
+    ],
+    "metadata": {
+      "userVisible": true,
+      "agentVisible": true,
+      "inference": {
+        "provider": "openai",
+        "requestedModel": "gpt-4o"
+      },
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 5,
+        "totalTokens": 15,
+        "cost": 7.5e-05,
+        "costSource": "estimated",
+        "elapsedMs": 3,
+        "timeToFirstTokenMs": 3
+      }
+    }
+  }
+]

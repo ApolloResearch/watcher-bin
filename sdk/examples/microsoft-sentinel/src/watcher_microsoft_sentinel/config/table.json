@@ -1,0 +1,59 @@
+{
+  "properties": {
+    "schema": {
+      "name": "WatcherDecisions_CL",
+      "columns": [
+        {
+          "name": "TimeGenerated",
+          "type": "datetime"
+        },
+        {
+          "name": "OccurredAt",
+          "type": "datetime"
+        },
+        {
+          "name": "ToolCallId",
+          "type": "string"
+        },
+        {
+          "name": "SessionId",
+          "type": "string"
+        },
+        {
+          "name": "RecordFingerprint",
+          "type": "string"
+        },
+        {
+          "name": "SeverityScore",
+          "type": "long"
+        },
+        {
+          "name": "CoverageState",
+          "type": "string"
+        },
+        {
+          "name": "DecisionCategory",
+          "type": "string"
+        },
+        {
+          "name": "ContentState",
+          "type": "string"
+        },
+        {
+          "name": "RecordType",
+          "type": "string"
+        },
+        {
+          "name": "TrajectoryId",
+          "type": "string"
+        },
+        {
+          "name": "Snapshot",
+          "type": "dynamic"
+        }
+      ]
+    },
+    "retentionInDays": 30,
+    "totalRetentionInDays": 30
+  }
+}

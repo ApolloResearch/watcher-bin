@@ -1,0 +1,13 @@
+{
+  "slug": "mistral-vibe",
+  "distribution": "watcher-example-mistral-vibe",
+  "upstream_distributions": [],
+  "version_commands": {
+    "mistral-vibe": [
+      "/opt/native/bin/vibe",
+      "--version"
+    ]
+  },
+  "observation_script": "run_fixture.py",
+  "enforcement_script": "run_synchronous.py"
+}

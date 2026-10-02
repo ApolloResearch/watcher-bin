@@ -1,0 +1,35 @@
+_format_version: "3.0"
+services:
+  - name: monitored-chat
+    url: http://localhost:9999
+    routes:
+      - name: chat
+        paths: ["~/v1/chat/completions$"]
+        methods: [POST]
+        strip_path: false
+    plugins:
+      - name: key-auth
+        config:
+          key_names: [apikey]
+          hide_credentials: true
+      - name: ai-proxy
+        config:
+          route_type: llm/v1/chat
+          response_streaming: deny
+          max_request_body_size: 8388608
+          auth:
+            header_name: Authorization
+            header_value: "Bearer REPLACE_PROVIDER_KEY"
+          model:
+            provider: openai
+            name: REPLACE_PROVIDER_MODEL
+            options:
+              upstream_url: https://api.openai.com/v1/chat/completions
+      - name: watcher
+        config:
+          bridge_url: http://127.0.0.1:8765
+          bridge_token: REPLACE_PRIVATE_BRIDGE_TOKEN
+consumers:
+  - username: example-client
+    keyauth_credentials:
+      - key: REPLACE_GATEWAY_CLIENT_KEY

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-example-goose"
+version = "0.1.0"
+description = "Experimental goose integration using the public Watcher SDK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["typer==0.25.1", "watcher-sdk>=0.1,<1"]
+
+[project.scripts]
+watcher-goose-plugin-manifest = "watcher_goose.configuration:plugin_manifest"
+"watcher-goose-enforce" = "watcher_goose.pre_tool:main"
+"watcher-goose-observe" = "watcher_goose.integration:main"
+"watcher-goose-observe-settings" = "watcher_goose.configuration:observe_settings"
+"watcher-goose-enforce-settings" = "watcher_goose.configuration:enforce_settings"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "httpx==0.28.1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_goose"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+
+[tool.uv]
+exclude-newer = "7 days"

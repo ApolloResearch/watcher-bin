@@ -1,0 +1,18 @@
+# Local-only demonstration of the required Data Prepper source/sink mapping.
+watcher-decisions:
+  source:
+    otel_logs_source:
+      ssl: false
+      port: 21892
+      path: /watcher/v1/logs
+      unframed_requests: true
+      compression: none
+      thread_count: 2
+      max_connection_count: 20
+  sink:
+    - opensearch:
+        hosts: ["http://127.0.0.1:9200"]
+        index_type: custom
+        index: watcher-decisions
+        bulk_size: 1
+        flush_timeout: 1000

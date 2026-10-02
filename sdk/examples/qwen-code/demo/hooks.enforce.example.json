@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__WATCHER_PYTHON__ -m watcher_qwen_code.integration --record-only",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__WATCHER_PYTHON__ -m watcher_qwen_code.pre_tool",
+            "timeout": 480
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: langchain4j
+name: LangChain4j
+summary: Native LangChain4j AI Services tool hooks use the public Python SDK for policy
+  decisions and human audit.
+category: agent-framework
+upstream_url: https://github.com/langchain4j/langchain4j/tree/1.20.0
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: The same native hook follows server observe settings. A separate completed-history
+      bridge can submit retained response snapshots.
+    example: demo/observe.sh
+    recording: optional
+  enforce:
+    implemented: true
+    scope: A native before-tool callback checks original IDs against ChatMemory, waits
+      for Watcher policy, and records confirmed human choices when an application
+      callback is supplied.
+    example: demo/enforce.sh
+    boundary: AiServices.beforeToolExecution
+    context: conversation
+    recording: optional
+    failure_behavior: fail-closed
+    timeout_seconds: 420
+    failure_details: Transport failures, invalid outcomes, deny and unattended escalation
+      withhold execution. Valid deferred and configured grading-failure allow preserve
+      the applied server policy.
+manifests:
+- packages/python/pyproject.toml
+- packages/java/pom.xml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    langchain4j-open-ai: 1.20.0
+    jackson-databind: 2.20.0
+  runtimes:
+    python: 3.12.13
+    java: 17.0.20.1
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: text-functions
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Finalized text and client-side function tools only. Complete retained
+    history and original call IDs are required.
+- id: native-scope
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Synchronous non-streaming AI Services only. Previously completed tools
+    are not rolled back by a later refusal; provider-hosted tools cannot be prevented.
+- id: human-approval
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: An application callback obtains the human choice. Public SDK upload/readback
+    confirms it before release. No approval UI or durable pending-call storage is
+    included.
+- id: asynchronous-recording
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: Hook success does not acknowledge durable transcript storage. Query
+    the public SDK to verify persistence.
+- id: hosted-verification
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Hosted model-provider and deployed Watcher behavior are not established
+    by the isolated native fixtures.

@@ -30,10 +30,9 @@ class SessionSummary:
 
     Attributes:
         session_id (str):
-        agent_platform (str): Agent platform that produced this session. Known values: 'claude_code', 'codex',
-            'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and 'other'. A session keeps the value
-            it was created with, so sessions recorded before a harness had its own value remain 'other'. Clients must
-            tolerate unrecognized values.
+        agent_platform (str): Reported coding agent. Retained SDK adapter identities can name the agent, including for
+            historical sessions stored as 'other'. Reporting does not change the stored ingestion identity. Clients must
+            tolerate additional platform strings.
         trajectory_count (int):
         message_count (int):
         started_at (datetime.datetime):
@@ -54,6 +53,14 @@ class SessionSummary:
             SessionSummaryDeepReviewStatus.NOT_REVIEWED.
         deep_review_reviewed_at (datetime.datetime | None | Unset):
         permission_decisions (None | SessionPermissionDecisions | Unset):
+        sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted. Known
+            values: 'watcher' (Watcher Live upload), 'tailscale-aperture' (Aperture ingestion), and three keys for other
+            hook ingest, including raw pre-tool-use captures, chosen by the session's retained 'other' conversation ID:
+            'watcher-gateway' (a gateway integration's prefix, such as 'litellm:'), 'watcher-sdk' (a registered SDK agent's
+            prefix, such as 'github-copilot-cli:'), and 'watcher-hook' (any other ID or none). Hook captures marked as
+            Aperture, and legacy captures without a transport marker, are classified as 'tailscale-aperture'; other source
+            keys pass through. Classification is for reporting only: stored message sources are unchanged. Empty for
+            scrubbed sessions or sessions without stored messages. This is not a complete ingestion history.
     """
 
     session_id: str
@@ -79,6 +86,7 @@ class SessionSummary:
     )
     deep_review_reviewed_at: datetime.datetime | None | Unset = UNSET
     permission_decisions: None | SessionPermissionDecisions | Unset = UNSET
+    sources: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -200,6 +208,10 @@ class SessionSummary:
         else:
             permission_decisions = self.permission_decisions
 
+        sources: list[str] | Unset = UNSET
+        if not isinstance(self.sources, Unset):
+            sources = self.sources
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -242,6 +254,8 @@ class SessionSummary:
             field_dict["deep_review_reviewed_at"] = deep_review_reviewed_at
         if permission_decisions is not UNSET:
             field_dict["permission_decisions"] = permission_decisions
+        if sources is not UNSET:
+            field_dict["sources"] = sources
 
         return field_dict
 
@@ -460,6 +474,8 @@ class SessionSummary:
             d.pop("permission_decisions", UNSET)
         )
 
+        sources = cast(list[str], d.pop("sources", UNSET))
+
         session_summary = cls(
             session_id=session_id,
             agent_platform=agent_platform,
@@ -482,6 +498,7 @@ class SessionSummary:
             deep_review_status=deep_review_status,
             deep_review_reviewed_at=deep_review_reviewed_at,
             permission_decisions=permission_decisions,
+            sources=sources,
         )
 
         session_summary.additional_properties = d

@@ -145,8 +145,8 @@ def _parse_event_timestamp(entry: JsonEntry) -> float | None:
 def _entry_walk_key(entry: JsonEntry) -> tuple[bool, float]:
     """Sibling ordering for every tree walk: timestamped entries first, oldest first.
 
-    Mirror of ``product.lib.claude_code._entry_walk_key`` — the one place the
-    untimestamped-last ordering decision lives on this side.
+    Entries without a parseable timestamp sort after timestamped siblings.
+    Equal keys retain their input order when used with Python's stable sort.
     """
     timestamp = _parse_event_timestamp(entry)
     return timestamp is None, timestamp or 0.0
@@ -159,9 +159,9 @@ def _branch_head_message(
 ) -> JsonEntry | None:
     """First message entry the chain walk would emit from this branch, or None.
 
-    Mirror of ``product.lib.claude_code._EntryTreeWalk.branch_head_message`` —
-    see that docstring for why "first" is defined by the walk's own
-    timestamp-ordered BFS.
+    Use the same breadth-first traversal and timestamp-ordered siblings as the
+    chain walk. A global timestamp sort could choose a different first prompt
+    and incorrectly classify a fork as a rewind. Cycles are visited once.
     """
     queue = [branch_root]
     seen: set[str] = set()
@@ -187,12 +187,10 @@ def _branch_last_activity(
 ) -> float | None:
     """Newest message timestamp on this branch, including its owned segments, or None.
 
-    Mirror of ``product.lib.claude_code._EntryTreeWalk.branch_last_activity`` —
-    see that docstring for why a rewind fork's survivor is the branch written to
-    most recently rather than the branch that started latest, and why a
-    compaction segment (folded in via ``segments_by_owner``: owner-leaf uuid →
-    the segment roots continuing from it) counts toward the branch that produced
-    it even though it hangs off its own root.
+    Rewind selection keeps the branch written to most recently, not the branch
+    that started latest. Include compaction segments attached by
+    ``segments_by_owner`` (owner-leaf UUID to continuing segment roots), even
+    though those segments are separate roots in the physical transcript.
     """
     last: float | None = None
     queue = [branch_root]
@@ -220,16 +218,11 @@ def _drop_abandoned_rewind_branches(
 ) -> list[JsonEntry]:
     """Filter a fork's children down to the live branch — the one the user continued.
 
-    The server splits a rewound file into one stored chain per branch, live
-    branch last, and the last leaf is what this client anchors deltas on. This
-    replica therefore predicts exactly that live chain: it walks only the
-    surviving branch, which mirrors ``product.lib.claude_code._EntryTreeWalk.split_rewind_fork``
-    with the abandoned side discarded rather than split off (the client never
-    needs the abandoned chains — a rewind always forces a full upload, and the
-    server derives every branch from that upload). See the server docstring
-    for the rewind gate (two sibling branches starting with *different* user
-    prompt text), why benign forks pass through, and why the survivor is the
-    branch with the newest activity.
+    Only sibling branches whose first messages contain different user prompt
+    text compete. Keep the contender with the newest activity and all siblings
+    that do not compete. Same-prompt and non-user forks pass through unchanged.
+    The client anchors deltas on the live chain's last leaf. A rewind forces a
+    full upload, allowing the server to recover abandoned branches separately.
     """
     if len(siblings) < 2:
         return siblings
@@ -256,11 +249,11 @@ def _climbs_to_root(
     root_uuids: set[str],
     segment_root_uuid: str,
 ) -> bool:
-    """Mirror of ``product.lib.claude_code._climbs_to_root`` — see that docstring.
+    """Check whether an ancestry chain connects a segment to another known root.
 
-    True when ``uuid``'s ancestry reaches a root other than its own segment; a
-    climb that dangles, cycles, or passes back through ``segment_root_uuid``
-    (a resume-replay of the pre-compaction history) is unresolvable.
+    Return false for a missing parent, cycle, or path through
+    ``segment_root_uuid``. The last case identifies replayed history within the
+    segment, which must not be treated as a link to an earlier segment.
     """
     current = entry_lookup.get(uuid)
     seen: set[str] = set()
@@ -285,10 +278,10 @@ def _segment_logical_parent(
 ) -> str | None:
     """The in-file leaf a compaction segment continues from, or None for a base segment.
 
-    Mirror of ``product.lib.claude_code._segment_logical_parent`` — see that
-    docstring for how a compact boundary's ``logicalParentUuid`` names the leaf
-    the segment continues from, and why an unresolvable back-link (missing,
-    out-of-file, dangling/cyclic, or into the segment's own subtree) is base.
+    Follow parent ancestry to a compaction boundary's ``logicalParentUuid``.
+    Accept that leaf only when it connects to another root in this file. A
+    missing, external, dangling, cyclic or self-contained link yields None,
+    leaving the segment independent rather than attaching it to the wrong branch.
     """
     current: JsonEntry | None = segment_root
     seen: set[str] = set()
@@ -312,8 +305,7 @@ def _segment_back_links(
 ) -> dict[str, str]:
     """Segment-root uuid -> the pre-compaction leaf it continues from.
 
-    Mirror of the map built in ``product.lib.claude_code._build_linear_chains``:
-    a walk includes a segment root only once it has visited the named leaf, so
+    A walk includes a segment root only once it has visited the named leaf, so
     a segment owned by an abandoned branch (whose leaf the live walk never
     reaches) stays off the live chain. Base segments (no resolvable back-link)
     are absent from the map and walked unconditionally.
@@ -327,7 +319,11 @@ def _segment_back_links(
 
 
 def _is_compaction_segment_root(root: JsonEntry) -> bool:
-    """Mirror of ``product.lib.claude_code._EntryTreeWalk._is_compaction_segment_root``."""
+    """Recognize explicit summaries and the legacy continuation-prompt prefix.
+
+    These roots continue earlier history and must not compete as rewritten
+    first prompts when selecting a live branch.
+    """
     if root.get("isCompactSummary"):
         return True
     key = _user_entry_text_key(root)
@@ -340,8 +336,7 @@ def _segments_by_owner(
 ) -> dict[str, list[JsonEntry]]:
     """Invert ``segment_back_links``: owner-leaf uuid → the segment roots continuing from it.
 
-    Mirror of ``product.lib.claude_code._EntryTreeWalk._segments_by_owner`` — a
-    segment hangs off its own root, unreachable through the ``children`` map, so
+    A segment hangs off its own root, unreachable through the ``children`` map, so
     ``_branch_last_activity`` needs this to fold a segment's activity into the
     branch that produced it.
     """
@@ -361,14 +356,11 @@ def _drop_abandoned_root_prompts(
 ) -> list[JsonEntry]:
     """Drop the abandoned first-prompt roots when the first prompt was rewound.
 
-    Mirror of ``product.lib.claude_code._EntryTreeWalk.split_root_rewind``'s
-    live view — see that docstring for the gate: contenders are true parentless
-    user-text roots that are not compaction summaries (``isCompactSummary``);
-    dangling-parent roots and same-text roots concatenate as segments, and the
-    newest-activity contender survives. This keeps the survivor and every
-    non-contender root; segment ownership (which compaction segment belongs to
-    the abandoned version) is decided later by the walk's ``segment_back_links``
-    L-check, exactly as on the server, so it is not repeated here.
+    Contenders are parentless user-text roots that are not compaction summaries
+    and have different prompt text. Keep the newest-activity contender and every
+    non-contender root; dangling-parent and same-text roots remain as segments.
+    The later walk uses ``segment_back_links`` to include compaction segments
+    only after visiting the branch that owns them.
     """
     if len(roots) < 2:
         return roots

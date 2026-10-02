@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-splunk-example"
+version = "0.1.0"
+description = "Export Watcher decision records to Splunk"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1", "httpx>=0.28,<1", "pydantic>=2.11,<3", "structlog==26.1.0"]
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_splunk"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
+junit_family = "legacy"
+
+[tool.uv]
+exclude-newer = "7 days"

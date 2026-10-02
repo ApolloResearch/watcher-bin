@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "post_cascade_response_with_transcript": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_windsurf.integration"
+      }
+    ],
+    "pre_read_code": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_windsurf.pre_tool_ephemeral"
+      }
+    ],
+    "pre_write_code": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_windsurf.pre_tool_ephemeral"
+      }
+    ],
+    "pre_run_command": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_windsurf.pre_tool_ephemeral"
+      }
+    ],
+    "pre_mcp_tool_use": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_windsurf.pre_tool_ephemeral"
+      }
+    ]
+  }
+}

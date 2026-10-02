@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "AfterAgent": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__WATCHER_PYTHON__ -m watcher_gemini_cli.integration",
+            "timeout": 60000
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "env WATCHER_EPHEMERAL_PRE_TOOL=1 __WATCHER_PYTHON__ -m watcher_gemini_cli.pre_tool",
+            "timeout": 480000
+          }
+        ]
+      }
+    ]
+  }
+}

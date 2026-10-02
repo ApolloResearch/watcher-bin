@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: windsurf
+name: Windsurf
+summary: Archive event-derived text only; no completed tool judgment or complete native
+  call identities.
+category: coding-harness
+upstream_url: https://docs.windsurf.com/windsurf/cascade/hooks
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Archive event-derived text only; no completed tool judgment or complete
+      native call identities.
+    example: demo/hooks.example.json
+  enforce:
+    implemented: true
+    scope: Ephemeral pre-hooks for read, write, command and MCP actions; no conversation
+      or model call ID.
+    example: demo/hooks.ephemeral.example.json
+    boundary: native-hook
+    context: tool-only; no model call ID
+    recording: none
+    failure_behavior: native-may-allow
+    timeout_seconds: 420
+    failure_details: Caught SDK failures refuse the call; native hook startup, crash
+      or deadline handling is upstream-owned and may allow execution.
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: mocked-sdk-transport
+  upstream_versions:
+    windsurf: null
+  runtimes:
+    python: 3.12.3
+  platform: linux-x86_64
+  results:
+    observe:
+      result: passed
+      coverage: contract
+      checks:
+      - python
+    enforce:
+      result: passed
+      coverage: contract
+      checks:
+      - python
+    export: null
+limitations:
+- id: deployed-server-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Local fixtures do not establish deployed Watcher persistence, grading
+    quality or latency.
+- id: ephemeral-decision
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Early veto is ephemeral and does not record a decision; completion
+    observation is independent.
+- id: native-dispatch-unverified
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: IDE hook dispatch and native startup/deadline behavior have not been
+    tested; contract tests are the available evidence.
+- id: recorded-call-identity-unavailable
+  mode: both
+  cause: upstream
+  kind: constraint
+  description: Documented events do not provide complete native model-call identities.
+    Archival text and ephemeral vetoes do not establish recorded tool monitoring.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: contract
+    checks:
+    - python
+  enforce:
+    coverage: contract
+    checks:
+    - python

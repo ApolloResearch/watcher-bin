@@ -1,0 +1,17 @@
+{
+  "slug": "gemini-cli",
+  "distribution": "watcher-example-gemini-cli",
+  "upstream_distributions": [],
+  "version_commands": {
+    "gemini-cli": [
+      "/opt/native/node_modules/.bin/gemini",
+      "--version"
+    ],
+    "node": [
+      "/usr/local/bin/node",
+      "--version"
+    ]
+  },
+  "observation_script": "run_fixture.py",
+  "enforcement_script": "run_synchronous.py"
+}

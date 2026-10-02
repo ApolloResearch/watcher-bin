@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: roo-code
+name: Roo Code
+summary: Partial text archive from public message and taskCompleted events; no complete
+  tool identities.
+category: coding-harness
+upstream_url: https://github.com/RooCodeInc/Roo-Code
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Partial text archive from public message and taskCompleted events; no complete
+      tool identities.
+    example: demo/observe.py
+  enforce:
+    implemented: false
+    scope: No verified awaited public veto seam with complete pending tool identity.
+    example: null
+manifests:
+- packages/python/pyproject.toml
+- packages/node/package.json
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: mocked-sdk-transport
+  upstream_versions:
+    roo-code: null
+  runtimes:
+    python: 3.12.3
+    node: v24.21.0
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.39
+  results:
+    observe:
+      result: passed
+      coverage: contract
+      checks:
+      - native
+    enforce:
+      result: not-run
+      coverage: null
+      checks: []
+    export: null
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: contract
+    checks:
+    - native
+  enforce: null
+limitations:
+- id: scope-01
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Native dispatcher and deployed Watcher persistence not yet verified
+- id: scope-02
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: No complete native tool identities available on this public integration
+    seam
+- id: missing-public-veto
+  mode: enforce
+  cause: upstream
+  kind: blocker
+  description: No awaited per-tool decision callback with complete pending call identity
+    found on the pinned public interface; archive remains partial.

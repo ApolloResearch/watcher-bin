@@ -1,0 +1,80 @@
+{
+  "location": "<workspace-region>",
+  "kind": "Direct",
+  "properties": {
+    "streamDeclarations": {
+      "Custom-WatcherDecisions": {
+        "columns": [
+          {
+            "name": "TimeGenerated",
+            "type": "datetime"
+          },
+          {
+            "name": "OccurredAt",
+            "type": "datetime"
+          },
+          {
+            "name": "ToolCallId",
+            "type": "string"
+          },
+          {
+            "name": "SessionId",
+            "type": "string"
+          },
+          {
+            "name": "RecordFingerprint",
+            "type": "string"
+          },
+          {
+            "name": "SeverityScore",
+            "type": "long"
+          },
+          {
+            "name": "CoverageState",
+            "type": "string"
+          },
+          {
+            "name": "DecisionCategory",
+            "type": "string"
+          },
+          {
+            "name": "ContentState",
+            "type": "string"
+          },
+          {
+            "name": "RecordType",
+            "type": "string"
+          },
+          {
+            "name": "TrajectoryId",
+            "type": "string"
+          },
+          {
+            "name": "Snapshot",
+            "type": "dynamic"
+          }
+        ]
+      }
+    },
+    "destinations": {
+      "logAnalytics": [
+        {
+          "workspaceResourceId": "/subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.OperationalInsights/workspaces/<workspace>",
+          "name": "watcher-workspace"
+        }
+      ]
+    },
+    "dataFlows": [
+      {
+        "streams": [
+          "Custom-WatcherDecisions"
+        ],
+        "destinations": [
+          "watcher-workspace"
+        ],
+        "transformKql": "source",
+        "outputStream": "Custom-WatcherDecisions_CL"
+      }
+    ]
+  }
+}

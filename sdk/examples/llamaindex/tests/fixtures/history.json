@@ -1,0 +1,61 @@
+[
+  {
+    "role": "user",
+    "content": "Initial request"
+  },
+  {
+    "role": "assistant",
+    "content": "First choice",
+    "tool_calls": [
+      {
+        "id": "a",
+        "function": "read_file",
+        "arguments": {
+          "path": "a"
+        }
+      },
+      {
+        "id": "b",
+        "function": "read_file",
+        "arguments": {
+          "path": "b"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "Result A",
+    "tool_call_id": "a",
+    "function": "read_file"
+  },
+  {
+    "role": "tool",
+    "content": "Result B",
+    "tool_call_id": "b",
+    "function": "read_file"
+  },
+  {
+    "role": "assistant",
+    "content": "Later choice",
+    "tool_calls": [
+      {
+        "id": "c",
+        "function": "write_file",
+        "arguments": {
+          "path": "c"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "FUTURE RESULT",
+    "tool_call_id": "c",
+    "function": "write_file"
+  },
+  {
+    "role": "assistant",
+    "content": "FUTURE ANSWER"
+  }
+]

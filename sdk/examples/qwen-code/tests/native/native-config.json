@@ -1,0 +1,17 @@
+{
+  "slug": "qwen-code",
+  "distribution": "watcher-example-qwen-code",
+  "upstream_distributions": [],
+  "version_commands": {
+    "qwen-code": [
+      "/opt/native/node_modules/.bin/qwen",
+      "--version"
+    ],
+    "node": [
+      "/usr/local/bin/node",
+      "--version"
+    ]
+  },
+  "observation_script": "run_fixture.py",
+  "enforcement_script": "run_synchronous.py"
+}

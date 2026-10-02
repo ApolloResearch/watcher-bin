@@ -55,13 +55,16 @@ import watcher_sdk._generated.api.organization.get_org_managed_settings_schema_v
 import watcher_sdk._generated.api.organization.get_org_managed_settings_v1_organization_managed_settings_path_get as _get_org_managed_settings_api
 import watcher_sdk._generated.api.organization.resolve_org_managed_settings_v1_organization_managed_settings_path_resolved_get as _resolve_org_managed_settings_api
 import watcher_sdk._generated.api.organization.update_org_managed_settings_v1_organization_managed_settings_path_put as _update_org_managed_settings_api
+import watcher_sdk._generated.api.sessions.get_current_session_deep_review_v1_sessions_session_id_deep_review_get as _get_current_deep_review_api
 import watcher_sdk._generated.api.sessions.get_session_aggregates_endpoint_v1_sessions_aggregates_get as _session_aggregates_api
+import watcher_sdk._generated.api.sessions.get_session_deep_review_request_v1_sessions_session_id_deep_review_operation_id_get as _get_deep_review_request_api
 import watcher_sdk._generated.api.sessions.get_session_detail_v1_sessions_session_id_get as _get_session_api
 import watcher_sdk._generated.api.sessions.get_session_filter_options_endpoint_v1_sessions_filter_options_get as _get_session_filter_options_api
 import watcher_sdk._generated.api.sessions.get_session_message_v1_sessions_session_id_messages_message_ref_get as _get_message_api
 import watcher_sdk._generated.api.sessions.get_session_trajectory_detail_v1_sessions_session_id_trajectories_trajectory_id_get as _get_trajectory_api
 import watcher_sdk._generated.api.sessions.list_session_trajectories_v1_sessions_session_id_trajectories_get as _list_trajectories_api
 import watcher_sdk._generated.api.sessions.list_sessions_endpoint_v1_sessions_get as _list_sessions_api
+import watcher_sdk._generated.api.sessions.request_session_deep_review_v1_sessions_session_id_deep_review_post as _request_deep_review_api
 import watcher_sdk._generated.api.sessions.scrub_session_content_v1_sessions_session_id_content_delete as _scrub_session_content_api
 import watcher_sdk._generated.api.sessions.search_sessions_endpoint_v1_sessions_search_post as _search_sessions_api
 import watcher_sdk._generated.api.tool_call_decisions.upload_tool_call_decisions_batch_v1_tool_call_decisions_batch_post as _tool_call_decisions_api
@@ -82,6 +85,7 @@ from watcher_sdk._generated.models import (
     ChatMessageSystem,
     ChatMessageTool,
     ChatMessageUser,
+    DeepReviewRequestResponse,
     DeviceAuthorizationResponse,
     DeviceTokenRequest,
     DeviceTokenResponse,
@@ -108,8 +112,10 @@ from watcher_sdk._generated.models import (
     PermissionCheckResponse,
     PreToolUseHookRequest,
     PreToolUseHookResponse,
+    RawPreToolUseHookRequest,
     ScrubbedSessionDetailResponse,
     SessionAggregatesResponse,
+    SessionDeepReviewResponse,
     SessionFilterOptionsResponse,
     SessionListResponse,
     SessionSummary,
@@ -172,7 +178,7 @@ from watcher_sdk._generated.models.session_search_params_sort_order import Sessi
 from watcher_sdk._generated.models.token_response import TokenResponse
 from watcher_sdk._generated.models.update_grader_request import UpdateGraderRequest
 from watcher_sdk._generated.models.user_profile import UserProfile
-from watcher_sdk._generated.types import Unset
+from watcher_sdk._generated.types import UNSET, Unset
 from watcher_sdk._pagination import PaginatedIterator, SearchPaginatedIterator
 from watcher_sdk.auth_support import REFRESH_TOKEN_COOKIE_NAME, AuthExchangeResult, AuthLogoutResult
 from watcher_sdk.errors import (
@@ -486,14 +492,23 @@ def _is_retryable(exc: BaseException) -> bool:
 
 def _raise_for_response(response: Any) -> None:
     """Check a generated Response for HTTP errors and raise SDK exceptions."""
-    status = response.status_code.value
+    _raise_for_http_error(response.status_code.value, response.content, response.headers)
+
+
+def _raise_for_http_error(status: int, content: bytes, headers: Mapping[str, str]) -> None:
+    """Raise the SDK exception for an HTTP error status; return for a success status.
+
+    The body is read leniently, so an error body that is not JSON, or not the
+    shape the generated models expect, still yields an exception with the real
+    status.
+    """
     if status >= 400:
         try:
-            body = _json.loads(response.content)
+            parsed: object = _json.loads(content)
         except Exception:
-            body = {"error": response.content.decode(errors="replace") or "Unknown error"}
-        request_id = response.headers.get("x-request-id")
-        raise_for_status(status, dict(body), request_id)
+            parsed = content.decode(errors="replace") or "Unknown error"
+        body: dict[str, object] = parsed if isinstance(parsed, dict) else {"error": parsed}
+        raise_for_status(status, body, headers.get("x-request-id"))
 
 
 def _sdk_method(
@@ -1061,6 +1076,28 @@ class AsyncWatcherClient:
         settings_overrides: str | dict[str, Any] | None = None,
     ) -> list[PreToolUseHookResponse | HookCallError]: ...
 
+    @overload
+    async def pre_tool_use_hook(
+        self,
+        input: None = None,
+        *,
+        request_body: Mapping[str, Any],
+        response_body: Mapping[str, Any],
+        url: str = "",
+        provider: str | None = None,
+        user_agent: str | None = None,
+        response_index: int | None = None,
+        external_ids: Mapping[str, str | None] | None = None,
+        user: str | None = None,
+        ephemeral: bool | None = None,
+        mode: str | None = None,
+        force_regrade: bool = False,
+        timeout: float | None = None,
+        skip_rules: bool | None = None,
+        policy_version: str | None = None,
+        settings_overrides: str | dict[str, Any] | None = None,
+    ) -> list[PreToolUseHookResponse | HookCallError]: ...
+
     async def pre_tool_use_hook(
         self,
         input: Mapping[str, Any] | list[_HookInputMapping] | None = None,
@@ -1076,6 +1113,12 @@ class AsyncWatcherClient:
         skip_rules: bool | None = None,
         policy_version: str | None = None,
         settings_overrides: str | dict[str, Any] | None = None,
+        request_body: Mapping[str, Any] | None = None,
+        response_body: Mapping[str, Any] | None = None,
+        url: str = "",
+        provider: str | None = None,
+        user_agent: str | None = None,
+        response_index: int | None = None,
     ) -> PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
         """Evaluate tool calls or ingest a transcript through Watcher's server pipeline.
 
@@ -1118,6 +1161,32 @@ class AsyncWatcherClient:
         `timeout` remains the budget for the whole request. Pass a smaller
         `timeout` — or send
         `mode="triage_only"` — when the budget is tight.
+
+        Pass `request_body` and `response_body` instead of `input` and
+        `messages` to send a raw provider pair (the server's `format="raw"`):
+        a gateway's provider request and its complete, non-streaming response
+        in OpenAI Chat Completions or Responses, Anthropic Messages, Gemini
+        generateContent or Bedrock Converse format, plus the client-facing
+        endpoint path in `url`. The server converts the pair, recognizes known
+        coding harnesses from the bodies and `user_agent`, and evaluates the
+        selected new client calls. The result is a list with one output per
+        selected call in response order. Each output's `tool_use_id` is the
+        provider's call ID in `response_body`; Gemini calls get generated IDs
+        and are matched by order within the selected candidate. `response_index`
+        selects a Chat choice or Gemini candidate by zero-based array position.
+        It is required when there are several; deliver only that alternative.
+
+        Match every executable client call you will deliver to exactly one
+        output before applying its decision. Withhold the response if a call
+        has no output, IDs are duplicated, or an output cannot be matched to
+        a call. For Gemini, require equal call and output counts. Anthropic
+        calls before the final `fallback` block have no output. An empty list
+        means no client calls were selected, not that the original response
+        contains none. An error output is not permission to execute a call.
+
+        There is no limit on the number of tool calls in one response.
+        `tool_use_id` does not apply as an argument. The default timeout is
+        420 seconds for the whole request.
 
         Args:
             input: One call, a list sharing the same messages, or None for ingestion only,
@@ -1186,6 +1255,36 @@ class AsyncWatcherClient:
                 is rejected with HTTP 422, including same-value overrides.
 
         """
+        if request_body is not None or response_body is not None:
+            if request_body is None or response_body is None:
+                raise ValueError("A raw pair needs both request_body and response_body")
+            if input is not None or messages is not None or tool_use_id is not None:
+                raise ValueError("A raw pair replaces input, messages and tool_use_id; do not combine them")
+            raw: dict[str, object] = {
+                "format": "raw",
+                "request_body": dict(request_body),
+                "response_body": dict(response_body),
+                "url": url,
+            }
+            optional: dict[str, object | None] = {
+                "provider": provider,
+                "user_agent": user_agent,
+                "response_index": response_index,
+                "external_ids": dict(external_ids) if external_ids is not None else None,
+                "user": user,
+                "mode": mode,
+                "ephemeral": ephemeral,
+                "skip_rules": skip_rules,
+                "policy_version": policy_version,
+                "settings_overrides": settings_overrides,
+            }
+            raw.update({key: value for key, value in optional.items() if value is not None})
+            if force_regrade:
+                raw["force_regrade"] = True
+            return await self._send_pre_tool_use_hook(
+                RawPreToolUseHookRequest.from_dict(raw),
+                timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS,
+            )
         if input is None or isinstance(input, list):
             if tool_use_id is not None:
                 raise ValueError("tool_use_id is only supported for scalar input; set each input.tool_use_id instead")
@@ -1215,18 +1314,29 @@ class AsyncWatcherClient:
             body_dict["policy_version"] = policy_version
         if settings_overrides is not None:
             body_dict["settings_overrides"] = settings_overrides
-        body = PreToolUseHookRequest.from_dict(body_dict)
-        request_kwargs = _pre_tool_use_hook_api._get_kwargs(body=body)
         input_count = max(1, len(input)) if isinstance(input, list) else 1
-        request_kwargs["timeout"] = timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS * input_count
+        return await self._send_pre_tool_use_hook(
+            PreToolUseHookRequest.from_dict(body_dict),
+            timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS * input_count,
+        )
+
+    async def _send_pre_tool_use_hook(
+        self, body: PreToolUseHookRequest | RawPreToolUseHookRequest, timeout: float
+    ) -> PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
+        """POST one hook request under its own timeout, without the client's automatic retries."""
+        request_kwargs = _pre_tool_use_hook_api._get_kwargs(body=body)
+        request_kwargs["timeout"] = timeout
         try:
             raw = await self._generated_client.get_async_httpx_client().request(**request_kwargs)
-            response = _pre_tool_use_hook_api._build_response(client=self._generated_client, response=raw)
         except httpx.ConnectError as e:
             raise WatcherConnectionError(str(e)) from e
         except httpx.TimeoutException as e:
             raise WatcherTimeoutError(str(e)) from e
-        _raise_for_response(response)
+        # Check the status before the generated parser reads the body: it
+        # expects the documented error shape and would otherwise raise on any
+        # other 422 body, losing the status.
+        _raise_for_http_error(raw.status_code, raw.content, raw.headers)
+        response = _pre_tool_use_hook_api._build_response(client=self._generated_client, response=raw)
         return response.parsed  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
 
     async def aperture_entire_request_hook(self, payload: Mapping[str, Any]) -> ApertureHookAccepted:
@@ -1772,6 +1882,7 @@ class AsyncWatcherClient:
         session_name_contains: str | None = None,
         *,
         users: UserFilter | None = None,
+        sources: list[str] | None = None,
     ) -> SessionListResponse:
         """Search sessions with filtering, pagination, and sorting.
 
@@ -1807,6 +1918,12 @@ class AsyncWatcherClient:
                 None selects all owners allowed by your read scope. Naming another
                 user requires sessions:read:any in either mode; otherwise the server
                 returns 403. An empty ids list is rejected with 422.
+            sources: Match any listed ingestion source among the session's retained
+                messages. Known values are 'watcher', 'tailscale-aperture',
+                'watcher-gateway', 'watcher-sdk' and 'watcher-hook'; the last
+                three split hook messages by the session's conversation-ID
+                prefix. Custom source strings are accepted. None omits this
+                filter. An empty list is rejected with 422.
 
         Returns:
             SessionListResponse containing matched sessions and total count.
@@ -1834,6 +1951,7 @@ class AsyncWatcherClient:
             session_id_contains=session_id_contains,
             session_name_contains=session_name_contains,
             users=users,
+            sources=sources if sources is not None else UNSET,
         )
         body = SessionSearchParams(
             limit=limit,
@@ -2096,6 +2214,60 @@ class AsyncWatcherClient:
             session_id, client=self._generated_client
         )
 
+    @_sdk_method
+    async def request_deep_review(self, session_id: str) -> DeepReviewRequestResponse:
+        """Queue a deep review of a session's latest transcript, or return the one already queued.
+
+        Poll ``get_deep_review_request`` until the status is ``succeeded`` or
+        ``failed``; the report then appears among the session's grades.
+
+        Args:
+            session_id: Unique identifier of the session to review.
+
+        Returns:
+            The review's operation ID and status. Repeating the request for an
+            unchanged transcript returns the same operation.
+
+        Raises:
+            WatcherNotFoundError: If the caller cannot grade this session.
+            WatcherAPIError: With status 409 if the session has nothing to
+                review or a review cannot be started for it; 402 if the
+                organization is over its grading cap.
+        """
+        return await _request_deep_review_api.asyncio_detailed(session_id, client=self._generated_client)  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+
+    @_sdk_method
+    async def get_deep_review_request(self, session_id: str, operation_id: str) -> DeepReviewRequestResponse:
+        """Get the status of a deep review queued by ``request_deep_review``.
+
+        Args:
+            session_id: Unique identifier of the reviewed session.
+            operation_id: Operation ID returned when the review was requested.
+
+        Raises:
+            WatcherNotFoundError: If the session is not visible or the operation
+                is not this session's review.
+        """
+        return await _get_deep_review_request_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            session_id, UUID(operation_id), client=self._generated_client
+        )
+
+    @_sdk_method
+    async def get_current_deep_review(self, session_id: str) -> SessionDeepReviewResponse:
+        """Get the deep review a viewer of this session should see, however it was queued.
+
+        Returns an unfinished review if one exists, otherwise the latest review
+        of the session's current transcript. ``current`` is None when no review
+        was requested for it.
+
+        Args:
+            session_id: Unique identifier of the session.
+
+        Raises:
+            WatcherNotFoundError: If the session is not visible.
+        """
+        return await _get_current_deep_review_api.asyncio_detailed(session_id, client=self._generated_client)  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+
     # ---- Trajectories ----
 
     @_sdk_method
@@ -2276,6 +2448,7 @@ class AsyncWatcherClient:
         session_name_contains: str | None = None,
         *,
         users: UserFilter | None = None,
+        sources: list[str] | None = None,
     ) -> AsyncIterator[SessionSummary]:
         """Iterate over search results, auto-paginating.
 
@@ -2306,6 +2479,8 @@ class AsyncWatcherClient:
                 session name. Does not match the session owner's name or email.
             users: Owner selection, forwarded on every page. See search_sessions
                 for include/exclude semantics, validation, and required permissions.
+            sources: Ingestion sources to match, forwarded on every page. See
+                search_sessions for retained-message and selection semantics.
 
         Returns:
             AsyncIterator yielding individual SessionSummary objects across all pages.
@@ -2327,6 +2502,7 @@ class AsyncWatcherClient:
                 session_id_contains=session_id_contains,
                 session_name_contains=session_name_contains,
                 users=users,
+                sources=sources,
             ),
             page_size=page_size,
         )

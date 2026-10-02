@@ -1,0 +1,36 @@
+[
+  {
+    "hook_event_name": "beforeSubmitPrompt",
+    "prompt": "Run two safe commands"
+  },
+  {
+    "hook_event_name": "preToolUse",
+    "tool_use_id": "call-a",
+    "tool_name": "Shell",
+    "tool_input": {
+      "command": "pwd"
+    }
+  },
+  {
+    "hook_event_name": "preToolUse",
+    "tool_use_id": "call-b",
+    "tool_name": "Shell",
+    "tool_input": {
+      "command": "ls"
+    }
+  },
+  {
+    "hook_event_name": "postToolUse",
+    "tool_use_id": "call-b",
+    "tool_output": "file.txt"
+  },
+  {
+    "hook_event_name": "postToolUse",
+    "tool_use_id": "call-a",
+    "tool_output": "/workspace"
+  },
+  {
+    "hook_event_name": "afterAgentResponse",
+    "text": "finished"
+  }
+]

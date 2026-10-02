@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "watcher-github-copilot-cli observe --config /path/printed/by/setup/config.json",
+        "timeoutSec": 90
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "watcher-github-copilot-cli observe --config /path/printed/by/setup/config.json",
+        "timeoutSec": 90
+      }
+    ]
+  }
+}

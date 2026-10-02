@@ -19,6 +19,7 @@ from watcher_sdk._generated.models.aperture_log import ApertureLog
 from watcher_sdk._generated.models.auth_client_config import AuthClientConfig
 from watcher_sdk._generated.models.claude_code_trajectory import ClaudeCodeTrajectory
 from watcher_sdk._generated.models.codex_trajectory import CodexTrajectory
+from watcher_sdk._generated.models.deep_review_request_response import DeepReviewRequestResponse
 from watcher_sdk._generated.models.device_authorization_response import DeviceAuthorizationResponse
 from watcher_sdk._generated.models.device_token_response import DeviceTokenResponse
 from watcher_sdk._generated.models.grade_response import GradeResponse
@@ -38,6 +39,7 @@ from watcher_sdk._generated.models.org_managed_settings_resolved import OrgManag
 from watcher_sdk._generated.models.permission_check_response import PermissionCheckResponse
 from watcher_sdk._generated.models.pre_tool_use_hook_response import PreToolUseHookResponse
 from watcher_sdk._generated.models.session_aggregates_response import SessionAggregatesResponse
+from watcher_sdk._generated.models.session_deep_review_response import SessionDeepReviewResponse
 from watcher_sdk._generated.models.session_filter_options_response import SessionFilterOptionsResponse
 from watcher_sdk._generated.models.session_list_response import SessionListResponse
 from watcher_sdk._generated.models.session_summary import SessionSummary
@@ -163,6 +165,27 @@ class WatcherClient:
         policy_version: str | None = None,
         settings_overrides: str | dict[str, Any] | None = None,
     ) -> list[PreToolUseHookResponse | HookCallError]: ...
+    @overload
+    def pre_tool_use_hook(
+        self,
+        input: None = None,
+        *,
+        request_body: Mapping[str, Any],
+        response_body: Mapping[str, Any],
+        url: str = "",
+        provider: str | None = None,
+        user_agent: str | None = None,
+        response_index: int | None = None,
+        external_ids: Mapping[str, str | None] | None = None,
+        user: str | None = None,
+        ephemeral: bool | None = None,
+        mode: str | None = None,
+        force_regrade: bool = False,
+        timeout: float | None = None,
+        skip_rules: bool | None = None,
+        policy_version: str | None = None,
+        settings_overrides: str | dict[str, Any] | None = None,
+    ) -> list[PreToolUseHookResponse | HookCallError]: ...
     def aperture_entire_request_hook(self, payload: Mapping[str, Any]) -> ApertureHookAccepted: ...
     @overload
     def pre_tool_use(
@@ -247,6 +270,7 @@ class WatcherClient:
         session_name_contains: str | None = None,
         *,
         users: UserFilter | None = None,
+        sources: list[str] | None = None,
     ) -> SessionListResponse: ...
     def search_tool_calls(
         self,
@@ -294,6 +318,9 @@ class WatcherClient:
     def get_session_filter_options(self) -> SessionFilterOptionsResponse: ...
     def get_session(self, session_id: str) -> SessionDetailResponse: ...
     def scrub_session_content(self, session_id: str) -> None: ...
+    def request_deep_review(self, session_id: str) -> DeepReviewRequestResponse: ...
+    def get_deep_review_request(self, session_id: str, operation_id: str) -> DeepReviewRequestResponse: ...
+    def get_current_deep_review(self, session_id: str) -> SessionDeepReviewResponse: ...
     def list_trajectories(self, session_id: str) -> TrajectoryListInSessionResponse: ...
     def get_trajectory(
         self, session_id: str, trajectory_id: str, view: TrajectoryView = TrajectoryView.TRUNCATED
@@ -336,4 +363,5 @@ class WatcherClient:
         session_name_contains: str | None = None,
         *,
         users: UserFilter | None = None,
+        sources: list[str] | None = None,
     ) -> Iterator[SessionSummary]: ...

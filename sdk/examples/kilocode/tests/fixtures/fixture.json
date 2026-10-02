@@ -1,0 +1,60 @@
+[
+  {
+    "info": {
+      "role": "user",
+      "id": "m1"
+    },
+    "parts": [
+      {
+        "type": "text",
+        "text": "Run two safe commands"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "id": "m2"
+    },
+    "parts": [
+      {
+        "type": "tool",
+        "id": "p1",
+        "callID": "call-a",
+        "tool": "bash",
+        "state": {
+          "status": "completed",
+          "input": {
+            "command": "pwd"
+          },
+          "output": "/workspace"
+        }
+      },
+      {
+        "type": "tool",
+        "id": "p2",
+        "callID": "call-b",
+        "tool": "bash",
+        "state": {
+          "status": "completed",
+          "input": {
+            "command": "ls"
+          },
+          "output": "file.txt"
+        }
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "id": "m3"
+    },
+    "parts": [
+      {
+        "type": "text",
+        "text": "finished"
+      }
+    ]
+  }
+]

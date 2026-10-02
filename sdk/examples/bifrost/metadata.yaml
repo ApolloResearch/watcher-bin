@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: bifrost
+name: Bifrost
+summary: Monitor client-facing requests and gate generated function calls from the
+  gateway.
+category: gateway
+upstream_url: https://github.com/maximhq/bifrost
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Native gateway callback records supported full-history Chat Completions
+      exchanges. Generic clients get separate sessions per exchange; recognized harnesses
+      may group by native session ID.
+    example: gateway/main.go
+  enforce:
+    implemented: true
+    scope: Withholds generated client function calls at the gateway until Watcher
+      returns an applied allow or deferred decision.
+    example: gateway/main.go
+    boundary: gateway-response
+    context: conversation
+    recording: optional
+    failure_behavior: mixed
+    failure_details: Transport errors and missing outcomes withhold responses; applied
+      grading-failure decisions follow organization policy. Hook replies do not acknowledge
+      durable recording.
+    timeout_seconds: 420
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    bifrost: 048492cff9cf451baf7bfcb13bc0342383788f15
+  runtimes:
+    python: 3.12.14
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.41
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+limitations:
+- id: native-scope
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Only textual Chat Completions and client function tools are supported;
+    one choice.
+- id: identity-scope
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Generic clients receive a separate session per exchange. Recognized
+    Chat harnesses may group by client-supplied native session IDs, which do not authenticate
+    users. Local isolation checks cover generic clients, not impersonation of recognized
+    harness sessions.
+- id: provider-tools
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Provider-hosted tools and other native execution surfaces are not prevented
+    by intercepting model responses.
+- id: storage-receipt
+  mode: both
+  cause: watcher
+  kind: constraint
+  description: The bridge requires sessions:ingest at startup, but hook success acknowledges
+    evaluation and scheduled ingestion rather than durable storage.
+- id: native-verification
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Hosted providers, deployed authentication and production service configuration
+    are unverified.
+- id: streaming-buffer
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Streams are buffered and re-encoded after evaluation, losing incremental
+    delivery; other Bifrost routes must not be exposed to monitored clients.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native

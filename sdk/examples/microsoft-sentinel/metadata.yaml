@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: microsoft-sentinel
+name: Microsoft Sentinel
+summary: Export a finite window of Watcher decisions, flagged-session summaries and
+  optional transcripts to Microsoft Sentinel.
+category: observability
+direction: from-watcher
+upstream_url: https://learn.microsoft.com/en-us/azure/azure-monitor/logs/logs-ingestion-api-overview
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: false
+    scope: This example exports decisions already recorded in Watcher.
+    example: null
+  enforce:
+    implemented: false
+    scope: Exporting records cannot synchronously block tool execution.
+    example: null
+  export:
+    implemented: true
+    scope: Finite occurrence-time windows of tool-call decisions, activity-overlap
+      windows of flagged-session summaries, and explicitly opted-in complete transcripts.
+    example: demo/export.py
+    context: stored decisions, session summaries and optional transcripts
+    recording: none
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: fixture-http
+  upstream_versions:
+    microsoft-sentinel: null
+  runtimes:
+    python: 3.12.14
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: not-run
+      coverage: null
+      checks: []
+    enforce:
+      result: not-run
+      coverage: null
+      checks: []
+    export:
+      result: passed
+      coverage: contract
+      checks:
+      - native
+limitations:
+- id: source-pagination
+  mode: export
+  cause: watcher
+  kind: constraint
+  description: Offset pages and occurrence-time filters do not expose snapshot isolation
+    or a decision-change cursor.
+- id: replay
+  mode: export
+  cause: integration-scope
+  kind: constraint
+  description: Replays, retries and ambiguous delivery may duplicate events; the fingerprint
+    supports query-side deduplication only.
+- id: hosted-indexing
+  mode: export
+  cause: unverified
+  kind: verification-gap
+  description: Local HTTP fixtures do not verify hosted indexing, permissions, transformations
+    or detection rules.
+- id: azure-timegenerated
+  mode: export
+  cause: upstream
+  kind: constraint
+  description: Azure can replace historical or future TimeGenerated values with receipt
+    time; OccurredAt retains the original Watcher timestamp.
+- id: notification-feed
+  mode: export
+  cause: watcher
+  description: The public SDK exposes stored decisions and sessions, but no notification-delivery
+    feed. These exports are snapshots, not notification events.
+- id: transcript-content
+  mode: export
+  cause: integration-scope
+  description: Transcripts are excluded by default. Opting in exports their content
+    and any sensitive information they contain; filter or redact it before destination
+    delivery as required.
+verification_plan:
+  watcher_test_target: fixture-http
+  observe: null
+  enforce: null
+  export:
+    coverage: contract
+    checks:
+    - native

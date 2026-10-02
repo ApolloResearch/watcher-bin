@@ -1,0 +1,68 @@
+[
+  {
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Run two safe commands"
+        }
+      ]
+    }
+  },
+  {
+    "type": "assistant",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call-a",
+          "name": "Bash",
+          "input": {
+            "command": "pwd"
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "call-b",
+          "name": "Bash",
+          "input": {
+            "command": "ls"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call-b",
+          "content": "file.txt"
+        },
+        {
+          "type": "tool_result",
+          "tool_use_id": "call-a",
+          "content": "/workspace"
+        }
+      ]
+    }
+  },
+  {
+    "type": "assistant",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "finished"
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,4 @@
+# Ephemeral test process: no external metrics or management listener.
+ssl: false
+serverPort: 4900
+metricRegistries: []

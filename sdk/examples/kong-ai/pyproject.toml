@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-kong-ai-example"
+version = "0.1.0"
+description = "Native Kong AI Proxy plugin with a private Watcher SDK bridge"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1", "openai==3.8.0", "httpx==0.28.1", "typer==0.24.1"]
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_kong_ai"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
+
+[tool.uv]
+exclude-newer = "7 days"
+
+[project.scripts]
+watcher-kong-bridge = "watcher_kong_ai.bridge:main"

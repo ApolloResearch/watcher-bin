@@ -1,0 +1,9 @@
+{
+  "hooks": {
+    "post_cascade_response_with_transcript": [
+      {
+        "command": "__WATCHER_PYTHON__ -m watcher_windsurf.integration"
+      }
+    ]
+  }
+}

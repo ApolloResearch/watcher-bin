@@ -9,12 +9,13 @@ from ...models.hook_call_error import HookCallError
 from ...models.http_validation_error import HTTPValidationError
 from ...models.pre_tool_use_hook_request import PreToolUseHookRequest
 from ...models.pre_tool_use_hook_response import PreToolUseHookResponse
+from ...models.raw_pre_tool_use_hook_request import RawPreToolUseHookRequest
 from ...types import Response
 
 
 def _get_kwargs(
     *,
-    body: PreToolUseHookRequest,
+    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
@@ -23,7 +24,10 @@ def _get_kwargs(
         "url": "/v1/hooks/pre-tool-use",
     }
 
-    _kwargs["json"] = body.to_dict()
+    if isinstance(body, PreToolUseHookRequest):
+        _kwargs["json"] = body.to_dict()
+    else:
+        _kwargs["json"] = body.to_dict()
 
     headers["Content-Type"] = "application/json"
 
@@ -124,14 +128,14 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
-    body: PreToolUseHookRequest,
+    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
 ) -> Response[
     Any
     | HTTPValidationError
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
 ]:
-    """Pre Tool Use Hook
+    r"""Pre Tool Use Hook
 
      Evaluate one or several pending calls, or accept a transcript with no pending call.
 
@@ -173,60 +177,34 @@ def sync_detailed(
     ingests. Concurrent misses and retries before post-response recording may
     evaluate more than once. Paused mode never evaluates, even when forced.
 
+    With `format=\"raw\"`, send a provider request (`request_body`) and its
+    complete response (`response_body`) in one supported wire format (OpenAI
+    Chat Completions or Responses, Anthropic Messages, Gemini generateContent
+    or Bedrock Converse) plus the client-facing endpoint path in `url`, instead
+    of `messages` and `input`. Watcher converts the pair and evaluates the
+    selected new client calls. The response is a list, one output per selected
+    call in response order; each `tool_use_id` is the provider's call ID.
+    Gemini calls get generated IDs and are matched by order within the selected
+    candidate. `response_index` selects by zero-based array position and is
+    required when there are multiple alternatives. Deliver only the selected
+    choice or candidate. Match every
+    executable client call to exactly one output before applying its decision.
+    Withhold the response if a call has no output, IDs are duplicated, or an
+    output cannot be matched to a call. For Gemini, require equal call and output
+    counts. An error output is not permission to execute a call.
+
+    Anthropic calls before the final `fallback` block have no output. An empty
+    list means no client calls were selected, not that the original response
+    contains none. There is no limit on the number of tool calls in one response.
+    Known coding harnesses are recognized from the request and `user_agent` and
+    contribute their session IDs. Their own helper requests without selected
+    client calls (Claude Code background requests, Codex thread titles,
+    approval reviews and memory extraction, Antigravity titles) return `[]`
+    and are not recorded. The gateway still checks those responses for
+    executable calls.
+
     Args:
-        body (PreToolUseHookRequest): Evaluate pending tool calls or ingest a transcript through
-            the generic hook.
-
-            Send the conversation once in `messages` and select pending calls with
-            `input`. A scalar input returns one response; a list returns one outcome
-            per input in the same order, including each input's `tool_use_id`. Null,
-            omitted, or empty-list input ingests the transcript without grading or
-            writing decisions and returns an empty list, regardless of enforcement mode.
-            Named observe calls return completed judgments with a deferred applied
-            decision. Enforce and observe support ephemeral evaluation and evaluation
-            without session-write permission; recording requires that permission.
-            All calls share one transcript, which is ingested once when recording is enabled.
-
-            Input lists accept at most 32 items, including blank or ephemeral inputs.
-            Larger lists are rejected with HTTP 422 before ingestion or grading.
-            Batches with multiple inputs require top-level `messages`. Their inputs
-            must omit `messages` or supply null or an empty list, so the transcript is
-            sent only once. Scalars and single-item lists may supply `input.messages`;
-            if both locations are non-null, their transcripts must match. An input
-            with an explicitly blank tool name only ingests and retains its response shape.
-            Paused and unnamed inputs need no grading admission;
-            authorized ingestion still uses normal database resources.
-
-            Send structured `messages`, including the assistant message containing each
-            pending call. Pre-rendered `transcript` and caller `triage_assessment` are
-            rejected. A recorded named call requires `input.tool_use_id` matching one
-            call in those messages; different batch inputs must name different ids.
-            The selected tool name and arguments must match every transcript occurrence
-            of its ID. Argument object key order is ignored; JSON value types and string
-            content must agree. Omitted `tool_input` matches an empty arguments object;
-            explicit null does not. Mismatches return HTTP 422 before grading or ingestion.
-            `ephemeral` suppresses transcript, decision, and grade persistence, but not
-            usage. Enforce and observe requests may both use it.
-
-            `external_ids` includes each distinct conversation ID from the harness
-            and gateway, including a separate gateway-issued ID when available.
-            A null value explicitly opts into transcript-prefix
-            reconciliation and still names the harness. Recorded requests require this
-            mapping. `user` supplies the developer email only when the authenticated
-            caller can impersonate; otherwise attribution stays with that caller.
-
-            `settings_overrides` accepts a YAML string or JSON object that the server
-            will merge onto administrator settings as a local settings layer.
-            Administrator locks reject overrides with HTTP 422, even when they repeat
-            a locked value. Set `enforcement.mode` there for observe or paused behavior;
-            omitted overrides inherit the administrator's settings. A gateway's
-            server-owned capability limit independently prevents unsupported enforcement.
-
-            `mode=triage_only` bounds grading depth: triage can allow but cannot deny;
-            otherwise it escalates without running the gateway monitor. `skip_rules`
-            is for clients that already evaluated deterministic stages. When they send
-            `policy_version` (`<version>@<builtin digest>`), a stale token forces those
-            stages to run again against the server's current policy.
+        body (PreToolUseHookRequest | RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -250,7 +228,7 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient | Client,
-    body: PreToolUseHookRequest,
+    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
 ) -> (
     Any
     | HTTPValidationError
@@ -258,7 +236,7 @@ def sync(
     | PreToolUseHookResponse
     | None
 ):
-    """Pre Tool Use Hook
+    r"""Pre Tool Use Hook
 
      Evaluate one or several pending calls, or accept a transcript with no pending call.
 
@@ -300,60 +278,34 @@ def sync(
     ingests. Concurrent misses and retries before post-response recording may
     evaluate more than once. Paused mode never evaluates, even when forced.
 
+    With `format=\"raw\"`, send a provider request (`request_body`) and its
+    complete response (`response_body`) in one supported wire format (OpenAI
+    Chat Completions or Responses, Anthropic Messages, Gemini generateContent
+    or Bedrock Converse) plus the client-facing endpoint path in `url`, instead
+    of `messages` and `input`. Watcher converts the pair and evaluates the
+    selected new client calls. The response is a list, one output per selected
+    call in response order; each `tool_use_id` is the provider's call ID.
+    Gemini calls get generated IDs and are matched by order within the selected
+    candidate. `response_index` selects by zero-based array position and is
+    required when there are multiple alternatives. Deliver only the selected
+    choice or candidate. Match every
+    executable client call to exactly one output before applying its decision.
+    Withhold the response if a call has no output, IDs are duplicated, or an
+    output cannot be matched to a call. For Gemini, require equal call and output
+    counts. An error output is not permission to execute a call.
+
+    Anthropic calls before the final `fallback` block have no output. An empty
+    list means no client calls were selected, not that the original response
+    contains none. There is no limit on the number of tool calls in one response.
+    Known coding harnesses are recognized from the request and `user_agent` and
+    contribute their session IDs. Their own helper requests without selected
+    client calls (Claude Code background requests, Codex thread titles,
+    approval reviews and memory extraction, Antigravity titles) return `[]`
+    and are not recorded. The gateway still checks those responses for
+    executable calls.
+
     Args:
-        body (PreToolUseHookRequest): Evaluate pending tool calls or ingest a transcript through
-            the generic hook.
-
-            Send the conversation once in `messages` and select pending calls with
-            `input`. A scalar input returns one response; a list returns one outcome
-            per input in the same order, including each input's `tool_use_id`. Null,
-            omitted, or empty-list input ingests the transcript without grading or
-            writing decisions and returns an empty list, regardless of enforcement mode.
-            Named observe calls return completed judgments with a deferred applied
-            decision. Enforce and observe support ephemeral evaluation and evaluation
-            without session-write permission; recording requires that permission.
-            All calls share one transcript, which is ingested once when recording is enabled.
-
-            Input lists accept at most 32 items, including blank or ephemeral inputs.
-            Larger lists are rejected with HTTP 422 before ingestion or grading.
-            Batches with multiple inputs require top-level `messages`. Their inputs
-            must omit `messages` or supply null or an empty list, so the transcript is
-            sent only once. Scalars and single-item lists may supply `input.messages`;
-            if both locations are non-null, their transcripts must match. An input
-            with an explicitly blank tool name only ingests and retains its response shape.
-            Paused and unnamed inputs need no grading admission;
-            authorized ingestion still uses normal database resources.
-
-            Send structured `messages`, including the assistant message containing each
-            pending call. Pre-rendered `transcript` and caller `triage_assessment` are
-            rejected. A recorded named call requires `input.tool_use_id` matching one
-            call in those messages; different batch inputs must name different ids.
-            The selected tool name and arguments must match every transcript occurrence
-            of its ID. Argument object key order is ignored; JSON value types and string
-            content must agree. Omitted `tool_input` matches an empty arguments object;
-            explicit null does not. Mismatches return HTTP 422 before grading or ingestion.
-            `ephemeral` suppresses transcript, decision, and grade persistence, but not
-            usage. Enforce and observe requests may both use it.
-
-            `external_ids` includes each distinct conversation ID from the harness
-            and gateway, including a separate gateway-issued ID when available.
-            A null value explicitly opts into transcript-prefix
-            reconciliation and still names the harness. Recorded requests require this
-            mapping. `user` supplies the developer email only when the authenticated
-            caller can impersonate; otherwise attribution stays with that caller.
-
-            `settings_overrides` accepts a YAML string or JSON object that the server
-            will merge onto administrator settings as a local settings layer.
-            Administrator locks reject overrides with HTTP 422, even when they repeat
-            a locked value. Set `enforcement.mode` there for observe or paused behavior;
-            omitted overrides inherit the administrator's settings. A gateway's
-            server-owned capability limit independently prevents unsupported enforcement.
-
-            `mode=triage_only` bounds grading depth: triage can allow but cannot deny;
-            otherwise it escalates without running the gateway monitor. `skip_rules`
-            is for clients that already evaluated deterministic stages. When they send
-            `policy_version` (`<version>@<builtin digest>`), a stale token forces those
-            stages to run again against the server's current policy.
+        body (PreToolUseHookRequest | RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -372,14 +324,14 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
-    body: PreToolUseHookRequest,
+    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
 ) -> Response[
     Any
     | HTTPValidationError
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
 ]:
-    """Pre Tool Use Hook
+    r"""Pre Tool Use Hook
 
      Evaluate one or several pending calls, or accept a transcript with no pending call.
 
@@ -421,60 +373,34 @@ async def asyncio_detailed(
     ingests. Concurrent misses and retries before post-response recording may
     evaluate more than once. Paused mode never evaluates, even when forced.
 
+    With `format=\"raw\"`, send a provider request (`request_body`) and its
+    complete response (`response_body`) in one supported wire format (OpenAI
+    Chat Completions or Responses, Anthropic Messages, Gemini generateContent
+    or Bedrock Converse) plus the client-facing endpoint path in `url`, instead
+    of `messages` and `input`. Watcher converts the pair and evaluates the
+    selected new client calls. The response is a list, one output per selected
+    call in response order; each `tool_use_id` is the provider's call ID.
+    Gemini calls get generated IDs and are matched by order within the selected
+    candidate. `response_index` selects by zero-based array position and is
+    required when there are multiple alternatives. Deliver only the selected
+    choice or candidate. Match every
+    executable client call to exactly one output before applying its decision.
+    Withhold the response if a call has no output, IDs are duplicated, or an
+    output cannot be matched to a call. For Gemini, require equal call and output
+    counts. An error output is not permission to execute a call.
+
+    Anthropic calls before the final `fallback` block have no output. An empty
+    list means no client calls were selected, not that the original response
+    contains none. There is no limit on the number of tool calls in one response.
+    Known coding harnesses are recognized from the request and `user_agent` and
+    contribute their session IDs. Their own helper requests without selected
+    client calls (Claude Code background requests, Codex thread titles,
+    approval reviews and memory extraction, Antigravity titles) return `[]`
+    and are not recorded. The gateway still checks those responses for
+    executable calls.
+
     Args:
-        body (PreToolUseHookRequest): Evaluate pending tool calls or ingest a transcript through
-            the generic hook.
-
-            Send the conversation once in `messages` and select pending calls with
-            `input`. A scalar input returns one response; a list returns one outcome
-            per input in the same order, including each input's `tool_use_id`. Null,
-            omitted, or empty-list input ingests the transcript without grading or
-            writing decisions and returns an empty list, regardless of enforcement mode.
-            Named observe calls return completed judgments with a deferred applied
-            decision. Enforce and observe support ephemeral evaluation and evaluation
-            without session-write permission; recording requires that permission.
-            All calls share one transcript, which is ingested once when recording is enabled.
-
-            Input lists accept at most 32 items, including blank or ephemeral inputs.
-            Larger lists are rejected with HTTP 422 before ingestion or grading.
-            Batches with multiple inputs require top-level `messages`. Their inputs
-            must omit `messages` or supply null or an empty list, so the transcript is
-            sent only once. Scalars and single-item lists may supply `input.messages`;
-            if both locations are non-null, their transcripts must match. An input
-            with an explicitly blank tool name only ingests and retains its response shape.
-            Paused and unnamed inputs need no grading admission;
-            authorized ingestion still uses normal database resources.
-
-            Send structured `messages`, including the assistant message containing each
-            pending call. Pre-rendered `transcript` and caller `triage_assessment` are
-            rejected. A recorded named call requires `input.tool_use_id` matching one
-            call in those messages; different batch inputs must name different ids.
-            The selected tool name and arguments must match every transcript occurrence
-            of its ID. Argument object key order is ignored; JSON value types and string
-            content must agree. Omitted `tool_input` matches an empty arguments object;
-            explicit null does not. Mismatches return HTTP 422 before grading or ingestion.
-            `ephemeral` suppresses transcript, decision, and grade persistence, but not
-            usage. Enforce and observe requests may both use it.
-
-            `external_ids` includes each distinct conversation ID from the harness
-            and gateway, including a separate gateway-issued ID when available.
-            A null value explicitly opts into transcript-prefix
-            reconciliation and still names the harness. Recorded requests require this
-            mapping. `user` supplies the developer email only when the authenticated
-            caller can impersonate; otherwise attribution stays with that caller.
-
-            `settings_overrides` accepts a YAML string or JSON object that the server
-            will merge onto administrator settings as a local settings layer.
-            Administrator locks reject overrides with HTTP 422, even when they repeat
-            a locked value. Set `enforcement.mode` there for observe or paused behavior;
-            omitted overrides inherit the administrator's settings. A gateway's
-            server-owned capability limit independently prevents unsupported enforcement.
-
-            `mode=triage_only` bounds grading depth: triage can allow but cannot deny;
-            otherwise it escalates without running the gateway monitor. `skip_rules`
-            is for clients that already evaluated deterministic stages. When they send
-            `policy_version` (`<version>@<builtin digest>`), a stale token forces those
-            stages to run again against the server's current policy.
+        body (PreToolUseHookRequest | RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -496,7 +422,7 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient | Client,
-    body: PreToolUseHookRequest,
+    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
 ) -> (
     Any
     | HTTPValidationError
@@ -504,7 +430,7 @@ async def asyncio(
     | PreToolUseHookResponse
     | None
 ):
-    """Pre Tool Use Hook
+    r"""Pre Tool Use Hook
 
      Evaluate one or several pending calls, or accept a transcript with no pending call.
 
@@ -546,60 +472,34 @@ async def asyncio(
     ingests. Concurrent misses and retries before post-response recording may
     evaluate more than once. Paused mode never evaluates, even when forced.
 
+    With `format=\"raw\"`, send a provider request (`request_body`) and its
+    complete response (`response_body`) in one supported wire format (OpenAI
+    Chat Completions or Responses, Anthropic Messages, Gemini generateContent
+    or Bedrock Converse) plus the client-facing endpoint path in `url`, instead
+    of `messages` and `input`. Watcher converts the pair and evaluates the
+    selected new client calls. The response is a list, one output per selected
+    call in response order; each `tool_use_id` is the provider's call ID.
+    Gemini calls get generated IDs and are matched by order within the selected
+    candidate. `response_index` selects by zero-based array position and is
+    required when there are multiple alternatives. Deliver only the selected
+    choice or candidate. Match every
+    executable client call to exactly one output before applying its decision.
+    Withhold the response if a call has no output, IDs are duplicated, or an
+    output cannot be matched to a call. For Gemini, require equal call and output
+    counts. An error output is not permission to execute a call.
+
+    Anthropic calls before the final `fallback` block have no output. An empty
+    list means no client calls were selected, not that the original response
+    contains none. There is no limit on the number of tool calls in one response.
+    Known coding harnesses are recognized from the request and `user_agent` and
+    contribute their session IDs. Their own helper requests without selected
+    client calls (Claude Code background requests, Codex thread titles,
+    approval reviews and memory extraction, Antigravity titles) return `[]`
+    and are not recorded. The gateway still checks those responses for
+    executable calls.
+
     Args:
-        body (PreToolUseHookRequest): Evaluate pending tool calls or ingest a transcript through
-            the generic hook.
-
-            Send the conversation once in `messages` and select pending calls with
-            `input`. A scalar input returns one response; a list returns one outcome
-            per input in the same order, including each input's `tool_use_id`. Null,
-            omitted, or empty-list input ingests the transcript without grading or
-            writing decisions and returns an empty list, regardless of enforcement mode.
-            Named observe calls return completed judgments with a deferred applied
-            decision. Enforce and observe support ephemeral evaluation and evaluation
-            without session-write permission; recording requires that permission.
-            All calls share one transcript, which is ingested once when recording is enabled.
-
-            Input lists accept at most 32 items, including blank or ephemeral inputs.
-            Larger lists are rejected with HTTP 422 before ingestion or grading.
-            Batches with multiple inputs require top-level `messages`. Their inputs
-            must omit `messages` or supply null or an empty list, so the transcript is
-            sent only once. Scalars and single-item lists may supply `input.messages`;
-            if both locations are non-null, their transcripts must match. An input
-            with an explicitly blank tool name only ingests and retains its response shape.
-            Paused and unnamed inputs need no grading admission;
-            authorized ingestion still uses normal database resources.
-
-            Send structured `messages`, including the assistant message containing each
-            pending call. Pre-rendered `transcript` and caller `triage_assessment` are
-            rejected. A recorded named call requires `input.tool_use_id` matching one
-            call in those messages; different batch inputs must name different ids.
-            The selected tool name and arguments must match every transcript occurrence
-            of its ID. Argument object key order is ignored; JSON value types and string
-            content must agree. Omitted `tool_input` matches an empty arguments object;
-            explicit null does not. Mismatches return HTTP 422 before grading or ingestion.
-            `ephemeral` suppresses transcript, decision, and grade persistence, but not
-            usage. Enforce and observe requests may both use it.
-
-            `external_ids` includes each distinct conversation ID from the harness
-            and gateway, including a separate gateway-issued ID when available.
-            A null value explicitly opts into transcript-prefix
-            reconciliation and still names the harness. Recorded requests require this
-            mapping. `user` supplies the developer email only when the authenticated
-            caller can impersonate; otherwise attribution stays with that caller.
-
-            `settings_overrides` accepts a YAML string or JSON object that the server
-            will merge onto administrator settings as a local settings layer.
-            Administrator locks reject overrides with HTTP 422, even when they repeat
-            a locked value. Set `enforcement.mode` there for observe or paused behavior;
-            omitted overrides inherit the administrator's settings. A gateway's
-            server-owned capability limit independently prevents unsupported enforcement.
-
-            `mode=triage_only` bounds grading depth: triage can allow but cannot deny;
-            otherwise it escalates without running the gateway monitor. `skip_rules`
-            is for clients that already evaluated deterministic stages. When they send
-            `policy_version` (`<version>@<builtin digest>`), a stale token forces those
-            stages to run again against the server's current policy.
+        body (PreToolUseHookRequest | RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

@@ -44,6 +44,9 @@ class SessionSearchFilters:
         session_id (None | Unset | UUID):
         external_ids (None | SessionSearchFiltersExternalIdsType0 | Unset):
         agent_platforms (list[str] | None | Unset):
+        sources (list[str] | None | Unset): Match any selected canonical ingestion source among retained session
+            messages. Open set of exact source keys, combined with other filters using AND. The source match covers the full
+            session regardless of the date window.
         grading_statuses (list[SessionSearchFiltersGradingStatusesType0Item] | None | Unset):
         categories (list[str] | None | Unset):
         severities (list[SessionSearchFiltersSeveritiesType0Item] | None | Unset):
@@ -60,6 +63,7 @@ class SessionSearchFilters:
     session_id: None | Unset | UUID = UNSET
     external_ids: None | SessionSearchFiltersExternalIdsType0 | Unset = UNSET
     agent_platforms: list[str] | None | Unset = UNSET
+    sources: list[str] | None | Unset = UNSET
     grading_statuses: (
         list[SessionSearchFiltersGradingStatusesType0Item] | None | Unset
     ) = UNSET
@@ -122,6 +126,15 @@ class SessionSearchFilters:
 
         else:
             agent_platforms = self.agent_platforms
+
+        sources: list[str] | None | Unset
+        if isinstance(self.sources, Unset):
+            sources = UNSET
+        elif isinstance(self.sources, list):
+            sources = self.sources
+
+        else:
+            sources = self.sources
 
         grading_statuses: list[str] | None | Unset
         if isinstance(self.grading_statuses, Unset):
@@ -223,6 +236,8 @@ class SessionSearchFilters:
             field_dict["external_ids"] = external_ids
         if agent_platforms is not UNSET:
             field_dict["agent_platforms"] = agent_platforms
+        if sources is not UNSET:
+            field_dict["sources"] = sources
         if grading_statuses is not UNSET:
             field_dict["grading_statuses"] = grading_statuses
         if categories is not UNSET:
@@ -341,6 +356,23 @@ class SessionSearchFilters:
             return cast(list[str] | None | Unset, data)
 
         agent_platforms = _parse_agent_platforms(d.pop("agent_platforms", UNSET))
+
+        def _parse_sources(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                sources_type_0 = cast(list[str], data)
+
+                return sources_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        sources = _parse_sources(d.pop("sources", UNSET))
 
         def _parse_grading_statuses(
             data: object,
@@ -542,6 +574,7 @@ class SessionSearchFilters:
             session_id=session_id,
             external_ids=external_ids,
             agent_platforms=agent_platforms,
+            sources=sources,
             grading_statuses=grading_statuses,
             categories=categories,
             severities=severities,

@@ -1,0 +1,137 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: openclaw
+name: OpenClaw
+summary: Visible Gateway embedded-agent text and tool history at agent_end.
+category: general-agent
+upstream_url: https://github.com/openclaw/openclaw
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Visible Gateway embedded-agent text and tool history at agent_end.
+    example: demo/observe.json
+    timeout_seconds: 10
+    recording: required
+    native_timeout_seconds: 70
+  enforce:
+    implemented: true
+    scope: Recorded approval of Gateway embedded-runtime tool calls with unchanged
+      arguments.
+    example: demo/enforce.json
+    boundary: native-tool-hook
+    context: current-branch
+    recording: required
+    failure_behavior: mixed
+    timeout_seconds: 60
+    native_timeout_seconds: 70
+    failure_details: The loaded Gateway hook blocks on errors and timeouts. Without
+      conversation access the plugin does not load, so tools are unmonitored. Other
+      plugins can rewrite assessed arguments before execution.
+manifests:
+- packages/python/pyproject.toml
+- packages/node/package.json
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    openclaw: 2026.9.4
+  runtimes:
+    python: 3.12.13
+    node: v24.16.0
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.36
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - native
+      - backend
+    export: null
+verification_plan:
+  watcher_test_target: fixture-http
+  observe:
+    coverage: native-fixture
+    checks:
+    - native
+  enforce:
+    coverage: native-fixture
+    checks:
+    - native
+limitations:
+- id: retrospective-decision-audit
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: This retrospective observation path inherits the organization's mode.
+    In Enforce mode, Watcher can store an assessment as an applied denial and count
+    it in automatic-denial totals after the tool has run. These records do not show
+    that execution was prevented.
+- id: remote-session-reset
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Local progress cannot detect deleted or expired Watcher sessions or
+    judgments. Use a new empty observation state directory before replaying that history;
+    retained Watcher judgments may still be reused.
+- id: observation-progress
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Observation records the snapshot first, then grades new calls within
+    40 seconds plus at most two seconds of checkpoint cleanup. Later callbacks resume
+    unfinished checks; a final turn can remain partly ungraded.
+- id: retrospective-decisions
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Retrospective decisions assess completed tools and cannot prevent their
+    execution. Paused mode records the transcript without grading; later callbacks
+    can resume assessments when grading is enabled.
+- id: unsupported-history
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Unsupported visible content prevents observation and blocks later tools
+    while it remains in history. Use a new supported session to resume.
+- id: deployed-verification
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Deployed Watcher persistence and provider behavior are not verified
+    by local fixtures.
+- id: argument-rewrites
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Other plugins that rewrite tool arguments can change execution after
+    Watcher assessment.
+- id: embedded-runtime
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: External harnesses, channel delivery, background jobs and subagents
+    are outside the tested scope.
+- id: conversation-access
+  mode: both
+  cause: upstream
+  kind: constraint
+  description: Without explicit conversation access the plugin does not load; tools
+    can run without Watcher monitoring.
+- id: standalone-agent
+  mode: both
+  cause: upstream
+  kind: constraint
+  description: The standalone agent exec command does not invoke these hooks in the
+    tested setup; use the Gateway.

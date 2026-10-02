@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: openrouter
+name: OpenRouter
+summary: Receive account-level Broadcast traces and submit supported conversations
+  to Watcher.
+category: gateway
+upstream_url: https://openrouter.ai/docs/quickstart
+support_status: experimental
+updated_at: '2026-10-01'
+capabilities:
+  observe:
+    implemented: true
+    scope: Transcript-only ingestion of supported content-bearing OTLP generation
+      spans after response delivery.
+    example: src/watcher_openrouter/integration.py
+  enforce:
+    implemented: false
+    scope: Completed-request exports cannot withhold responses or tool calls.
+    example: null
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server: null
+  watcher_test_target: mocked-sdk-transport
+  upstream_versions:
+    httpx: 0.28.1
+  runtimes:
+    python: 3.12.3
+  platform: linux-x86_64
+  results:
+    observe:
+      result: passed
+      coverage: contract
+      checks:
+      - python
+    enforce:
+      result: not-run
+      coverage: null
+      checks: []
+    export: null
+limitations:
+- id: post-request
+  mode: enforce
+  cause: upstream
+  kind: blocker
+  description: The selected gateway export runs after response delivery and provides
+    no synchronous enforcement boundary.
+- id: hosted-emission
+  mode: observe
+  cause: unverified
+  kind: verification-gap
+  description: Hosted gateway emission and delivery have not been verified. Local
+    tests use explicit supported export fixtures.
+- id: content-scope
+  mode: observe
+  cause: integration-scope
+  kind: constraint
+  description: Only complete textual Chat message data is imported. Unsupported content,
+    incomplete responses and hidden history fail explicitly.
+- id: storage
+  mode: observe
+  cause: watcher
+  kind: constraint
+  description: Hook success acknowledges submission; durable storage must be verified
+    separately. No pre-tool decisions are requested.
+- id: array-completeness
+  mode: observe
+  cause: upstream
+  description: Message-array exports have no independent completion indicator and
+    may contain partial replies. Only response objects expose an explicit finish state
+    to validate.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: contract
+    checks:
+    - python
+  enforce: null

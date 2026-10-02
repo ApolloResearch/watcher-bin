@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "watcher-sdk"
-version = "0.37.0"
+version = "0.39.0"
 description = "Python SDK for the Watcher API (Watcher monitoring platform)"
 readme = "README.md"
 license = "MIT"
@@ -22,11 +22,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cli = ["typer>=0.24.1,<1"]
 dev = [
     "openapi-python-client>=0.28.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
 ]
+
+[project.scripts]
+watcher-sdk = "watcher_sdk.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/watcher_sdk", "src/watcher_transcript_transport"]

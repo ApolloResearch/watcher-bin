@@ -1,0 +1,165 @@
+# CrewAI → Watcher
+
+Use `watcher_crewai` to monitor native tool calls through the public Watcher SDK
+and submit their conversation to Watcher. The same before-tool integration follows
+the server's configured enforcement mode. This is an experimental example, not an
+officially supported integration.
+
+## Install and configure
+
+Use Python 3.12 or later and `uv`. The pinned framework packages are `crewai==1.3.0`.
+From this example directory:
+
+```bash
+uv sync --python 3.12
+```
+
+The development environment uses the adjacent SDK source. To install with a
+released SDK wheel, follow the [shared setup guide](../README.md), then install
+this package with `uv pip install --python /path/to/application/.venv/bin/python .`.
+
+Set `WATCHER_URL` and a `WATCHER_API_KEY` with session-write permission using the
+names in `demo/.env.example`. The demos read environment variables directly and
+do not load `.env` files. Their scripted model and arithmetic tools need no model
+API key. `WATCHER_TIMEOUT` sets the demo's grading deadline in seconds, default 420.
+
+## Monitor native tools
+
+Create one `Monitor(client, conversation_id)` per conversation. Reuse its ID across
+turns and choose a new ID for an independent conversation. Wrap each registered side-effecting tool with `MonitoredTrace.invoke`. Run Crew.kickoff on a worker thread while the SDK event loop stays active. step_callback only observes completed work and is not an enforcement boundary. The wrapper creates one invocation UUID because this CrewAI ReAct interface supplies no native tool ID.
+
+```python
+from watcher_crewai import Monitor
+
+monitor = Monitor(client, conversation_id)
+from watcher_crewai import MonitoredTrace
+
+trace = MonitoredTrace(monitor, asyncio.get_running_loop(), prompt)
+
+@tool("double")
+def double(value: int) -> str:
+    return trace.invoke("double", {"value": value}, effect)
+```
+
+The complete registration and native runner are in `demo/enforce.py`:
+
+The verification runner installs both packages into a container with no external
+network, fresh state and telemetry disabled. It runs the real Crew and the policy
+scenarios; the setup above shows where to attach the wrapper in an application.
+
+Watcher controls the policy; the integration applies its returned decision:
+
+| Server result | Example behavior |
+| --- | --- |
+| Enforce: allow | Resume the framework's normal tool dispatch. This also honors an administrator's configured allow on a grading failure. |
+| Enforce: deny | Raise `ToolBlocked` before the tool body executes. |
+| Enforce: escalate | Wait for the supplied human-approval callback, or raise `ApprovalRequired` if no callback is configured. |
+| Observe: deferred | Preserve the framework's ordinary dispatch and permissions; Watcher's judgment does not block the call. |
+| Paused: deferred | Preserve ordinary dispatch and permissions; Watcher submits the transcript without grading. |
+
+CrewAI turns a refused tool call into a ReAct error observation and may continue the run; the application does not catch the Monitor exception directly.
+
+A network error, malformed response or mismatched call ID never grants permission.
+The example does not disable another tool or framework permission check.
+
+The default inherits organization policy. To request an explicit permitted mode,
+use `Monitor(client, conversation_id, enforcement="observe")` (or `"enforce"` or
+`"paused"`). An administrator lock can reject the override, even if it repeats the
+current value. `mode="auto"` is not a hook setting.
+
+## Human approval and unattended use
+
+For an unattended agent, omit `approval_callback`: allowed calls execute, while
+denials and human escalations stop the affected call. This does not run a separate
+automatic approval model or recreate Watcher Live's Auto Mode.
+
+For a human in the loop, supply an asynchronous `approval_callback` to `Monitor`.
+The callback receives keyword arguments `tool_use_id`, `tool_name`, `tool_input`
+and `outcome` (the SDK's hook response). Connect it to your application's approval
+UI or queue and await an authorized person's decision. Only literal `True`
+releases the still-pending call; false values, exceptions and callback failure
+withhold it. The example does not include an approval UI. Tool arguments passed
+to the callback are a copy, so editing the approval view cannot rewrite execution.
+
+This callback is attached to the real framework execution boundary. It is not a
+native persistent interrupt/resume implementation. Keep the process alive while
+waiting, and persist application state separately if approvals must survive restarts.
+
+After an explicit human choice, the integration waits for the original escalation
+in Watcher, uploads an outcome-only decision, and reads back the stored human
+choice and tool status. Only then can an approved tool execute. Original grades
+and escalation remain intact; approval is recorded as pending execution,
+rejection as blocked.
+This requires session-read access and permission to update the session as its
+owner or with `sessions:write:any`.
+For a service API key, configure `sessions:ingest`, `sessions:read:any` and
+`sessions:write:any` for transcript recording and human-decision reporting.
+Lookup, permission, upload, content-scrub or readback failures block execution. The default reporting deadline is 10 seconds; configure
+`human_audit_timeout` to change it. Recent human decisions accompany later grading
+requests as context. Persist the human choice in your application if recovery is
+needed; CrewAI may retry a refused invocation as described below.
+
+## Submit results and inspect Watcher
+
+After a turn, call `await monitor.record(native_history)` with the tool results
+and final assistant answer. This uses the same hook with no pending input, so it
+does not regrade old calls. If submission fails, retain the history and retry the
+submission rather than executing the tools again.
+
+The session's external ID is `other=crewai:<conversation_id>`. Query that ID in
+Watcher to confirm the transcript and decisions. A successful hook response
+confirms evaluation or request acceptance; transcript/decision storage runs after
+the response and has no durability acknowledgement. Session-write permission is
+required for recording even when the policy decision itself succeeds.
+
+You can also observe a conversation that already completed using
+`await observe(client, conversation_id, native_history)` or `python -m demo.observe`.
+That separate import path follows the organization's policy without an override,
+assesses calls against their historical prefixes in batches of at most 32, and
+submits the final transcript. Paused mode records history without grading.
+Returned decisions are advisory to completed actions; they cannot prevent or
+undo an effect, and the importer does not report an action as blocked.
+
+When this retrospective observer runs against an organization in Enforce mode,
+Watcher can store an assessment as an applied denial and count it in automatic
+denial totals after the tool has run. Those records describe the assessment;
+they do not show that execution was prevented.
+
+## Scope and limitations
+
+The registered callable wrapper covers the tools using it. ObservedLLM retains actual model input context; the native step callback captures the final answer. Tool errors may be reported to the agent and execution may continue. Keep the worker thread separate from the SDK loop. Native ReAct calls have application-assigned UUIDs, not provider-native IDs.
+
+CrewAI retries refused tool invocations up to its native limit. With the pinned
+CrewAI 1.3.0 and this demo configuration, a refused tool call produces six
+attempts. Each attempt has a new UUID and a separate Watcher grading request,
+so repeated refusals can incur grading usage without executing the tool.
+
+Only registered tools passing through the documented boundary are monitored.
+Unwrapped tools, provider-hosted tools and other application side effects remain
+outside it. In parallel work, an allowed sibling may finish while another call
+is blocked. Completed effects are not undone. A failed run may have no final-tail
+submission; the caller should retain and submit the native history it can recover.
+
+A Monitor never retries tool execution or grading automatically. Failed attempts
+consume their call IDs within that Monitor; a new model invocation needs its own
+ID and transcript entry. This in-memory protection is not durable exactly-once
+execution. Grading may finish after the caller times out and can still incur usage.
+
+## Development and verification
+
+`src/` contains the adapter; `demo/` contains runnable native clients; `tests/`
+checks conversion, policy handling and native side effects. Tests use the installed
+framework with a scripted model and fixture Watcher responses, including an awaited
+approval/rejection event. Those tests alone do not establish real server persistence.
+See `metadata.yaml` for recorded versions and verification scope.
+
+Run the installed-package verification from this directory with Docker and uv:
+
+```bash
+bash tests/native/run.sh
+```
+
+Image construction downloads pinned dependencies. The test container has only
+loopback, no host credentials, a fresh home, and a 3 GB memory limit. The runner
+checks containment before importing CrewAI and retains its evidence directory.
+See the [metadata guide](../METADATA.md) for verification fields.

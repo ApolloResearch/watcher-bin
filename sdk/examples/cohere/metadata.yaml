@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: cohere
+name: Cohere V2
+summary: Monitor native Cohere V2 application tools using configured Watcher policy.
+category: provider-library
+upstream_url: https://github.com/cohere-ai/cohere-python
+support_status: experimental
+updated_at: '2026-09-25'
+capabilities:
+  observe:
+    implemented: true
+    scope: Buffered native requests made through the instrumented client, with full
+      visible history.
+    example: demo/observe.py
+  enforce:
+    implemented: true
+    scope: Native Cohere tool proposals dispatched through the application monitor,
+      following server observe/enforce/paused policy.
+    example: demo/enforce.py
+    boundary: application-dispatch
+    context: conversation
+    recording: optional
+    failure_behavior: follows-server-policy
+    timeout_seconds: 420
+    failure_details: Transport and identity failures withhold tools. Valid server
+      grading-error decisions follow administrator policy. Hook success acknowledges
+      submission, not durable storage.
+manifests:
+- pyproject.toml
+verification:
+- checked_at: '2026-09-26'
+  watcher_sdk:
+    version: 0.1.0
+  watcher_server:
+    version: dev
+  watcher_test_target: local-api
+  upstream_versions:
+    cohere: 7.1.1
+    httpx: 0.28.1
+    pydantic: 2.13.5
+  runtimes:
+    python: 3.12.14
+  platform: Linux-6.17.0-1022-azure-x86_64-with-glibc2.41
+  results:
+    observe:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - python
+      - backend
+    enforce:
+      result: passed
+      coverage: native-local-api
+      checks:
+      - python
+      - backend
+    export: null
+limitations:
+- id: scope-01
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Hosted provider access, deployed Watcher behavior and model quality
+    are unverified.
+- id: scope-02
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Full buffered history required; streaming and incremental-delta ingestion
+    unsupported.
+- id: scope-03
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Observation is bounded and ordered but not durable; overload is explicitly
+    reported.
+- id: scope-04
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Synchronous enforcement controls only registered client-executed callbacks;
+    provider-hosted tools and other clients are outside scope.
+- id: scope-05
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Monitoring inherits the server policy. Explicit overrides require permission;
+    rejected overrides and incomplete outcomes withhold application tool execution.
+- id: scope-06
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Default monitoring inherits server policy. Explicit mode overrides
+    can be rejected by locked settings. Human callbacks are local and their choices
+    are not uploaded to Watcher.
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: native-fixture
+    checks:
+    - python
+  enforce:
+    coverage: native-fixture
+    checks:
+    - python

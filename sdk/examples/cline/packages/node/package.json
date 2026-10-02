@@ -1,0 +1,24 @@
+{
+  "name": "watcher-cline-history-example",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@cline/core": "0.0.82"
+  },
+  "devDependencies": {
+    "cline": "3.0.61"
+  },
+  "version": "0.1.0",
+  "files": [
+    "src/"
+  ],
+  "exports": {
+    "./read_history": "./src/read_history.mjs"
+  },
+  "scripts": {
+    "check": "node --check src/read_history.mjs"
+  },
+  "bin": {
+    "watcher-cline-history": "src/read_history.mjs"
+  }
+}

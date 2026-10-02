@@ -110,6 +110,9 @@ from watcher_sdk.errors import (
     WatcherTimeoutError,
     WatcherValidationError,
 )
+from watcher_sdk.integration_auth import IntegrationAuth, SDKLoginAuth, discover_logins, verify_integration_auth
+from watcher_sdk.local_auth import WatcherLoginAuth, async_client_from_watcher
+from watcher_sdk.login import DeviceLoginPrompt, login, logout
 from watcher_sdk.sync_client import WatcherClient
 
 __all__ = [
@@ -119,6 +122,15 @@ __all__ = [
     "REFRESH_TOKEN_COOKIE_NAME",
     # Clients
     "AsyncWatcherClient",
+    "WatcherLoginAuth",
+    "async_client_from_watcher",
+    "IntegrationAuth",
+    "SDKLoginAuth",
+    "discover_logins",
+    "verify_integration_auth",
+    "DeviceLoginPrompt",
+    "login",
+    "logout",
     "WatcherClient",
     # Errors
     "WatcherAPIError",

@@ -80,7 +80,12 @@ def sync_detailed(
 ) -> Response[HTTPValidationError | TrajectoryDetailResponse]:
     """Get Session Trajectory Detail
 
-     Get full trajectory detail within a session. 404 for sessions the caller can't read.
+     Get trajectory content through ownership, ``sessions:content:read:any``, or an active session
+    content approval.
+
+    Return 404 when content is inaccessible or scrubbed. Session grades and
+    tool-call decisions are included only with findings access; session summaries
+    remain available with content access alone.
 
     The ``view`` parameter picks the payload shape and defaults to ``truncated``,
     which caps tool outputs and user pastes and stubs out ``data`` content blocks,
@@ -146,7 +151,12 @@ def sync(
 ) -> HTTPValidationError | TrajectoryDetailResponse | None:
     """Get Session Trajectory Detail
 
-     Get full trajectory detail within a session. 404 for sessions the caller can't read.
+     Get trajectory content through ownership, ``sessions:content:read:any``, or an active session
+    content approval.
+
+    Return 404 when content is inaccessible or scrubbed. Session grades and
+    tool-call decisions are included only with findings access; session summaries
+    remain available with content access alone.
 
     The ``view`` parameter picks the payload shape and defaults to ``truncated``,
     which caps tool outputs and user pastes and stubs out ``data`` content blocks,
@@ -207,7 +217,12 @@ async def asyncio_detailed(
 ) -> Response[HTTPValidationError | TrajectoryDetailResponse]:
     """Get Session Trajectory Detail
 
-     Get full trajectory detail within a session. 404 for sessions the caller can't read.
+     Get trajectory content through ownership, ``sessions:content:read:any``, or an active session
+    content approval.
+
+    Return 404 when content is inaccessible or scrubbed. Session grades and
+    tool-call decisions are included only with findings access; session summaries
+    remain available with content access alone.
 
     The ``view`` parameter picks the payload shape and defaults to ``truncated``,
     which caps tool outputs and user pastes and stubs out ``data`` content blocks,
@@ -271,7 +286,12 @@ async def asyncio(
 ) -> HTTPValidationError | TrajectoryDetailResponse | None:
     """Get Session Trajectory Detail
 
-     Get full trajectory detail within a session. 404 for sessions the caller can't read.
+     Get trajectory content through ownership, ``sessions:content:read:any``, or an active session
+    content approval.
+
+    Return 404 when content is inaccessible or scrubbed. Session grades and
+    tool-call decisions are included only with findings access; session summaries
+    remain available with content access alone.
 
     The ``view`` parameter picks the payload shape and defaults to ``truncated``,
     which caps tool outputs and user pastes and stubs out ``data`` content blocks,

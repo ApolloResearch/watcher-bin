@@ -90,6 +90,9 @@ class PreToolUseHookResponse:
             triage (None | TriageResult | Unset):
             gateway (GatewayResult | None | Unset):
             grading_error (GradingFailure | None | Unset):
+            cost_usd (float | None | Unset): Estimated USD cost of this input's triage and gateway grading, including
+                retries with reported usage. Zero when grading is skipped or reused; null when usage or pricing is missing or a
+                stage is unfinished. Provider attempts whose usage is hidden by the provider client cannot be included.
     """
 
     decision: AppliedDecision
@@ -103,6 +106,7 @@ class PreToolUseHookResponse:
     triage: None | TriageResult | Unset = UNSET
     gateway: GatewayResult | None | Unset = UNSET
     grading_error: GradingFailure | None | Unset = UNSET
+    cost_usd: float | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -167,6 +171,12 @@ class PreToolUseHookResponse:
         else:
             grading_error = self.grading_error
 
+        cost_usd: float | None | Unset
+        if isinstance(self.cost_usd, Unset):
+            cost_usd = UNSET
+        else:
+            cost_usd = self.cost_usd
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -190,6 +200,8 @@ class PreToolUseHookResponse:
             field_dict["gateway"] = gateway
         if grading_error is not UNSET:
             field_dict["grading_error"] = grading_error
+        if cost_usd is not UNSET:
+            field_dict["cost_usd"] = cost_usd
 
         return field_dict
 
@@ -306,6 +318,15 @@ class PreToolUseHookResponse:
 
         grading_error = _parse_grading_error(d.pop("grading_error", UNSET))
 
+        def _parse_cost_usd(data: object) -> float | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(float | None | Unset, data)
+
+        cost_usd = _parse_cost_usd(d.pop("cost_usd", UNSET))
+
         pre_tool_use_hook_response = cls(
             decision=decision,
             decision_source=decision_source,
@@ -318,6 +339,7 @@ class PreToolUseHookResponse:
             triage=triage,
             gateway=gateway,
             grading_error=grading_error,
+            cost_usd=cost_usd,
         )
 
         pre_tool_use_hook_response.additional_properties = d

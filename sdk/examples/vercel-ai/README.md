@@ -70,10 +70,10 @@ is accepted. The supplied demo omits this callback, so unattended escalations bl
 Before releasing an approval, the monitor finds the original recorded escalation,
 uploads the human choice and verifies its stored value and pending/blocked status. Original
 grades and escalation remain intact. Readback prevents a successful scrub no-op
-from being mistaken for a stored approval. This requires session-read access
+from being mistaken for a stored approval. This requires findings and content access
 and permission to update the session as its owner or with `sessions:write:any`.
-For a service API key, configure `sessions:ingest`, `sessions:read:any` and
-`sessions:write:any` for transcript recording and human-decision reporting.
+For a service API key, configure `sessions:ingest`, `sessions:findings:read:any`,
+`sessions:content:read:any` and `sessions:write:any` for transcript recording and human-decision reporting.
 Lookup, upload and readback errors block the call. `human_audit_timeout` defaults to 10 seconds. Approval is recorded as pending
 execution; rejection as blocked.
 

@@ -225,7 +225,7 @@ async def verify_integration_auth(profile: IntegrationAuth) -> None:
     """Check ingestion and session read access without uploading a synthetic session.
 
     User logins read their own sessions and need no broad read permission. Service
-    API keys require ``sessions:read:any``. Success proves access, not delivery.
+    API keys require ``sessions:findings:read:any``. Success proves access, not delivery.
     Missing credentials or permissions raise WatcherAuthenticationError; other
     server failures, including a 2xx response whose body does not have the expected
     shape (empty, ``null``, or a proxy's login page), raise WatcherAPIError.
@@ -235,7 +235,7 @@ async def verify_integration_auth(profile: IntegrationAuth) -> None:
         permissions = ["sessions:ingest"]
         try:
             if profile.kind in {"api_key_file", "api_key_env"}:
-                permissions.append("sessions:read:any")
+                permissions.append("sessions:findings:read:any")
             else:
                 await client.auth_me()
             granted = (await client.check_permissions(permissions)).granted

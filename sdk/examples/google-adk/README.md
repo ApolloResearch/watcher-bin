@@ -99,8 +99,8 @@ The approved tool stays blocked if reporting or readback fails.
 
 Human reporting needs session-read access and permission to update the session
 as its owner or with `sessions:write:any`.
-For a service API key, configure `sessions:ingest`, `sessions:read:any` and
-`sessions:write:any` for transcript recording and human-decision reporting.
+For a service API key, configure `sessions:ingest`, `sessions:findings:read:any`,
+`sessions:content:read:any` and `sessions:write:any` for transcript recording and human-decision reporting.
 An ingest-only key cannot complete human reporting. The lookup/upload/readback deadline is
 `human_audit_timeout`, default 10 seconds. Later requests include recent human
 choices as grading context; that context is separate from the recorded audit.

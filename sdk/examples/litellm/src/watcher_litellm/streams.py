@@ -1,9 +1,12 @@
 """Assemble LiteLLM proxy streams into complete responses, and encode responses as streams.
 
-Watcher evaluates complete provider responses, so a streamed reply is buffered
-and assembled into the equivalent non-streaming body first. The callback then
-streams a fresh encoding of the evaluated body rather than the original
-chunks, so a client can only execute the exact calls Watcher saw. Each encoder emits the standard event sequence for its API.
+Watcher evaluates complete provider responses, so a streamed reply is assembled
+into the equivalent non-streaming body first. Chat Completions and Responses
+streams are buffered and the callback streams a fresh encoding of the evaluated
+body. Messages streams are assembled as their events arrive, and every event the
+client receives is re-encoded from a parsed event. Either way nothing is
+replayed, so a client can only execute the exact calls Watcher saw. Each encoder
+emits the standard event sequence for its API.
 
 The three client-facing APIs arrive differently from LiteLLM:
 
@@ -24,13 +27,24 @@ from openai._streaming import SSEDecoder
 from pydantic import BaseModel
 
 API = Literal["chat_completions", "responses", "messages"]
+MESSAGES_EVENT_TYPES = frozenset(
+    {
+        "ping",
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_delta",
+        "message_stop",
+    }
+)
 
 
-class IncompleteStream(ValueError):
+class IncompleteStream(Exception):
     """The provider stream stopped early or reported an error; another attempt may succeed."""
 
 
-class UnsupportedStream(ValueError):
+class UnsupportedStream(Exception):
     """The provider stream has a shape this example does not interpret; another attempt would too."""
 
 
@@ -45,11 +59,13 @@ def assemble(api: API, chunks: list[Any]) -> dict[str, Any]:
     """Build the complete response a non-streaming call would have returned."""
     if not chunks:
         raise IncompleteStream("Empty provider stream")
-    if api == "chat_completions":
-        return _chat(chunks)
-    if api == "responses":
-        return _responses(chunks)
-    return _messages(chunks)
+    if api == "messages":
+        return _messages(chunks)
+
+    try:
+        return _chat(chunks) if api == "chat_completions" else _responses(chunks)
+    except (KeyError, IndexError, TypeError, AttributeError, ValueError) as exc:
+        raise UnsupportedStream("Malformed provider stream") from exc
 
 
 def _chat(chunks: list[Any]) -> dict[str, Any]:
@@ -82,38 +98,48 @@ def _responses(chunks: list[Any]) -> dict[str, Any]:
     raise IncompleteStream("Responses stream has no terminal response event")
 
 
-def _messages(chunks: list[Any]) -> dict[str, Any]:
-    """Accumulate Anthropic Messages SSE events into one message.
+class MessageAssembler:
+    def __init__(self) -> None:
+        self.message: dict[str, Any] | None = None
+        self.partial_json: dict[int, str] = {}
+        self.open_block: int | None = None
+        self.stopped = False
 
-    Unknown delta types, a second ``message_start`` and events after
-    ``message_stop`` are refused rather than partly interpreted, and the stream
-    must reach ``message_stop``.
-    """
-    if not all(isinstance(chunk, bytes) for chunk in chunks):
-        raise UnsupportedStream("Unexpected Messages stream chunk")
-    message: dict[str, Any] | None = None
-    partial_json: dict[int, str] = {}
-    stopped = False
-    for sse in SSEDecoder().iter_bytes(iter(chunks)):
-        event = json.loads(sse.data)
+    def add(self, data: str) -> dict[str, Any]:
+        try:
+            event = json.loads(data)
+            self._apply(event)
+        except (KeyError, IndexError, TypeError, AttributeError, ValueError) as exc:
+            raise UnsupportedStream("Malformed Messages stream") from exc
+
+        return event
+
+    def _apply(self, event: dict[str, Any]) -> None:
         kind = event["type"]
         if kind == "ping":
-            continue
-        if stopped:
+            return
+        if self.stopped:
             raise UnsupportedStream("Messages stream continued after message_stop")
         if kind == "message_start":
-            if message is not None:
+            if self.message is not None:
                 raise UnsupportedStream("Messages stream started twice")
-            message = {**event["message"], "content": []}
-            continue
-        if kind == "error" or message is None:
+            self.message = {**event["message"], "content": []}
+            return
+        if kind == "error" or self.message is None:
             raise IncompleteStream("Messages stream reported an error or has no message_start")
+
+        content = self.message["content"]
         if kind == "content_block_start":
-            message["content"].append(event["content_block"])
+            if self.open_block is not None or event["index"] != len(content):
+                raise UnsupportedStream("Messages content block started out of order")
+            content.append(event["content_block"])
+            self.open_block = event["index"]
+        elif kind in ("content_block_delta", "content_block_stop") and event["index"] != self.open_block:
+            raise UnsupportedStream("Messages content block event out of order")
         elif kind == "content_block_delta":
-            block, delta = message["content"][event["index"]], event["delta"]
+            block, delta = content[event["index"]], event["delta"]
             if delta["type"] == "input_json_delta":
-                partial_json[event["index"]] = partial_json.get(event["index"], "") + delta["partial_json"]
+                self.partial_json[event["index"]] = self.partial_json.get(event["index"], "") + delta["partial_json"]
             elif delta["type"] in ("text_delta", "thinking_delta", "signature_delta"):
                 field = delta["type"].removesuffix("_delta")
                 block[field] = block.get(field, "") + delta[field]
@@ -123,16 +149,35 @@ def _messages(chunks: list[Any]) -> dict[str, Any]:
             else:
                 raise UnsupportedStream("Unsupported Messages delta")
         elif kind == "content_block_stop":
-            if event["index"] in partial_json:
-                message["content"][event["index"]]["input"] = json.loads(partial_json.pop(event["index"]) or "{}")
+            if event["index"] in self.partial_json:
+                content[event["index"]]["input"] = json.loads(self.partial_json.pop(event["index"]) or "{}")
+            self.open_block = None
         elif kind == "message_delta":
-            message.update(event["delta"])
-            message["usage"] = {**message.get("usage", {}), **event.get("usage", {})}
+            self.message.update(event["delta"])
+            self.message["usage"] = {**self.message.get("usage", {}), **event.get("usage", {})}
         elif kind == "message_stop":
-            stopped = True
-    if message is None or not stopped:
-        raise IncompleteStream("Messages stream ended before message_stop")
-    return message
+            self.stopped = True
+
+    def result(self) -> dict[str, Any]:
+        if self.message is None or not self.stopped:
+            raise IncompleteStream("Messages stream ended before message_stop")
+
+        return self.message
+
+
+def _messages(chunks: list[Any]) -> dict[str, Any]:
+    """Accumulate Anthropic Messages SSE events into one message.
+
+    Unknown delta types, a second ``message_start``, content blocks out of
+    order and events after ``message_stop`` are refused rather than partly
+    interpreted, and the stream must reach ``message_stop``.
+    """
+    if not all(isinstance(chunk, bytes) for chunk in chunks):
+        raise UnsupportedStream("Unexpected Messages stream chunk")
+    assembler = MessageAssembler()
+    for sse in SSEDecoder().iter_bytes(iter(chunks)):
+        assembler.add(sse.data)
+    return assembler.result()
 
 
 def _sse(data: dict[str, Any], event: str | None = None) -> bytes:
@@ -217,21 +262,30 @@ def _encode_responses(response: dict[str, Any]) -> Iterator[bytes]:
     yield event(terminal, response=response)
 
 
-def _encode_messages(response: dict[str, Any]) -> Iterator[bytes]:
-    def event(data: dict[str, Any]) -> bytes:
-        return _sse(data, data["type"])
+def encode_messages_event(data: dict[str, Any]) -> bytes:
+    return _sse(data, data["type"])
 
+
+def _encode_messages(response: dict[str, Any]) -> Iterator[bytes]:
+    yield encode_messages_event({"type": "message_start", "message": {**response, "content": [], "stop_reason": None}})
+    yield from encode_messages_from(response, 0)
+
+
+def encode_messages_from(response: dict[str, Any], first_block: int) -> Iterator[bytes]:
     usage = response.get("usage") or {}
-    yield event({"type": "message_start", "message": {**response, "content": [], "stop_reason": None}})
-    for index, block in enumerate(response["content"]):
+    for index, block in enumerate(response["content"][first_block:], start=first_block):
         if block["type"] == "text":
-            yield event({"type": "content_block_start", "index": index, "content_block": {**block, "text": ""}})
-            yield event(
+            yield encode_messages_event(
+                {"type": "content_block_start", "index": index, "content_block": {**block, "text": ""}}
+            )
+            yield encode_messages_event(
                 {"type": "content_block_delta", "index": index, "delta": {"type": "text_delta", "text": block["text"]}}
             )
         elif block["type"] == "tool_use":
-            yield event({"type": "content_block_start", "index": index, "content_block": {**block, "input": {}}})
-            yield event(
+            yield encode_messages_event(
+                {"type": "content_block_start", "index": index, "content_block": {**block, "input": {}}}
+            )
+            yield encode_messages_event(
                 {
                     "type": "content_block_delta",
                     "index": index,
@@ -239,14 +293,14 @@ def _encode_messages(response: dict[str, Any]) -> Iterator[bytes]:
                 }
             )
         elif block["type"] == "thinking":
-            yield event(
+            yield encode_messages_event(
                 {
                     "type": "content_block_start",
                     "index": index,
                     "content_block": {**block, "thinking": "", "signature": ""},
                 }
             )
-            yield event(
+            yield encode_messages_event(
                 {
                     "type": "content_block_delta",
                     "index": index,
@@ -254,7 +308,7 @@ def _encode_messages(response: dict[str, Any]) -> Iterator[bytes]:
                 }
             )
             if block.get("signature"):
-                yield event(
+                yield encode_messages_event(
                     {
                         "type": "content_block_delta",
                         "index": index,
@@ -262,9 +316,9 @@ def _encode_messages(response: dict[str, Any]) -> Iterator[bytes]:
                     }
                 )
         else:
-            yield event({"type": "content_block_start", "index": index, "content_block": block})
-        yield event({"type": "content_block_stop", "index": index})
-    yield event(
+            yield encode_messages_event({"type": "content_block_start", "index": index, "content_block": block})
+        yield encode_messages_event({"type": "content_block_stop", "index": index})
+    yield encode_messages_event(
         {
             "type": "message_delta",
             # SDK clients overwrite these from the terminal delta, so every
@@ -277,4 +331,4 @@ def _encode_messages(response: dict[str, Any]) -> Iterator[bytes]:
             "usage": {"output_tokens": usage.get("output_tokens", 0)},
         }
     )
-    yield event({"type": "message_stop"})
+    yield encode_messages_event({"type": "message_stop"})

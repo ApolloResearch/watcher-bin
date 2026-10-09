@@ -11,6 +11,7 @@ from dateutil.parser import isoparse
 
 from ..models.applied_decision import AppliedDecision
 from ..models.bypass_reason import BypassReason
+from ..models.decided_by import DecidedBy
 from ..models.decision_source import DecisionSource
 from ..models.enforcement_mode import EnforcementMode
 from ..models.human_decision import HumanDecision
@@ -58,6 +59,12 @@ class ToolCallDecisionPayload:
             decision_context (None | str | Unset):
             human_decision (HumanDecision | None | Unset):
             human_decided_at (datetime.datetime | None | Unset):
+            decided_by (DecidedBy | None | Unset): Who settled the call after Watcher handed it on: `person` (a person
+                answered the permission prompt), `agent_review` (the agent's automated approval reviewer answered it, so there
+                is no `human_decision` and `tool_status` holds the outcome) or `interrupt` (the person interrupted the turn
+                before the call was answered, including while Watcher was still reviewing it). Null when the call is unsettled
+                or the sender does not know who answered. Meaningful for escalations; other decisions may carry a value beside
+                Watcher's own verdict.
             decided_at (datetime.datetime | None | Unset):
             applied_decision (AppliedDecision | None | Unset):
             judged_decision (JudgedDecision | None | Unset):
@@ -82,6 +89,7 @@ class ToolCallDecisionPayload:
     decision_context: None | str | Unset = UNSET
     human_decision: HumanDecision | None | Unset = UNSET
     human_decided_at: datetime.datetime | None | Unset = UNSET
+    decided_by: DecidedBy | None | Unset = UNSET
     decided_at: datetime.datetime | None | Unset = UNSET
     applied_decision: AppliedDecision | None | Unset = UNSET
     judged_decision: JudgedDecision | None | Unset = UNSET
@@ -167,6 +175,14 @@ class ToolCallDecisionPayload:
         else:
             human_decided_at = self.human_decided_at
 
+        decided_by: None | str | Unset
+        if isinstance(self.decided_by, Unset):
+            decided_by = UNSET
+        elif isinstance(self.decided_by, DecidedBy):
+            decided_by = self.decided_by.value
+        else:
+            decided_by = self.decided_by
+
         decided_at: None | str | Unset
         if isinstance(self.decided_at, Unset):
             decided_at = UNSET
@@ -246,6 +262,8 @@ class ToolCallDecisionPayload:
             field_dict["human_decision"] = human_decision
         if human_decided_at is not UNSET:
             field_dict["human_decided_at"] = human_decided_at
+        if decided_by is not UNSET:
+            field_dict["decided_by"] = decided_by
         if decided_at is not UNSET:
             field_dict["decided_at"] = decided_at
         if applied_decision is not UNSET:
@@ -390,6 +408,23 @@ class ToolCallDecisionPayload:
 
         human_decided_at = _parse_human_decided_at(d.pop("human_decided_at", UNSET))
 
+        def _parse_decided_by(data: object) -> DecidedBy | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                decided_by_type_0 = DecidedBy(data)
+
+                return decided_by_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(DecidedBy | None | Unset, data)
+
+        decided_by = _parse_decided_by(d.pop("decided_by", UNSET))
+
         def _parse_decided_at(data: object) -> datetime.datetime | None | Unset:
             if data is None:
                 return data
@@ -501,6 +536,7 @@ class ToolCallDecisionPayload:
             decision_context=decision_context,
             human_decision=human_decision,
             human_decided_at=human_decided_at,
+            decided_by=decided_by,
             decided_at=decided_at,
             applied_decision=applied_decision,
             judged_decision=judged_decision,

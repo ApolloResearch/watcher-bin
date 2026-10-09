@@ -51,7 +51,7 @@ class AvailableToolCallListItem:
         user_last_name (None | str | Unset):
         user_email (None | str | Unset):
         content_state (Literal['available'] | Unset):  Default: 'available'.
-        tool_input_preview (None | str | Unset):
+        tool_input_preview (None | str | Unset): Raw tool-argument preview; null without content access to the session.
         decision_summary (None | str | Unset): Concise title or context from the policy grade that supplied
             severity_score, falling back to the recorded decision summary.
     """

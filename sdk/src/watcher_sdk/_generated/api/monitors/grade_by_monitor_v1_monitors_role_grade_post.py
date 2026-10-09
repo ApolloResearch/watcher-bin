@@ -84,8 +84,11 @@ def sync_detailed(
     Ephemeral ``messages`` grades persist as tool-call audit rows under the
     role's run kind (``policy_triage``/``policy_gateway``) and return a
     ``tool_call_grade_id`` per result, exactly like a UUID-addressed tool-call
-    grade. DB-backed grading (``trajectory_ids`` + ``session_id``) follows the
-    same ownership/cap/allowance rules as ``/v1/grade``.
+    grade. DB-backed grading (``trajectory_ids`` + ``session_id``) requires
+    ownership or ``sessions:grade:any``; content access is not required to run
+    a server-managed monitor. Results respect findings and content permissions. Supplied-message
+    grades require session write authority when attached to a session.
+    Both modes enforce grading caps and usage allowances.
 
     Responses omit ``model``: which model a monitor runs is a server-side
     policy choice, not part of the client contract.
@@ -144,8 +147,11 @@ def sync(
     Ephemeral ``messages`` grades persist as tool-call audit rows under the
     role's run kind (``policy_triage``/``policy_gateway``) and return a
     ``tool_call_grade_id`` per result, exactly like a UUID-addressed tool-call
-    grade. DB-backed grading (``trajectory_ids`` + ``session_id``) follows the
-    same ownership/cap/allowance rules as ``/v1/grade``.
+    grade. DB-backed grading (``trajectory_ids`` + ``session_id``) requires
+    ownership or ``sessions:grade:any``; content access is not required to run
+    a server-managed monitor. Results respect findings and content permissions. Supplied-message
+    grades require session write authority when attached to a session.
+    Both modes enforce grading caps and usage allowances.
 
     Responses omit ``model``: which model a monitor runs is a server-side
     policy choice, not part of the client contract.
@@ -199,8 +205,11 @@ async def asyncio_detailed(
     Ephemeral ``messages`` grades persist as tool-call audit rows under the
     role's run kind (``policy_triage``/``policy_gateway``) and return a
     ``tool_call_grade_id`` per result, exactly like a UUID-addressed tool-call
-    grade. DB-backed grading (``trajectory_ids`` + ``session_id``) follows the
-    same ownership/cap/allowance rules as ``/v1/grade``.
+    grade. DB-backed grading (``trajectory_ids`` + ``session_id``) requires
+    ownership or ``sessions:grade:any``; content access is not required to run
+    a server-managed monitor. Results respect findings and content permissions. Supplied-message
+    grades require session write authority when attached to a session.
+    Both modes enforce grading caps and usage allowances.
 
     Responses omit ``model``: which model a monitor runs is a server-side
     policy choice, not part of the client contract.
@@ -257,8 +266,11 @@ async def asyncio(
     Ephemeral ``messages`` grades persist as tool-call audit rows under the
     role's run kind (``policy_triage``/``policy_gateway``) and return a
     ``tool_call_grade_id`` per result, exactly like a UUID-addressed tool-call
-    grade. DB-backed grading (``trajectory_ids`` + ``session_id``) follows the
-    same ownership/cap/allowance rules as ``/v1/grade``.
+    grade. DB-backed grading (``trajectory_ids`` + ``session_id``) requires
+    ownership or ``sessions:grade:any``; content access is not required to run
+    a server-managed monitor. Results respect findings and content permissions. Supplied-message
+    grades require session write authority when attached to a session.
+    Both modes enforce grading caps and usage allowances.
 
     Responses omit ``model``: which model a monitor runs is a server-side
     policy choice, not part of the client contract.

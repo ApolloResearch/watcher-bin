@@ -55,12 +55,16 @@ import watcher_sdk._generated.api.organization.get_org_managed_settings_schema_v
 import watcher_sdk._generated.api.organization.get_org_managed_settings_v1_organization_managed_settings_path_get as _get_org_managed_settings_api
 import watcher_sdk._generated.api.organization.resolve_org_managed_settings_v1_organization_managed_settings_path_resolved_get as _resolve_org_managed_settings_api
 import watcher_sdk._generated.api.organization.update_org_managed_settings_v1_organization_managed_settings_path_put as _update_org_managed_settings_api
+import watcher_sdk._generated.api.session_content_access_requests.list_session_content_access_requests_v1_session_content_access_requests_get as _list_content_access_requests_api
+import watcher_sdk._generated.api.session_content_access_requests.review_session_content_access_request_endpoint_v1_session_content_access_requests_request_id_patch as _review_content_access_request_api
+import watcher_sdk._generated.api.session_content_access_requests.revoke_session_content_access_request_endpoint_v1_session_content_access_requests_request_id_revoke_post as _revoke_content_access_request_api
 import watcher_sdk._generated.api.sessions.get_current_session_deep_review_v1_sessions_session_id_deep_review_get as _get_current_deep_review_api
 import watcher_sdk._generated.api.sessions.get_session_aggregates_endpoint_v1_sessions_aggregates_get as _session_aggregates_api
 import watcher_sdk._generated.api.sessions.get_session_deep_review_request_v1_sessions_session_id_deep_review_operation_id_get as _get_deep_review_request_api
 import watcher_sdk._generated.api.sessions.get_session_detail_v1_sessions_session_id_get as _get_session_api
 import watcher_sdk._generated.api.sessions.get_session_filter_options_endpoint_v1_sessions_filter_options_get as _get_session_filter_options_api
 import watcher_sdk._generated.api.sessions.get_session_message_v1_sessions_session_id_messages_message_ref_get as _get_message_api
+import watcher_sdk._generated.api.sessions.get_session_tool_call_decision_v1_sessions_session_id_tool_call_decision_get as _get_tool_call_decision_api
 import watcher_sdk._generated.api.sessions.get_session_trajectory_detail_v1_sessions_session_id_trajectories_trajectory_id_get as _get_trajectory_api
 import watcher_sdk._generated.api.sessions.list_session_trajectories_v1_sessions_session_id_trajectories_get as _list_trajectories_api
 import watcher_sdk._generated.api.sessions.list_sessions_endpoint_v1_sessions_get as _list_sessions_api
@@ -71,12 +75,15 @@ import watcher_sdk._generated.api.tool_call_decisions.upload_tool_call_decisions
 import watcher_sdk._generated.api.tool_calls.search_tool_calls_endpoint_v1_tool_calls_search_post as _search_tool_calls_api
 import watcher_sdk._generated.api.usage.get_grading_usage_endpoint_v1_usage_grading_get as _grading_usage_api
 import watcher_sdk._generated.api.usage.get_usage_limits_endpoint_v1_usage_limits_get as _usage_limits_api
+import watcher_sdk._generated.api.users.create_my_session_content_access_request_v1_users_me_session_content_access_requests_post as _create_my_content_access_request_api
 import watcher_sdk._generated.api.users.get_me_v1_users_me_get as _users_me_api
 import watcher_sdk._generated.api.users.get_user_endpoint_v1_users_user_id_get as _get_user_api
+import watcher_sdk._generated.api.users.list_my_session_content_access_requests_v1_users_me_session_content_access_requests_get as _list_my_content_access_requests_api
 import watcher_sdk._generated.api.users.list_users_endpoint_v1_users_get as _list_users_api
 import watcher_sdk._generated.api.version.version_v1_version_get as _version_api
 from watcher_sdk._generated.models import (
     ActivatedMonitorsResponse,
+    AdminSessionContentAccessRequestListResponse,
     ApertureHookAccepted,
     ApertureHookRequest,
     AuthClientConfig,
@@ -85,6 +92,9 @@ from watcher_sdk._generated.models import (
     ChatMessageSystem,
     ChatMessageTool,
     ChatMessageUser,
+    ClaudeCodeHookRequest,
+    CodexHookRequest,
+    CreateSessionContentAccessRequest,
     DeepReviewRequestResponse,
     DeviceAuthorizationResponse,
     DeviceTokenRequest,
@@ -97,6 +107,7 @@ from watcher_sdk._generated.models import (
     GraderSearchResponse,
     GradingUsageResponse,
     HealthResponse,
+    HookAppendResponse,
     HookCallError,
     IngestRequest,
     IngestResponse,
@@ -113,14 +124,20 @@ from watcher_sdk._generated.models import (
     PreToolUseHookRequest,
     PreToolUseHookResponse,
     RawPreToolUseHookRequest,
+    ReviewSessionContentAccessRequest,
     ScrubbedSessionDetailResponse,
     SessionAggregatesResponse,
+    SessionContentAccessRequestListResponse,
+    SessionContentAccessRequestStatus,
+    SessionContentAccessRequestSummary,
+    SessionContentAccessRequestView,
     SessionDeepReviewResponse,
     SessionFilterOptionsResponse,
     SessionListResponse,
     SessionSummary,
     ToolCallDecisionBatchRequest,
     ToolCallDecisionBatchResponse,
+    ToolCallFindingsResponse,
     ToolCallListResponse,
     ToolCallSearchFilters,
     ToolCallSearchFiltersDecisionCategoriesType0Item,
@@ -219,9 +236,9 @@ ChatMessage = ChatMessageAssistant | ChatMessageSystem | ChatMessageTool | ChatM
 type SessionDetailResponse = AvailableSessionDetailResponse | ScrubbedSessionDetailResponse
 
 # Per-input timeout budget for the pre-tool-use hook wrapper. The server bounds both
-# grading stages (hooks_triage_timeout_seconds, 10s, and
-# hooks_gateway_timeout_seconds, 300s — past either the org's grading-failure
-# policy answers), so grading can take ~310s plus overhead; the
+# grading stages (hooks_triage_timeout_seconds, 10s, after which the gateway
+# grades, and hooks_gateway_timeout_seconds, 300s, after which the org's
+# grading-failure policy answers), so grading can take ~310s plus overhead; the
 # client-wide default (30s) would abandon — and still pay for — any normally
 # slow full grade. The default request budget conservatively covers each input
 # in a batch; callers on tight budgets pass their own
@@ -983,7 +1000,10 @@ class AsyncWatcherClient:
         (with the org's custom instructions injected), model, and reasoning;
         non-DB grades persist as tool-call audit rows under the role's run
         kind and return a ``tool_call_grade_id`` per result. ``model`` is null
-        on results.
+        on results. ``cost_usd`` estimates this request's cost across all
+        trajectories and reported retry usage, at prices set on the server.
+        It is null when usage or prices are missing, or the caller cannot read
+        the stored session's findings or content, and absent on older servers.
 
         Args:
             role: A client-invocable monitor role (``"triage"`` or ``"gateway"``).
@@ -1043,9 +1063,29 @@ class AsyncWatcherClient:
     @overload
     async def pre_tool_use_hook(
         self,
+        input: Mapping[str, Any] | list[_HookInputMapping] | None = None,
+        *,
+        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        append_after: Mapping[str, str],
+        external_ids: Mapping[str, str | None] | None = None,
+        tool_use_id: str | None = None,
+        user: str | None = None,
+        ephemeral: bool | None = None,
+        mode: str | None = None,
+        force_regrade: bool = False,
+        timeout: float | None = None,
+        skip_rules: bool | None = None,
+        policy_version: str | None = None,
+        settings_overrides: str | dict[str, Any] | None = None,
+    ) -> HookAppendResponse: ...
+
+    @overload
+    async def pre_tool_use_hook(
+        self,
         input: Mapping[str, Any],
         *,
-        messages: Sequence[Mapping[str, Any]] | None = None,
+        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        append_after: None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: str | None = None,
         user: str | None = None,
@@ -1063,7 +1103,8 @@ class AsyncWatcherClient:
         self,
         input: list[_HookInputMapping] | None = None,
         *,
-        messages: Sequence[Mapping[str, Any]] | None = None,
+        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        append_after: None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: None = None,
         user: str | None = None,
@@ -1102,7 +1143,8 @@ class AsyncWatcherClient:
         self,
         input: Mapping[str, Any] | list[_HookInputMapping] | None = None,
         *,
-        messages: Sequence[Mapping[str, Any]] | None = None,
+        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        append_after: Mapping[str, str] | None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: str | None = None,
         user: str | None = None,
@@ -1119,7 +1161,7 @@ class AsyncWatcherClient:
         provider: str | None = None,
         user_agent: str | None = None,
         response_index: int | None = None,
-    ) -> PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
+    ) -> HookAppendResponse | PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
         """Evaluate tool calls or ingest a transcript through Watcher's server pipeline.
 
         Enforce runs the hierarchical funnel (per-tool thresholds, command rules,
@@ -1129,15 +1171,21 @@ class AsyncWatcherClient:
         Observe runs the same pipeline and returns its completed judgment and
         stage results, with `decision="deferred"` so the caller does not enforce
         that judgment. Both modes support ephemeral evaluation and evaluation
-        without session-write permission; recording requires that permission.
+        without session-write permission for full requests; append requests
+        require authority to write the named session and cannot be ephemeral.
 
         A list accepts at most 32 inputs, evaluates its calls concurrently against
         one shared conversation, and returns completed responses in input order.
         Larger lists are rejected with HTTP 422.
-        Null, omitted, or empty input ingests `messages` and returns an empty list.
+        Without `append_after`, null, omitted, or empty input ingests `messages`
+        and returns an empty list. Successful appends return `HookAppendResponse`:
+        `results` contains the scalar judgment, the batch's ordered results,
+        or an empty list for ingestion only. Its `append_after` names the
+        committed last message and is ready for the next append.
         A failed batch item returns `HookCallError` in that position and
         subsequent calls still run. Every batch outcome echoes its input's
-        `tool_use_id`, or null when omitted. Scalar failures remain HTTP errors.
+        `tool_use_id`, or null when omitted. Scalar monitor refusals remain HTTP
+        errors and occur before an append's delta is stored.
         A scalar input with an explicitly blank `tool_name` only ingests its transcript under any
         enforcement setting. Paused settings also skip evaluation. Both bypass
         grading admission and return deferred without a judgment or decision
@@ -1203,14 +1251,59 @@ class AsyncWatcherClient:
                 decisions improve with it since the monitors score
                 intent-in-context. The pre-rendered `transcript` form is
                 rejected on this surface, and `triage_assessment` is
-                server-populated and rejected if supplied. The request's
-                `format` is fixed to `watcher`, the only shape this
-                wrapper speaks.
-            messages: Shared conversation transcript as structured chat-message
-                mappings. Required for multiple inputs, None, or an empty list.
-                A multi-input batch rejects any nonempty nested `messages`.
-                With one input, top-level and nested transcripts must match if
-                both are non-null.
+                server-populated and rejected if supplied. Structured inputs
+                use `format="watcher"`; raw provider pairs use the separate
+                `request_body` and `response_body` arguments.
+            messages: The conversation the calls are judged in, in one of two forms.
+
+                - Structured chat-message mappings (``format="watcher"``).
+                  Required for multiple inputs, None, or an empty list. A
+                  multi-input batch rejects any nonempty nested `messages`.
+                  With one input, top-level and nested transcripts must match
+                  if both are non-null.
+                - The coding agent's own transcript file, the shape `ingest`
+                  accepts: ``{"format": "claude-code-jsonl" | "codex-jsonl",
+                  "timestamp": ..., "entries": [...]}``. The request takes that
+                  format. The calls are judged with the file's live branch as
+                  context; the file is stored up to its last complete tool
+                  cycle, as a direct upload would store it. Inputs never carry
+                  their own `messages` then. Each call should name its
+                  `tool_use_id`: Claude Code's hooks report it; for Codex read
+                  it from the rollout
+                  (`watcher_transcript_transport.codex.pending_call_id`). A
+                  Codex call without one, or one the rollout does not hold, is
+                  never allowed by a command rule; the monitors decide.
+
+                With `append_after`, send only what follows the anchor (chat
+                messages or file entries); an empty delta can evaluate a call
+                already stored.
+            append_after: A mapping containing the
+                stored `session_id` UUID string and `trajectory_id` of the last
+                message already sent. The server restores that exact prefix
+                before validation and evaluation, so selected calls may appear
+                in earlier uploads. The anchor must still be continuable; the
+                server never chooses a branch implicitly. Bootstrap the initial
+                anchor through ingestion or a verified `search_sessions` result.
+                A successful append waits for transcript and available decision
+                recording, then returns `HookAppendResponse`. Pass
+                `response.append_after.to_dict()` on the next append without
+                searching again. Never advance the cursor after a failure:
+                recording can return HTTP 503 with `code="append_recording_failed"`
+                after the delta commits. For that code, `WatcherAPIError.body`
+                retains the ordered `results` list without a new cursor. Apply
+                those decisions, including denies, before using a generic 5xx
+                failure policy. Older servers may omit `results`; handle that
+                absence with your normal failure policy. The caller may retry
+                the same append to finish recording; retries
+                are not automatic and may repeat grading. Append cannot be
+                combined with `ephemeral=True`. On HTTP 404, 409, or 422,
+                retry once with the full conversation and omit `append_after`.
+                HTTP 422 also covers older servers rejecting the new field.
+                The SDK does not perform this fallback: it has no stored copy
+                of the prefix. A full fallback still has the normal body-size
+                limit; surface its failure instead of repeatedly retrying.
+                Full hook responses do not return an anchor, so obtain and
+                verify another stored anchor before resuming deltas after fallback.
             external_ids: Distinct conversation IDs from the harness and gateway,
                 keyed by source (`"claude_code"`, `"codex"`, `"aperture"`,
                 `"other"` for the gateway's own id); a recorded session
@@ -1219,17 +1312,24 @@ class AsyncWatcherClient:
                 `ephemeral`; send every id you have. A caller with none
                 records id-less with an explicit `None` value
                 (`{"other": None}`), and the server then finds the session by
-                transcript prefix. The harness is read off the keys.
+                transcript prefix. The harness is read off the keys. For
+                append requests, keep the harness and non-null IDs consistent
+                with the stored session; the anchor selects the session.
+                Append needs the matching harness key: send
+                `{"claude_code": None}` or `{"codex": None}` when its ID is
+                unknown. Omitting that key for those sessions returns HTTP 409.
             tool_use_id: Scalar-input convenience for `input.tool_use_id`.
                 Rejected with list or None input; supply each item's own ID instead.
                 Evaluated, recorded inputs need an ID matching a tool call in
                 their messages; repeating that ID converges onto one record.
             user: Email of the watched developer to attribute the mirrored
                 session to — honored only for callers allowed to impersonate.
-            ephemeral: Set True to save nothing besides usage data: no
-                tool-call grade rows, transcript, or decision record (server
-                default False). Enforce and observe still return the completed
-                judgment; observe applies a deferred decision.
+            ephemeral: Set True to skip tool-call grade rows, transcripts, and
+                decision records (server default False). Usage accounting and
+                configured admin-access auditing still apply. Enforce and observe
+                return the completed judgment; observe applies a deferred decision.
+                Cannot be combined with `append_after`; the SDK raises `ValueError`
+                before sending a request, and the server rejects it with HTTP 422.
             mode: `"full"` (the server default) or `"triage_only"` to skip
                 the slow gateway grade — triage can clear a call but never
                 deny, so an uncleared call is judged `escalate`. Both modes
@@ -1251,13 +1351,17 @@ class AsyncWatcherClient:
             settings_overrides: YAML text or a JSON mapping the server will merge onto the
                 org baseline like a machine's `settings.local.yaml`.
                 `enforcement.mode` selects `enforce`, `observe` (evaluate with
-                a deferred applied decision), or `paused` (ingest only). Touching an admin-locked path
-                is rejected with HTTP 422, including same-value overrides.
+                a deferred applied decision), or `paused` (ingest only). Changing an admin-locked value
+                is rejected with HTTP 422; repeating the locked value is accepted.
 
         """
+        if append_after is not None and ephemeral is True:
+            raise ValueError("append_after cannot be combined with ephemeral=True")
         if request_body is not None or response_body is not None:
             if request_body is None or response_body is None:
                 raise ValueError("A raw pair needs both request_body and response_body")
+            if append_after is not None:
+                raise ValueError("append_after is only supported with watcher-format messages")
             if input is not None or messages is not None or tool_use_id is not None:
                 raise ValueError("A raw pair replaces input, messages and tool_use_id; do not combine them")
             raw: dict[str, object] = {
@@ -1285,6 +1389,8 @@ class AsyncWatcherClient:
                 RawPreToolUseHookRequest.from_dict(raw),
                 timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS,
             )
+        if isinstance(messages, Mapping) and messages.get("format") not in ("claude-code-jsonl", "codex-jsonl"):
+            raise ValueError("A transcript file in messages must be claude-code-jsonl or codex-jsonl")
         if input is None or isinstance(input, list):
             if tool_use_id is not None:
                 raise ValueError("tool_use_id is only supported for scalar input; set each input.tool_use_id instead")
@@ -1296,8 +1402,13 @@ class AsyncWatcherClient:
             if tool_use_id is not None:
                 hook_input["tool_use_id"] = tool_use_id
         body_dict: dict[str, object] = {"format": "watcher", "input": hook_input}
-        if messages is not None:
+        if isinstance(messages, Mapping):
+            body_dict["format"] = messages["format"]
+            body_dict["messages"] = dict(messages)
+        elif messages is not None:
             body_dict["messages"] = [dict(message) for message in messages]
+        if append_after is not None:
+            body_dict["append_after"] = dict(append_after)
         if external_ids is not None:
             body_dict["external_ids"] = dict(external_ids)
         if user is not None:
@@ -1315,14 +1426,23 @@ class AsyncWatcherClient:
         if settings_overrides is not None:
             body_dict["settings_overrides"] = settings_overrides
         input_count = max(1, len(input)) if isinstance(input, list) else 1
+        body = (
+            ClaudeCodeHookRequest.from_dict(body_dict)
+            if body_dict["format"] == "claude-code-jsonl"
+            else CodexHookRequest.from_dict(body_dict)
+            if body_dict["format"] == "codex-jsonl"
+            else PreToolUseHookRequest.from_dict(body_dict)
+        )
         return await self._send_pre_tool_use_hook(
-            PreToolUseHookRequest.from_dict(body_dict),
+            body,
             timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS * input_count,
         )
 
     async def _send_pre_tool_use_hook(
-        self, body: PreToolUseHookRequest | RawPreToolUseHookRequest, timeout: float
-    ) -> PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
+        self,
+        body: PreToolUseHookRequest | ClaudeCodeHookRequest | CodexHookRequest | RawPreToolUseHookRequest,
+        timeout: float,
+    ) -> HookAppendResponse | PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
         """POST one hook request under its own timeout, without the client's automatic retries."""
         request_kwargs = _pre_tool_use_hook_api._get_kwargs(body=body)
         request_kwargs["timeout"] = timeout
@@ -1508,12 +1628,12 @@ class AsyncWatcherClient:
         `settings_overrides` applies to both halves through the same
         shared merge the server runs: the local stage evaluates the overlaid
         tree, and graded calls carry the same overlay for the server to apply
-        to its baseline. An override touching an admin-locked path raises
+        to its baseline. An override changing an admin-locked value raises
         `ValueError` locally, before any evaluation (the server would answer
         422 for the same document).
 
         Set `enforcement.mode` in `settings_overrides` to change the mode.
-        Locked paths reject even same-value overrides. Observe returns deferred local judgments;
+        Repeating a locked value is accepted. Observe returns deferred local judgments;
         paused sends the transcript to the server for ingestion. Scalars with an
         explicitly blank `tool_name`, omitted or None input, and all batches go
         directly to the server without fetching settings. Server-delegated
@@ -1916,7 +2036,7 @@ class AsyncWatcherClient:
                 UserFilterMode.INCLUDE or EXCLUDE. Include matches any listed owner;
                 exclude removes all listed owners and retains unattributed sessions.
                 None selects all owners allowed by your read scope. Naming another
-                user requires sessions:read:any in either mode; otherwise the server
+                user requires sessions:findings:read:any in either mode; otherwise the server
                 returns 403. An empty ids list is rejected with 422.
             sources: Match any listed ingestion source among the session's retained
                 messages. Known values are 'watcher', 'tailscale-aperture',
@@ -1992,7 +2112,7 @@ class AsyncWatcherClient:
             end_date: Include only calls whose message was recorded at or before this datetime.
             session_id: Restrict to one session's calls.
             user_id: Restrict to one person's calls. Callers without the
-                ``sessions:read:any`` permission may only name themselves.
+                ``sessions:findings:read:any`` permission may only name themselves.
             tool_names: Restrict to these tool names. Any string is accepted and an
                 unknown name matches no calls. Scrubbed calls cannot match because
                 tool names are not retained.
@@ -2048,7 +2168,10 @@ class AsyncWatcherClient:
         *,
         severity_threshold: str,
     ) -> SessionAggregatesResponse:
-        """Get aggregate session metrics."""
+        """Get organization aggregate metrics, optionally filtered by ``user_id``.
+
+        Requires ``sessions:aggregates:read:any``, even for the caller's own metrics.
+        """
         return await _session_aggregates_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
             client=self._generated_client,
             start_date=start_date,
@@ -2200,6 +2323,26 @@ class AsyncWatcherClient:
         return await _get_session_api.asyncio_detailed(session_id, client=self._generated_client)  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
 
     @_sdk_method
+    async def get_session_tool_call_decision(self, session_id: str, tool_use_id: str) -> ToolCallFindingsResponse:
+        """Get one tool call's decision and grades with session findings access.
+
+        ``has_result`` reports whether a tool response was recorded; its contents,
+        raw tool arguments and grader input messages are always omitted. Use
+        ``get_trajectory`` with content access to retrieve transcript evidence.
+
+        Args:
+            session_id: Unique identifier of the session.
+            tool_use_id: Tool-call identifier, including any subagent prefix.
+
+        Raises:
+            WatcherNotFoundError: If the decision is missing, scrubbed, or the
+                caller cannot read the session's findings.
+        """
+        return await _get_tool_call_decision_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            session_id, client=self._generated_client, tool_use_id=tool_use_id
+        )
+
+    @_sdk_method
     async def scrub_session_content(self, session_id: str) -> None:
         """Remove stored content for a session while retaining its historical record.
 
@@ -2334,6 +2477,90 @@ class AsyncWatcherClient:
         )
 
     # ---- Users ----
+
+    @_sdk_method
+    async def list_my_session_content_access_requests(
+        self,
+        *,
+        session_id: UUID | None = None,
+        status: SessionContentAccessRequestStatus | None = None,
+        active_only: bool = False,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> SessionContentAccessRequestListResponse:
+        """List the signed-in user's requests in their current organization.
+
+        Results are newest first. The optional status filter matches the stored
+        decision; approved requests include expired approvals. Credentials must
+        identify a user, including when the caller has the admin role.
+        ``active_only`` includes only pending requests and currently valid approvals.
+        """
+        return await _list_my_content_access_requests_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            client=self._generated_client,
+            session_id=session_id,
+            status=status,
+            active_only=active_only,
+            limit=limit,
+            offset=offset,
+        )
+
+    @_sdk_method
+    async def request_session_content_access(self, session_id: UUID) -> SessionContentAccessRequestSummary:
+        """Request temporary content access; return the existing request when already pending.
+
+        Requires a user identity. Missing, foreign, or scrubbed sessions return
+        404; content the caller can already read returns 409.
+        """
+        return await _create_my_content_access_request_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            client=self._generated_client, body=CreateSessionContentAccessRequest(session_id=session_id)
+        )
+
+    @_sdk_method
+    async def list_session_content_access_requests(
+        self,
+        *,
+        status: list[SessionContentAccessRequestStatus] | None = None,
+        view: SessionContentAccessRequestView | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> AdminSessionContentAccessRequestListResponse:
+        """List organization requests with requester, reviewer, and revoker identities.
+
+        Requires ``sessions:access-requests:review``, included in the admin role.
+        Filter by stored statuses and/or a pending, active, or historical view.
+        Approved status includes expired approvals; active view excludes them.
+        Pending/active counts always cover the organization, regardless of filters.
+        """
+        return await _list_content_access_requests_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            client=self._generated_client, status=status, view=view, limit=limit, offset=offset
+        )
+
+    @_sdk_method
+    async def review_session_content_access_request(
+        self, request_id: UUID, body: ReviewSessionContentAccessRequest
+    ) -> SessionContentAccessRequestSummary:
+        """Approve or deny a pending request as a signed-in reviewer.
+
+        Requires ``sessions:access-requests:review``, included in the admin role.
+        Self-approval is allowed and recorded. Approvals default to eight hours;
+        an explicit expiry must be in the future and within eight hours of review.
+        Review decisions cannot be replaced; active approvals can be revoked separately.
+        """
+        return await _review_content_access_request_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            request_id=request_id, client=self._generated_client, body=body
+        )
+
+    @_sdk_method
+    async def revoke_session_content_access_request(self, request_id: UUID) -> SessionContentAccessRequestSummary:
+        """Revoke an active approval, preserving its original review and expiry.
+
+        Requires ``sessions:access-requests:review`` and a signed-in user identity.
+        Missing or foreign requests return 404; requests without an active approval
+        return 409, including repeat revocations.
+        """
+        return await _revoke_content_access_request_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            request_id=request_id, client=self._generated_client
+        )
 
     @_sdk_method
     async def list_users(self, limit: int = 100, offset: int = 0) -> UserListResponse:

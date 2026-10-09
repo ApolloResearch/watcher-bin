@@ -17,7 +17,10 @@ routes them to.
    evaluate before the provider runs: more than one choice (`n > 1`), or
    Responses history stored on the provider (`previous_response_id`,
    `conversation`, `background`).
-2. The provider responds. A streamed response is buffered until complete.
+2. The provider responds. A streamed Chat Completions or Responses response is
+   buffered until complete. A streamed Messages response reaches the client as
+   it arrives, except that every tool call and the end of the response are held
+   until step 4, with pings sent while the client waits.
 3. The callback posts the request body, the complete response and the endpoint
    path to Watcher's pre-tool-use hook with `format: "raw"`, using the SDK's
    `pre_tool_use_hook(request_body=..., response_body=...)`. Watcher returns a
@@ -31,8 +34,9 @@ routes them to.
    some of them is not offered.
 5. Watcher records the conversation and its decisions.
 
-Streamed responses are re-encoded from the evaluated body instead of replaying
-the provider's chunks, so the client can only execute exactly what Watcher saw.
+Streamed responses are re-encoded, from the evaluated body or from the parsed
+Messages events, instead of replaying the provider's chunks, so the client can
+only execute exactly what Watcher saw.
 The re-encoded stream carries the same content in the standard event sequence
 for its API, but not provider-specific extras such as per-chunk timing.
 
@@ -114,14 +118,17 @@ withheld.
 ## Failure behavior
 
 - Watcher unreachable, timing out (240 seconds by default), rate limiting or
-  returning a server error: the client receives HTTP 503 and no part of the
-  response. Client SDKs may retry, which regenerates the model response.
+  returning a server error: the client receives HTTP 503 and no tool call from
+  the response. Client SDKs may retry, which regenerates the model response.
 - Any other Watcher error, such as a rejected API key, missing permission, a
   request too large or an exchange Watcher cannot parse: HTTP 422, which
   clients do not retry because the same request would fail again.
 - A provider stream that ends early or reports an error: HTTP 502, which
   clients may retry.
 - A provider stream in a shape the callback does not interpret: HTTP 422.
+- Once a Messages stream has started, a 502 or 503 failure arrives instead as an
+  `overloaded_error` stream event, and a 422 failure as an
+  `invalid_request_error` stream event. The client still gets no tool call.
 
 The callback never retries a Watcher request, because a retry can repeat billed
 LLM grading.
@@ -133,7 +140,9 @@ LLM grading.
   `/bedrock`), are not checked. Block them in an enforcing deployment.
 - Tools that run on the provider's servers (for example hosted web search)
   execute before the response exists and cannot be prevented.
-- Streaming is buffered: clients see nothing until Watcher has decided.
+- Chat Completions and Responses streaming is buffered: clients see nothing
+  until Watcher has decided. Messages streams hold only tool calls and the end
+  of the response.
 - When calls are withheld, the next request from the client contains the
   explanation instead of the calls, so Watcher records it as a new branch of the
   same conversation. Without `x-watcher-session-id` or a native session ID,

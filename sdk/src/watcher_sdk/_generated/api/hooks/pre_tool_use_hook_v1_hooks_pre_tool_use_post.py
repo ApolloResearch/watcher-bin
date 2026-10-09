@@ -5,6 +5,9 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.claude_code_hook_request import ClaudeCodeHookRequest
+from ...models.codex_hook_request import CodexHookRequest
+from ...models.hook_append_response import HookAppendResponse
 from ...models.hook_call_error import HookCallError
 from ...models.http_validation_error import HTTPValidationError
 from ...models.pre_tool_use_hook_request import PreToolUseHookRequest
@@ -15,7 +18,10 @@ from ...types import Response
 
 def _get_kwargs(
     *,
-    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
+    body: ClaudeCodeHookRequest
+    | CodexHookRequest
+    | PreToolUseHookRequest
+    | RawPreToolUseHookRequest,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
@@ -25,6 +31,10 @@ def _get_kwargs(
     }
 
     if isinstance(body, PreToolUseHookRequest):
+        _kwargs["json"] = body.to_dict()
+    elif isinstance(body, ClaudeCodeHookRequest):
+        _kwargs["json"] = body.to_dict()
+    elif isinstance(body, CodexHookRequest):
         _kwargs["json"] = body.to_dict()
     else:
         _kwargs["json"] = body.to_dict()
@@ -40,6 +50,7 @@ def _parse_response(
 ) -> (
     Any
     | HTTPValidationError
+    | HookAppendResponse
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
     | None
@@ -48,51 +59,71 @@ def _parse_response(
 
         def _parse_response_200(
             data: object,
-        ) -> list[HookCallError | PreToolUseHookResponse] | PreToolUseHookResponse:
+        ) -> (
+            HookAppendResponse
+            | list[HookCallError | PreToolUseHookResponse]
+            | PreToolUseHookResponse
+        ):
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
-                response_200_type_0 = PreToolUseHookResponse.from_dict(data)
+                response_200_type_0 = HookAppendResponse.from_dict(data)
 
                 return response_200_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                response_200_type_1 = PreToolUseHookResponse.from_dict(data)
+
+                return response_200_type_1
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
             if not isinstance(data, list):
                 raise TypeError()
-            response_200_type_1 = []
-            _response_200_type_1 = data
-            for response_200_type_1_item_data in _response_200_type_1:
+            response_200_type_2 = []
+            _response_200_type_2 = data
+            for response_200_type_2_item_data in _response_200_type_2:
 
-                def _parse_response_200_type_1_item(
+                def _parse_response_200_type_2_item(
                     data: object,
                 ) -> HookCallError | PreToolUseHookResponse:
                     try:
                         if not isinstance(data, dict):
                             raise TypeError()
-                        response_200_type_1_item_type_0 = (
+                        response_200_type_2_item_type_0 = (
                             PreToolUseHookResponse.from_dict(data)
                         )
 
-                        return response_200_type_1_item_type_0
+                        return response_200_type_2_item_type_0
                     except (TypeError, ValueError, AttributeError, KeyError):
                         pass
                     if not isinstance(data, dict):
                         raise TypeError()
-                    response_200_type_1_item_type_1 = HookCallError.from_dict(data)
+                    response_200_type_2_item_type_1 = HookCallError.from_dict(data)
 
-                    return response_200_type_1_item_type_1
+                    return response_200_type_2_item_type_1
 
-                response_200_type_1_item = _parse_response_200_type_1_item(
-                    response_200_type_1_item_data
+                response_200_type_2_item = _parse_response_200_type_2_item(
+                    response_200_type_2_item_data
                 )
 
-                response_200_type_1.append(response_200_type_1_item)
+                response_200_type_2.append(response_200_type_2_item)
 
-            return response_200_type_1
+            return response_200_type_2
 
         response_200 = _parse_response_200(response.json())
 
         return response_200
+
+    if response.status_code == 404:
+        response_404 = cast(Any, None)
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = cast(Any, None)
+        return response_409
 
     if response.status_code == 413:
         response_413 = cast(Any, None)
@@ -102,6 +133,10 @@ def _parse_response(
         response_422 = HTTPValidationError.from_dict(response.json())
 
         return response_422
+
+    if response.status_code == 503:
+        response_503 = cast(Any, None)
+        return response_503
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -114,6 +149,7 @@ def _build_response(
 ) -> Response[
     Any
     | HTTPValidationError
+    | HookAppendResponse
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
 ]:
@@ -128,10 +164,14 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
-    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
+    body: ClaudeCodeHookRequest
+    | CodexHookRequest
+    | PreToolUseHookRequest
+    | RawPreToolUseHookRequest,
 ) -> Response[
     Any
     | HTTPValidationError
+    | HookAppendResponse
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
 ]:
@@ -149,9 +189,19 @@ def sync_detailed(
     usage accounting. Enforce and observe both return completed judgments,
     including when ephemeral or the caller cannot record sessions.
 
+    An append cannot be ephemeral and requires authority to write its parent
+    session. It returns a HookAppendResponse containing the committed next
+    anchor and an ordered results list, even for scalar or transcript-only
+    input. Messages and available decisions are stored before success; reuse
+    the returned anchor directly for the next append. Recording failure is
+    HTTP 503 and can follow committed messages. Its body retains ordered
+    `results`, including denies, without an `append_after` cursor. Apply those
+    decisions and retry the same append to finish recording.
+
     `settings_overrides` accepts YAML text or a JSON object and uses the normal
-    administrator permission rules. Locked settings reject any override with
-    HTTP 422. The effective `enforcement.mode` selects enforcement, observation,
+    administrator permission rules. An override that changes a locked setting
+    is refused with HTTP 422; one that repeats it is accepted. The effective `enforcement.mode` selects
+    enforcement, observation,
     or ingestion only. Observe returns the completed judgment with a deferred
     applied decision. Paused and unnamed calls do not evaluate; authorized
     callers still record the transcript. HTTP 422 errors use a list of detail
@@ -204,14 +254,15 @@ def sync_detailed(
     executable calls.
 
     Args:
-        body (PreToolUseHookRequest | RawPreToolUseHookRequest):
+        body (ClaudeCodeHookRequest | CodexHookRequest | PreToolUseHookRequest |
+            RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError | list[HookCallError | PreToolUseHookResponse] | PreToolUseHookResponse]
+        Response[Any | HTTPValidationError | HookAppendResponse | list[HookCallError | PreToolUseHookResponse] | PreToolUseHookResponse]
     """
 
     kwargs = _get_kwargs(
@@ -228,10 +279,14 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient | Client,
-    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
+    body: ClaudeCodeHookRequest
+    | CodexHookRequest
+    | PreToolUseHookRequest
+    | RawPreToolUseHookRequest,
 ) -> (
     Any
     | HTTPValidationError
+    | HookAppendResponse
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
     | None
@@ -250,9 +305,19 @@ def sync(
     usage accounting. Enforce and observe both return completed judgments,
     including when ephemeral or the caller cannot record sessions.
 
+    An append cannot be ephemeral and requires authority to write its parent
+    session. It returns a HookAppendResponse containing the committed next
+    anchor and an ordered results list, even for scalar or transcript-only
+    input. Messages and available decisions are stored before success; reuse
+    the returned anchor directly for the next append. Recording failure is
+    HTTP 503 and can follow committed messages. Its body retains ordered
+    `results`, including denies, without an `append_after` cursor. Apply those
+    decisions and retry the same append to finish recording.
+
     `settings_overrides` accepts YAML text or a JSON object and uses the normal
-    administrator permission rules. Locked settings reject any override with
-    HTTP 422. The effective `enforcement.mode` selects enforcement, observation,
+    administrator permission rules. An override that changes a locked setting
+    is refused with HTTP 422; one that repeats it is accepted. The effective `enforcement.mode` selects
+    enforcement, observation,
     or ingestion only. Observe returns the completed judgment with a deferred
     applied decision. Paused and unnamed calls do not evaluate; authorized
     callers still record the transcript. HTTP 422 errors use a list of detail
@@ -305,14 +370,15 @@ def sync(
     executable calls.
 
     Args:
-        body (PreToolUseHookRequest | RawPreToolUseHookRequest):
+        body (ClaudeCodeHookRequest | CodexHookRequest | PreToolUseHookRequest |
+            RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError | list[HookCallError | PreToolUseHookResponse] | PreToolUseHookResponse
+        Any | HTTPValidationError | HookAppendResponse | list[HookCallError | PreToolUseHookResponse] | PreToolUseHookResponse
     """
 
     return sync_detailed(
@@ -324,10 +390,14 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
-    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
+    body: ClaudeCodeHookRequest
+    | CodexHookRequest
+    | PreToolUseHookRequest
+    | RawPreToolUseHookRequest,
 ) -> Response[
     Any
     | HTTPValidationError
+    | HookAppendResponse
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
 ]:
@@ -345,9 +415,19 @@ async def asyncio_detailed(
     usage accounting. Enforce and observe both return completed judgments,
     including when ephemeral or the caller cannot record sessions.
 
+    An append cannot be ephemeral and requires authority to write its parent
+    session. It returns a HookAppendResponse containing the committed next
+    anchor and an ordered results list, even for scalar or transcript-only
+    input. Messages and available decisions are stored before success; reuse
+    the returned anchor directly for the next append. Recording failure is
+    HTTP 503 and can follow committed messages. Its body retains ordered
+    `results`, including denies, without an `append_after` cursor. Apply those
+    decisions and retry the same append to finish recording.
+
     `settings_overrides` accepts YAML text or a JSON object and uses the normal
-    administrator permission rules. Locked settings reject any override with
-    HTTP 422. The effective `enforcement.mode` selects enforcement, observation,
+    administrator permission rules. An override that changes a locked setting
+    is refused with HTTP 422; one that repeats it is accepted. The effective `enforcement.mode` selects
+    enforcement, observation,
     or ingestion only. Observe returns the completed judgment with a deferred
     applied decision. Paused and unnamed calls do not evaluate; authorized
     callers still record the transcript. HTTP 422 errors use a list of detail
@@ -400,14 +480,15 @@ async def asyncio_detailed(
     executable calls.
 
     Args:
-        body (PreToolUseHookRequest | RawPreToolUseHookRequest):
+        body (ClaudeCodeHookRequest | CodexHookRequest | PreToolUseHookRequest |
+            RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError | list[HookCallError | PreToolUseHookResponse] | PreToolUseHookResponse]
+        Response[Any | HTTPValidationError | HookAppendResponse | list[HookCallError | PreToolUseHookResponse] | PreToolUseHookResponse]
     """
 
     kwargs = _get_kwargs(
@@ -422,10 +503,14 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient | Client,
-    body: PreToolUseHookRequest | RawPreToolUseHookRequest,
+    body: ClaudeCodeHookRequest
+    | CodexHookRequest
+    | PreToolUseHookRequest
+    | RawPreToolUseHookRequest,
 ) -> (
     Any
     | HTTPValidationError
+    | HookAppendResponse
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
     | None
@@ -444,9 +529,19 @@ async def asyncio(
     usage accounting. Enforce and observe both return completed judgments,
     including when ephemeral or the caller cannot record sessions.
 
+    An append cannot be ephemeral and requires authority to write its parent
+    session. It returns a HookAppendResponse containing the committed next
+    anchor and an ordered results list, even for scalar or transcript-only
+    input. Messages and available decisions are stored before success; reuse
+    the returned anchor directly for the next append. Recording failure is
+    HTTP 503 and can follow committed messages. Its body retains ordered
+    `results`, including denies, without an `append_after` cursor. Apply those
+    decisions and retry the same append to finish recording.
+
     `settings_overrides` accepts YAML text or a JSON object and uses the normal
-    administrator permission rules. Locked settings reject any override with
-    HTTP 422. The effective `enforcement.mode` selects enforcement, observation,
+    administrator permission rules. An override that changes a locked setting
+    is refused with HTTP 422; one that repeats it is accepted. The effective `enforcement.mode` selects
+    enforcement, observation,
     or ingestion only. Observe returns the completed judgment with a deferred
     applied decision. Paused and unnamed calls do not evaluate; authorized
     callers still record the transcript. HTTP 422 errors use a list of detail
@@ -499,14 +594,15 @@ async def asyncio(
     executable calls.
 
     Args:
-        body (PreToolUseHookRequest | RawPreToolUseHookRequest):
+        body (ClaudeCodeHookRequest | CodexHookRequest | PreToolUseHookRequest |
+            RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError | list[HookCallError | PreToolUseHookResponse] | PreToolUseHookResponse
+        Any | HTTPValidationError | HookAppendResponse | list[HookCallError | PreToolUseHookResponse] | PreToolUseHookResponse
     """
 
     return (

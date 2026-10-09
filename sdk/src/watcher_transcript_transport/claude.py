@@ -350,35 +350,48 @@ def _segments_by_owner(
 
 def _drop_abandoned_root_prompts(
     roots: list[JsonEntry],
+    groups: list[str | None],
     children: dict[str, list[JsonEntry]],
     message_uuids: set[str],
     segments_by_owner: dict[str, list[JsonEntry]],
 ) -> list[JsonEntry]:
     """Drop the abandoned first-prompt roots when the first prompt was rewound.
 
-    Contenders are parentless user-text roots that are not compaction summaries
-    and have different prompt text. Keep the newest-activity contender and every
-    non-contender root; dangling-parent and same-text roots remain as segments.
-    The later walk uses ``segment_back_links`` to include compaction segments
-    only after visiting the branch that owns them.
+    ``groups`` holds each root's rewind group (see ``_message_order``): ``""``
+    for a parentless root, the uuid of the parentless entry atop its
+    non-message ancestry otherwise (current Claude Code writes session-start
+    hook attachments before the first prompt, and every rewound version names
+    them as its parent), and None for a root above a parent missing from the
+    file. Contenders are user-text roots of one group that are not compaction
+    summaries and have different prompt text; every such group is a fork (a
+    file can hold several trees, each with its own rewound first prompt). Keep
+    each group's newest-activity contender and every non-contender root;
+    dangling-parent and same-text roots remain as segments. The later walk
+    uses ``segment_back_links`` to include compaction segments only after
+    visiting the branch that owns them.
     """
     if len(roots) < 2:
         return roots
     prompt_keys = [
-        _user_entry_text_key(root) if root.get("parentUuid") is None and not _is_compaction_segment_root(root) else ()
-        for root in roots
+        _user_entry_text_key(root) if group is not None and not _is_compaction_segment_root(root) else ()
+        for root, group in zip(roots, groups, strict=True)
     ]
-    contenders = [i for i, key in enumerate(prompt_keys) if key]
-    if len(contenders) < 2 or len({prompt_keys[i] for i in contenders}) < 2:
-        return roots
-    survivor = contenders[0]
-    survivor_activity = _branch_last_activity(roots[survivor], children, message_uuids, segments_by_owner)
-    for i in contenders[1:]:
-        activity = _branch_last_activity(roots[i], children, message_uuids, segments_by_owner)
-        if survivor_activity is None or (activity is not None and activity >= survivor_activity):
-            survivor = i
-            survivor_activity = activity
-    abandoned_indices = {i for i in contenders if i != survivor}
+    members_by_group: dict[str | None, list[int]] = {}
+    for i, key in enumerate(prompt_keys):
+        if key:
+            members_by_group.setdefault(groups[i], []).append(i)
+    abandoned_indices: set[int] = set()
+    for contenders in members_by_group.values():
+        if len(contenders) < 2 or len({prompt_keys[i] for i in contenders}) < 2:
+            continue
+        survivor = contenders[0]
+        survivor_activity = _branch_last_activity(roots[survivor], children, message_uuids, segments_by_owner)
+        for i in contenders[1:]:
+            activity = _branch_last_activity(roots[i], children, message_uuids, segments_by_owner)
+            if survivor_activity is None or (activity is not None and activity >= survivor_activity):
+                survivor = i
+                survivor_activity = activity
+        abandoned_indices.update(i for i in contenders if i != survivor)
     return [root for i, root in enumerate(roots) if i not in abandoned_indices]
 
 
@@ -422,9 +435,12 @@ def _message_order(entries: list[JsonEntry]) -> list[str] | None:
             children.setdefault(parent_uuid, []).append(entry)
 
     roots: list[JsonEntry] = []
+    # Each root's first-prompt rewind group, by entry identity (see _drop_abandoned_root_prompts).
+    root_groups: dict[int, str | None] = {}
     for entry in message_entries:
         parent_uuid = entry.get("parentUuid")
         visited_ancestors: set[str] = set()
+        top_ancestor = ""
         has_message_ancestor = False
         while isinstance(parent_uuid, str) and parent_uuid in entry_lookup:
             if parent_uuid in message_uuids:
@@ -433,9 +449,11 @@ def _message_order(entries: list[JsonEntry]) -> list[str] | None:
             if parent_uuid in visited_ancestors:
                 return None
             visited_ancestors.add(parent_uuid)
+            top_ancestor = parent_uuid
             parent_uuid = entry_lookup[parent_uuid].get("parentUuid")
         if not has_message_ancestor:
             roots.append(entry)
+            root_groups[id(entry)] = top_ancestor if parent_uuid is None else None
 
     if not roots:
         return [entry["uuid"] for entry in _drop_redelivered_queued_commands(message_entries)]
@@ -445,7 +463,9 @@ def _message_order(entries: list[JsonEntry]) -> list[str] | None:
     # abandoned first-prompt version), so build the map before pruning roots.
     segment_back_links = _segment_back_links(roots, entry_lookup)
     segments_by_owner = _segments_by_owner(segment_back_links, entry_lookup)
-    roots = _drop_abandoned_root_prompts(roots, children, message_uuids, segments_by_owner)
+    roots = _drop_abandoned_root_prompts(
+        roots, [root_groups[id(root)] for root in roots], children, message_uuids, segments_by_owner
+    )
     chain: list[JsonEntry] = []
     visited: set[str] = set()
 

@@ -250,7 +250,7 @@
           "auth"
         ],
         "summary": "Auth Me",
-        "description": "Return the current authenticated user's profile.\n\nIncludes display identity (user_id, email, role), org context\n(organization_id, organization_name, memberships for multi-org\ncallers), and effective permission slugs. Explicit slugs are preserved;\nknown Watcher permissions granted implicitly to admins are included in\nboth WorkOS and proxy modes. The role is for display only: clients gate\ncontrols on permissions, matching the backend authorization policy.",
+        "description": "Return the current authenticated user's profile.\n\nIncludes display identity (user_id, email, role), org context\n(organization_id, organization_name, memberships for multi-org\ncallers), and effective permission slugs after organization policy;\nknown Watcher permissions granted by built-in roles are included in\nboth WorkOS and proxy modes. The role is for display only: clients gate\ncontrols on permissions, matching the backend authorization policy.",
         "operationId": "auth_me_v1_auth_me_get",
         "responses": {
           "200": {
@@ -755,7 +755,7 @@
           "grade"
         ],
         "summary": "Grade",
-        "description": "Grade trajectories with explicitly named graders.\n\nDB-backed grading is gated by session ownership: callers may only grade\nsessions they own, unless they hold ``sessions:write:any`` or administrator\nauthority. Flagged-grade Slack notifications are sent after the response,\nonly for DB-backed trajectory grading. Tool-call grading\n(``tool_call_run_kind``) persists the grade but does NOT notify here \u2014 its\nalert fires later, at decision ingest (``POST\n/v1/tool-call-decisions/batch``), once the coding agent and Analyzer link\nare known. Plain ephemeral grading never notifies.",
+        "description": "Grade trajectories with explicitly named graders.\n\nCallers may grade their own stored sessions. Grading another user's stored\nsession requires ``sessions:grade:any`` and access to that session's content.\nResults respect findings permissions. Grading supplied messages needs no\nsession-read grant; attaching tool-call results to a session requires write\nauthority. Flagged-grade Slack notifications are sent after the response,\nonly for DB-backed trajectory grading. Tool-call grading\n(``tool_call_run_kind``) persists the grade but does NOT notify here \u2014 its\nalert fires later, at decision ingest (``POST\n/v1/tool-call-decisions/batch``), once the coding agent and Analyzer link\nare known. Plain ephemeral grading never notifies.",
         "operationId": "grade_v1_grade_post",
         "requestBody": {
           "content": {
@@ -800,7 +800,7 @@
           "hooks"
         ],
         "summary": "Pre Tool Use Hook",
-        "description": "Evaluate one or several pending calls, or accept a transcript with no pending call.\n\nScalar input returns one decision or an HTTP refusal. A batch returns an\nordered result per input; a refused input carries status_code/detail while\nother inputs continue. Null or empty input returns an empty list and only\ningests the top-level `messages`. All inputs share one transcript, recorded\nonce along with successful judgments.\nDecisions attach to each input's `tool_use_id`. For evaluated requests,\n`ephemeral` skips transcript, decision, and grade persistence while retaining\nusage accounting. Enforce and observe both return completed judgments,\nincluding when ephemeral or the caller cannot record sessions.\n\n`settings_overrides` accepts YAML text or a JSON object and uses the normal\nadministrator permission rules. Locked settings reject any override with\nHTTP 422. The effective `enforcement.mode` selects enforcement, observation,\nor ingestion only. Observe returns the completed judgment with a deferred\napplied decision. Paused and unnamed calls do not evaluate; authorized\ncallers still record the transcript. HTTP 422 errors use a list of detail\nentries, including validation and settings overrides.\n\nThe caller enforces returned decisions; this endpoint does not execute or\nblock tools itself. Deterministic stages precede triage and gateway grading.\n`mode=triage_only` bounds grading depth, while `skip_rules` and\n`policy_version` support clients that already evaluated deterministic stages.\nStage waits are bounded in both enforce and observe, but detached grades\ncan finish and count usage after a timeout or disconnect.\nCallers own transport-failure handling.\n\nCompleted evaluations are reused per org, session and tool-use ID when the\nstored name and JSON arguments match. Current enforcement posture is applied\nto the original judgment; policy or grading-depth changes do not invalidate\nit. `force_regrade=true` evaluates again and permits replacing the recorded\ndecision, including with an observation. Failed and unjudged evaluations\nretry normally. Reuse requires known external IDs, ingestion authority and\npermission to read the resolved session; id-less, ephemeral and write-only\ncallers evaluate normally, as do unknown stored call metadata shapes.\nReuse creates no new grades, usage or alerts, though the transcript still\ningests. Concurrent misses and retries before post-response recording may\nevaluate more than once. Paused mode never evaluates, even when forced.\n\nWith `format=\"raw\"`, send a provider request (`request_body`) and its\ncomplete response (`response_body`) in one supported wire format (OpenAI\nChat Completions or Responses, Anthropic Messages, Gemini generateContent\nor Bedrock Converse) plus the client-facing endpoint path in `url`, instead\nof `messages` and `input`. Watcher converts the pair and evaluates the\nselected new client calls. The response is a list, one output per selected\ncall in response order; each `tool_use_id` is the provider's call ID.\nGemini calls get generated IDs and are matched by order within the selected\ncandidate. `response_index` selects by zero-based array position and is\nrequired when there are multiple alternatives. Deliver only the selected\nchoice or candidate. Match every\nexecutable client call to exactly one output before applying its decision.\nWithhold the response if a call has no output, IDs are duplicated, or an\noutput cannot be matched to a call. For Gemini, require equal call and output\ncounts. An error output is not permission to execute a call.\n\nAnthropic calls before the final `fallback` block have no output. An empty\nlist means no client calls were selected, not that the original response\ncontains none. There is no limit on the number of tool calls in one response.\nKnown coding harnesses are recognized from the request and `user_agent` and\ncontribute their session IDs. Their own helper requests without selected\nclient calls (Claude Code background requests, Codex thread titles,\napproval reviews and memory extraction, Antigravity titles) return `[]`\nand are not recorded. The gateway still checks those responses for\nexecutable calls.",
+        "description": "Evaluate one or several pending calls, or accept a transcript with no pending call.\n\nScalar input returns one decision or an HTTP refusal. A batch returns an\nordered result per input; a refused input carries status_code/detail while\nother inputs continue. Null or empty input returns an empty list and only\ningests the top-level `messages`. All inputs share one transcript, recorded\nonce along with successful judgments.\nDecisions attach to each input's `tool_use_id`. For evaluated requests,\n`ephemeral` skips transcript, decision, and grade persistence while retaining\nusage accounting. Enforce and observe both return completed judgments,\nincluding when ephemeral or the caller cannot record sessions.\n\nAn append cannot be ephemeral and requires authority to write its parent\nsession. It returns a HookAppendResponse containing the committed next\nanchor and an ordered results list, even for scalar or transcript-only\ninput. Messages and available decisions are stored before success; reuse\nthe returned anchor directly for the next append. Recording failure is\nHTTP 503 and can follow committed messages. Its body retains ordered\n`results`, including denies, without an `append_after` cursor. Apply those\ndecisions and retry the same append to finish recording.\n\n`settings_overrides` accepts YAML text or a JSON object and uses the normal\nadministrator permission rules. An override that changes a locked setting\nis refused with HTTP 422; one that repeats it is accepted. The effective `enforcement.mode` selects enforcement, observation,\nor ingestion only. Observe returns the completed judgment with a deferred\napplied decision. Paused and unnamed calls do not evaluate; authorized\ncallers still record the transcript. HTTP 422 errors use a list of detail\nentries, including validation and settings overrides.\n\nThe caller enforces returned decisions; this endpoint does not execute or\nblock tools itself. Deterministic stages precede triage and gateway grading.\n`mode=triage_only` bounds grading depth, while `skip_rules` and\n`policy_version` support clients that already evaluated deterministic stages.\nStage waits are bounded in both enforce and observe, but detached grades\ncan finish and count usage after a timeout or disconnect.\nCallers own transport-failure handling.\n\nCompleted evaluations are reused per org, session and tool-use ID when the\nstored name and JSON arguments match. Current enforcement posture is applied\nto the original judgment; policy or grading-depth changes do not invalidate\nit. `force_regrade=true` evaluates again and permits replacing the recorded\ndecision, including with an observation. Failed and unjudged evaluations\nretry normally. Reuse requires known external IDs, ingestion authority and\npermission to read the resolved session; id-less, ephemeral and write-only\ncallers evaluate normally, as do unknown stored call metadata shapes.\nReuse creates no new grades, usage or alerts, though the transcript still\ningests. Concurrent misses and retries before post-response recording may\nevaluate more than once. Paused mode never evaluates, even when forced.\n\nWith `format=\"raw\"`, send a provider request (`request_body`) and its\ncomplete response (`response_body`) in one supported wire format (OpenAI\nChat Completions or Responses, Anthropic Messages, Gemini generateContent\nor Bedrock Converse) plus the client-facing endpoint path in `url`, instead\nof `messages` and `input`. Watcher converts the pair and evaluates the\nselected new client calls. The response is a list, one output per selected\ncall in response order; each `tool_use_id` is the provider's call ID.\nGemini calls get generated IDs and are matched by order within the selected\ncandidate. `response_index` selects by zero-based array position and is\nrequired when there are multiple alternatives. Deliver only the selected\nchoice or candidate. Match every\nexecutable client call to exactly one output before applying its decision.\nWithhold the response if a call has no output, IDs are duplicated, or an\noutput cannot be matched to a call. For Gemini, require equal call and output\ncounts. An error output is not permission to execute a call.\n\nAnthropic calls before the final `fallback` block have no output. An empty\nlist means no client calls were selected, not that the original response\ncontains none. There is no limit on the number of tool calls in one response.\nKnown coding harnesses are recognized from the request and `user_agent` and\ncontribute their session IDs. Their own helper requests without selected\nclient calls (Claude Code background requests, Codex thread titles,\napproval reviews and memory extraction, Antigravity titles) return `[]`\nand are not recorded. The gateway still checks those responses for\nexecutable calls.",
         "operationId": "pre_tool_use_hook_v1_hooks_pre_tool_use_post",
         "requestBody": {
           "content": {
@@ -811,6 +811,12 @@
                     "$ref": "#/components/schemas/PreToolUseHookRequest"
                   },
                   {
+                    "$ref": "#/components/schemas/ClaudeCodeHookRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CodexHookRequest"
+                  },
+                  {
                     "$ref": "#/components/schemas/RawPreToolUseHookRequest"
                   }
                 ],
@@ -819,6 +825,8 @@
                   "propertyName": "format",
                   "mapping": {
                     "watcher": "#/components/schemas/PreToolUseHookRequest",
+                    "claude-code-jsonl": "#/components/schemas/ClaudeCodeHookRequest",
+                    "codex-jsonl": "#/components/schemas/CodexHookRequest",
                     "raw": "#/components/schemas/RawPreToolUseHookRequest"
                   }
                 }
@@ -834,6 +842,9 @@
               "application/json": {
                 "schema": {
                   "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HookAppendResponse"
+                    },
                     {
                       "$ref": "#/components/schemas/PreToolUseHookResponse"
                     },
@@ -856,8 +867,17 @@
               }
             }
           },
+          "404": {
+            "description": "The append session or anchor is missing or outside the caller's write scope"
+          },
+          "409": {
+            "description": "The append cannot continue this anchor (detail.code: anchor_conflict)"
+          },
           "413": {
             "description": "The request body exceeds the endpoint's size limit"
+          },
+          "503": {
+            "description": "Append messages committed but decision recording failed (detail.code: append_recording_failed). The body retains ordered results, including denies, but no append_after cursor."
           },
           "422": {
             "description": "Validation Error",
@@ -951,7 +971,7 @@
           "monitors"
         ],
         "summary": "Grade By Monitor",
-        "description": "Grade with the monitor serving ``role`` \u2014 no grader UUID, model, or prompt client-side.\n\nEphemeral ``messages`` grades persist as tool-call audit rows under the\nrole's run kind (``policy_triage``/``policy_gateway``) and return a\n``tool_call_grade_id`` per result, exactly like a UUID-addressed tool-call\ngrade. DB-backed grading (``trajectory_ids`` + ``session_id``) follows the\nsame ownership/cap/allowance rules as ``/v1/grade``.\n\nResponses omit ``model``: which model a monitor runs is a server-side\npolicy choice, not part of the client contract.",
+        "description": "Grade with the monitor serving ``role`` \u2014 no grader UUID, model, or prompt client-side.\n\nEphemeral ``messages`` grades persist as tool-call audit rows under the\nrole's run kind (``policy_triage``/``policy_gateway``) and return a\n``tool_call_grade_id`` per result, exactly like a UUID-addressed tool-call\ngrade. DB-backed grading (``trajectory_ids`` + ``session_id``) requires\nownership or ``sessions:grade:any``; content access is not required to run\na server-managed monitor. Results respect findings and content permissions. Supplied-message\ngrades require session write authority when attached to a session.\nBoth modes enforce grading caps and usage allowances.\n\nResponses omit ``model``: which model a monitor runs is a server-side\npolicy choice, not part of the client contract.",
         "operationId": "grade_by_monitor_v1_monitors__role__grade_post",
         "parameters": [
           {
@@ -1073,7 +1093,7 @@
           "sessions"
         ],
         "summary": "List Sessions Endpoint",
-        "description": "List all sessions with pagination and sort. For filtered queries use POST /sessions/search.\n\nCallers without ``sessions:read:any`` see only their own sessions\n(naming another user in ``user_id`` returns 403).",
+        "description": "List all sessions with pagination and sort. For filtered queries use POST /sessions/search.\n\nCallers without ``sessions:findings:read:any`` see only their own sessions\n(naming another user in ``user_id`` returns 403).",
         "operationId": "list_sessions_endpoint_v1_sessions_get",
         "parameters": [
           {
@@ -1211,7 +1231,7 @@
           "sessions"
         ],
         "summary": "Get Session Aggregates Endpoint",
-        "description": "Return aggregate session metrics.",
+        "description": "Return organization-wide aggregate session metrics, optionally filtered by owner.\n\nRequires ``sessions:aggregates:read:any`` through a role or credential grant,\nincluding when filtering to the caller's own ``user_id``. Otherwise returns HTTP 403.",
         "operationId": "get_session_aggregates_endpoint_v1_sessions_aggregates_get",
         "parameters": [
           {
@@ -1463,13 +1483,66 @@
         }
       }
     },
+    "/v1/sessions/{session_id}/tool-call-decision": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Session Tool Call Decision",
+        "description": "Read one tool call's decision and full grader outputs with findings access.\n\nOwnership or ``sessions:findings:read:any`` is required. Raw tool arguments\nand grading-input messages are always empty; their content is available only\nthrough transcript reads. ``has_result`` reports only whether a response was\nrecorded for the call. Returns 404 for inaccessible, missing, or scrubbed\nsessions and missing decisions. ``tool_use_id`` is a query parameter because\ntranscript-local IDs can contain characters such as slashes and ``#``.",
+        "operationId": "get_session_tool_call_decision_v1_sessions__session_id__tool_call_decision_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "tool_use_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Tool Use Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCallFindingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/sessions/{session_id}/trajectories/{trajectory_id}": {
       "get": {
         "tags": [
           "sessions"
         ],
         "summary": "Get Session Trajectory Detail",
-        "description": "Get full trajectory detail within a session. 404 for sessions the caller can't read.\n\nThe ``view`` parameter picks the payload shape and defaults to ``truncated``,\nwhich caps tool outputs and user pastes and stubs out ``data`` content blocks,\nleaving marker fields (``content_truncated``, ``content_original_chars``) so\nclients can offer a full fetch. Callers that need storage-faithful message\ncontent must explicitly request ``extended``.\n\nThe literal trajectory id ``latest`` resolves server-side to the session's\nmost recent trajectory (the response carries the resolved id), so\nsession-scoped links can load a transcript in a single request. 404 when\nthe session has no trajectories.\n\nReturns at most one grade: the most recent non-errored grade recorded\nanywhere on the requested trajectory's hash chain (a grade is stored\nagainst the trajectory hash current when it ran, so earlier grades sit on\nprefix hashes). A trajectory whose chain was never graded falls back to\nthe session's most recent grade, so a graded session never presents as\nungraded; errored grades are returned only when nothing else exists.\n\nExtended-thinking signatures (opaque replay payloads inside reasoning content\nblocks) are omitted from message content to keep responses small; the readable\nreasoning text is unaffected.",
+        "description": "Get trajectory content through ownership, ``sessions:content:read:any``, or an active session content approval.\n\nReturn 404 when content is inaccessible or scrubbed. Session grades and\ntool-call decisions are included only with findings access; session summaries\nremain available with content access alone.\n\nThe ``view`` parameter picks the payload shape and defaults to ``truncated``,\nwhich caps tool outputs and user pastes and stubs out ``data`` content blocks,\nleaving marker fields (``content_truncated``, ``content_original_chars``) so\nclients can offer a full fetch. Callers that need storage-faithful message\ncontent must explicitly request ``extended``.\n\nThe literal trajectory id ``latest`` resolves server-side to the session's\nmost recent trajectory (the response carries the resolved id), so\nsession-scoped links can load a transcript in a single request. 404 when\nthe session has no trajectories.\n\nReturns at most one grade: the most recent non-errored grade recorded\nanywhere on the requested trajectory's hash chain (a grade is stored\nagainst the trajectory hash current when it ran, so earlier grades sit on\nprefix hashes). A trajectory whose chain was never graded falls back to\nthe session's most recent grade, so a graded session never presents as\nungraded; errored grades are returned only when nothing else exists.\n\nExtended-thinking signatures (opaque replay payloads inside reasoning content\nblocks) are omitted from message content to keep responses small; the readable\nreasoning text is unaffected.",
         "operationId": "get_session_trajectory_detail_v1_sessions__session_id__trajectories__trajectory_id__get",
         "parameters": [
           {
@@ -1530,7 +1603,7 @@
           "sessions"
         ],
         "summary": "Get Session Message",
-        "description": "Get one message's full stored content by its ``message_ref``.\n\nBacks per-elision expansion: the truncated trajectory view marks what it\nelided and carries each message's ``message_ref``; this endpoint returns\nthat single message with full content, so expanding one item never\nrefetches (or renders) the whole trajectory. There is no ``view`` param \u2014\nthe truncated form is what the trajectory response already provides.\nExtended-thinking replay payloads are stripped like every other read path.\n\n404 for sessions the caller can't read and for refs not in the session.",
+        "description": "Get one message's full stored content by its ``message_ref``.\n\nBacks per-elision expansion: the truncated trajectory view marks what it\nelided and carries each message's ``message_ref``; this endpoint returns\nthat single message with full content, so expanding one item never\nrefetches (or renders) the whole trajectory. There is no ``view`` param \u2014\nthe truncated form is what the trajectory response already provides.\nExtended-thinking replay payloads are stripped like every other read path.\n\nRequires ownership, ``sessions:content:read:any``, or an active session content\napproval. Returns 404 for inaccessible or scrubbed content and for refs not in the session.",
         "operationId": "get_session_message_v1_sessions__session_id__messages__message_ref__get",
         "parameters": [
           {
@@ -1582,7 +1655,7 @@
           "sessions"
         ],
         "summary": "Request Session Deep Review",
-        "description": "Queue a deep review of the session's latest transcript, or return the one already queued.\n\nRepeating the request for an unchanged transcript returns the same operation.\nIf that review failed, a fresh attempt is queued. 402 when the organization\nis over its monthly grading cap.",
+        "description": "Queue a deep review of the session's latest transcript, or return the one already queued.\n\nRequires ownership or ``sessions:grade:any``, without requiring content access.\nRepeating the request for an unchanged transcript returns the same operation.\nIf that review failed, a fresh attempt is queued. 402 when the organization\nis over its monthly grading cap.",
         "operationId": "request_session_deep_review_v1_sessions__session_id__deep_review_post",
         "parameters": [
           {
@@ -1722,7 +1795,7 @@
           "tool-calls"
         ],
         "summary": "Search Tool Calls Endpoint",
-        "description": "Search tool calls with filtering, pagination, and sort.\n\nRead scope matches the sessions list exactly: a caller holding\n``sessions:read:any`` sees the whole organization and may filter by any owner,\nwhile everyone else is confined to their own calls and naming somebody else is\nrefused rather than silently answered about themselves.\n\nOnly calls Watcher recorded a decision about are listed, which is the same\npopulation the dashboard's tool-call counts are computed over.",
+        "description": "Search tool calls with filtering, pagination, and sort.\n\nRead scope matches the sessions list exactly: a caller holding\n``sessions:findings:read:any`` sees the whole organization and may filter by any owner,\nwhile everyone else is confined to their own calls and naming somebody else is\nrefused rather than silently answered about themselves.\n\nOnly calls Watcher recorded a decision about are listed, which is the same\npopulation the dashboard's tool-call counts are computed over.",
         "operationId": "search_tool_calls_endpoint_v1_tool_calls_search_post",
         "requestBody": {
           "content": {
@@ -2295,6 +2368,146 @@
         }
       }
     },
+    "/v1/users/me/session-content-access-requests": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List My Session Content Access Requests",
+        "description": "List only the signed-in user's access requests in their current organization.\n\nAdmins also receive only their own requests. No session-read permission is\nrequired. Service credentials without a user identity receive HTTP 401.\nResults are newest first; status filters use the stored review decision,\nso approved requests include those whose ``valid_until`` has passed.\n``active_only`` limits results to pending requests and currently valid approvals.",
+        "operationId": "list_my_session_content_access_requests_v1_users_me_session_content_access_requests_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SessionContentAccessRequestStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Active Only"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionContentAccessRequestListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create My Session Content Access Request",
+        "description": "Request content access to a known session in the caller's organization.\n\nReturns the existing request on repeated submissions while pending. No\nfindings grant is required. Missing, foreign, or scrubbed sessions return\n404; already-readable content returns 409. Credentials must identify a user.",
+        "operationId": "create_my_session_content_access_request_v1_users_me_session_content_access_requests_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionContentAccessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionContentAccessRequestSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/users": {
       "get": {
         "tags": [
@@ -2394,6 +2607,196 @@
           }
         }
       }
+    },
+    "/v1/session-content-access-requests": {
+      "get": {
+        "tags": [
+          "session-content-access-requests"
+        ],
+        "summary": "List Session Content Access Requests",
+        "description": "List requests from all users in the current organization, newest first.\n\nRequires ``sessions:access-requests:review``, included in the admin role.\nRepeat ``status`` to include multiple decisions. Approved results include\nexpired approvals. ``view`` selects pending requests, active approvals, or\nhistorical (denied, revoked or expired) requests using database time. Filters combine;\npending/active counts always cover the organization. Identities are included, never content.",
+        "operationId": "list_session_content_access_requests_v1_session_content_access_requests_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionContentAccessRequestStatus"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SessionContentAccessRequestView"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "View"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSessionContentAccessRequestListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/session-content-access-requests/{request_id}": {
+      "patch": {
+        "tags": [
+          "session-content-access-requests"
+        ],
+        "summary": "Review Session Content Access Request Endpoint",
+        "description": "Approve or deny a pending request, including your own.\n\nRequires ``sessions:access-requests:review`` and a signed-in user identity.\nApproval lasts eight hours unless a shorter, timezone-aware ``valid_until``\nis supplied. Expiries must be in the future and at most eight hours after\nreview (422). A completed decision cannot be changed (409). Missing or\nforeign requests return 404; scrubbed content cannot be approved (409).",
+        "operationId": "review_session_content_access_request_endpoint_v1_session_content_access_requests__request_id__patch",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewSessionContentAccessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionContentAccessRequestSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/session-content-access-requests/{request_id}/revoke": {
+      "post": {
+        "tags": [
+          "session-content-access-requests"
+        ],
+        "summary": "Revoke Session Content Access Request Endpoint",
+        "description": "Revoke an active approval, preserving its original review and expiry.\n\nRequires ``sessions:access-requests:review`` and a signed-in user identity.\nMissing or foreign requests return 404. Pending, denied, expired, or already\nrevoked requests return 409. The server records the revoker and revocation time.",
+        "operationId": "revoke_session_content_access_request_endpoint_v1_session_content_access_requests__request_id__revoke_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionContentAccessRequestSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2460,6 +2863,146 @@
         ],
         "title": "ActivatedMonitorsResponse",
         "description": "Response for GET /v1/organization/managed-settings/{path}/monitors.\n\nA read-only projection of which custom or managed monitors the current\ndocument activates. Consumed by the Analyzer's Monitors and Managed\nSettings pages. Managed identities describe current-client routing, not\nobserved fleet activity.\n\n`monitors` is populated only when the org distributes via Watcher: under MDM\nthe stored document is not what runs on machines, so rollout cannot be\nasserted and the list is empty. `distribution` is included so the response is\nself-interpreting (an empty list means \"nothing activated\" under `watcher`\nbut \"not applicable\" under `mdm`). `version` is the document version the list\nwas computed from (0 when none saved)."
+      },
+      "AdminSessionContentAccessRequest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "requested_session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Requested Session Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionContentAccessRequestStatus"
+          },
+          "raised_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Raised At"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "requesting_user": {
+            "$ref": "#/components/schemas/UserListItem"
+          },
+          "reviewed_by_user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserListItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revoked_by_user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserListItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "requested_session_id",
+          "status",
+          "raised_at",
+          "reviewed_at",
+          "valid_until",
+          "revoked_at",
+          "requesting_user",
+          "reviewed_by_user",
+          "revoked_by_user"
+        ],
+        "title": "AdminSessionContentAccessRequest",
+        "description": "An organization request with its requester, reviewer, and revoker identities."
+      },
+      "AdminSessionContentAccessRequestListResponse": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/AdminSessionContentAccessRequest"
+            },
+            "type": "array",
+            "title": "Requests"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "pending_count": {
+            "type": "integer",
+            "title": "Pending Count",
+            "description": "Pending requests in the organization, independent of list filters."
+          },
+          "active_count": {
+            "type": "integer",
+            "title": "Active Count",
+            "description": "Currently valid approvals in the organization, independent of list filters."
+          }
+        },
+        "type": "object",
+        "required": [
+          "requests",
+          "total",
+          "limit",
+          "offset",
+          "pending_count",
+          "active_count"
+        ],
+        "title": "AdminSessionContentAccessRequestListResponse",
+        "description": "A page of organization requests, ordered newest first."
       },
       "ApertureHookAccepted": {
         "properties": {
@@ -2699,6 +3242,16 @@
             "type": "string",
             "title": "Session Id"
           },
+          "can_read_findings": {
+            "type": "boolean",
+            "title": "Can Read Findings",
+            "description": "Whether this caller may read this session's findings."
+          },
+          "can_read_content": {
+            "type": "boolean",
+            "title": "Can Read Content",
+            "description": "Whether this caller may read this session's content. Scrubbed messages remain unavailable."
+          },
           "agent_platform": {
             "type": "string",
             "title": "Agent Platform",
@@ -2843,6 +3396,8 @@
         "type": "object",
         "required": [
           "session_id",
+          "can_read_findings",
+          "can_read_content",
           "agent_platform",
           "started_at",
           "ended_at",
@@ -3019,7 +3574,8 @@
                 "type": "null"
               }
             ],
-            "title": "Tool Input Preview"
+            "title": "Tool Input Preview",
+            "description": "Raw tool-argument preview; null without content access to the session."
           },
           "decision_summary": {
             "anyOf": [
@@ -3808,6 +4364,147 @@
         "title": "ClaudeCodeEntry",
         "description": "One entry from a Claude Code JSONL file.\n\nThe JSONL contains many types: user, assistant, file-history-snapshot,\nprogress, system, summary, attachment. We accept all types and filter to\nconversation-carrying entries (user/assistant with messages, plus\nqueued-command attachments) during chain building."
       },
+      "ClaudeCodeHookRequest": {
+        "properties": {
+          "append_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Append messages after this exact stored session/trajectory anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered results. Retry once with the full transcript and without append_after on 404, 409, or 422."
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringInput"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MonitoringInput"
+                },
+                "type": "array",
+                "maxItems": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "full",
+              "triage_only"
+            ],
+            "title": "Mode",
+            "default": "full"
+          },
+          "external_ids": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "propertyNames": {
+                  "$ref": "#/components/schemas/ExternalIdSource"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ids",
+            "description": "Distinct conversation IDs from the harness and gateway, keyed by source. Required unless ephemeral is true; send every id you have, e.g. {\"claude_code\": \"<Claude Code session uuid>\", \"other\": \"<your own conversation id>\"}. The keys also name the harness. A caller with no id at all records id-less by sending an explicit null value, e.g. {\"other\": null} or {\"claude_code\": null}: the session is then found by transcript prefix. With append_after the explicit anchor selects the session; any non-null external IDs must already belong to that session."
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "ephemeral": {
+            "type": "boolean",
+            "title": "Ephemeral",
+            "default": false
+          },
+          "force_regrade": {
+            "type": "boolean",
+            "title": "Force Regrade",
+            "description": "Evaluate again even when this session and tool-use ID have a completed judgment. The new result may replace the recorded decision, including in observe mode. Otherwise a readable completed judgment with matching tool arguments is reused, regardless of policy version, under the current enforcement posture.",
+            "default": false
+          },
+          "skip_rules": {
+            "type": "boolean",
+            "title": "Skip Rules",
+            "default": false
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          },
+          "settings_overrides": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 65536
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings Overrides",
+            "description": "Per-request settings as YAML or a JSON object; at most 65,536 characters of YAML or serialized JSON. Administrator permission locks apply."
+          },
+          "format": {
+            "type": "string",
+            "const": "claude-code-jsonl",
+            "title": "Format"
+          },
+          "messages": {
+            "$ref": "#/components/schemas/ClaudeCodeTrajectory",
+            "description": "The Claude Code session file as JSONL entries (or only those after append_after), in the shape trajectory ingestion accepts."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "format",
+          "messages"
+        ],
+        "title": "ClaudeCodeHookRequest",
+        "description": "Judge pending calls with a Claude Code session's own JSONL transcript as their context.\n\n``messages`` holds the session file's entries, or only those after\n``append_after``. Claude Code's hooks report every call with its\n``tool_use_id`` and in the shape the model sent it, so a selected call is\nchecked against the file's record of that ID when the file holds it, and\njudged from the report alone when the agent has not written it yet."
+      },
       "ClaudeCodeTrajectory": {
         "properties": {
           "timestamp": {
@@ -3991,6 +4688,147 @@
         "type": "object",
         "title": "CodexGitInfo",
         "description": "Git info from a session_meta payload. Empty when the cwd isn't a git checkout."
+      },
+      "CodexHookRequest": {
+        "properties": {
+          "append_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Append messages after this exact stored session/trajectory anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered results. Retry once with the full transcript and without append_after on 404, 409, or 422."
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringInput"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MonitoringInput"
+                },
+                "type": "array",
+                "maxItems": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "full",
+              "triage_only"
+            ],
+            "title": "Mode",
+            "default": "full"
+          },
+          "external_ids": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "propertyNames": {
+                  "$ref": "#/components/schemas/ExternalIdSource"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ids",
+            "description": "Distinct conversation IDs from the harness and gateway, keyed by source. Required unless ephemeral is true; send every id you have, e.g. {\"claude_code\": \"<Claude Code session uuid>\", \"other\": \"<your own conversation id>\"}. The keys also name the harness. A caller with no id at all records id-less by sending an explicit null value, e.g. {\"other\": null} or {\"claude_code\": null}: the session is then found by transcript prefix. With append_after the explicit anchor selects the session; any non-null external IDs must already belong to that session."
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "ephemeral": {
+            "type": "boolean",
+            "title": "Ephemeral",
+            "default": false
+          },
+          "force_regrade": {
+            "type": "boolean",
+            "title": "Force Regrade",
+            "description": "Evaluate again even when this session and tool-use ID have a completed judgment. The new result may replace the recorded decision, including in observe mode. Otherwise a readable completed judgment with matching tool arguments is reused, regardless of policy version, under the current enforcement posture.",
+            "default": false
+          },
+          "skip_rules": {
+            "type": "boolean",
+            "title": "Skip Rules",
+            "default": false
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          },
+          "settings_overrides": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 65536
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings Overrides",
+            "description": "Per-request settings as YAML or a JSON object; at most 65,536 characters of YAML or serialized JSON. Administrator permission locks apply."
+          },
+          "format": {
+            "type": "string",
+            "const": "codex-jsonl",
+            "title": "Format"
+          },
+          "messages": {
+            "$ref": "#/components/schemas/CodexTrajectory",
+            "description": "The Codex rollout as JSONL entries (or only those after append_after), in the shape trajectory ingestion accepts."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "format",
+          "messages"
+        ],
+        "title": "CodexHookRequest",
+        "description": "Judge pending calls with a Codex rollout as their context.\n\n``messages`` holds the rollout's entries, or only those after\n``append_after``. Codex's hooks report a shell call as ``Bash`` and leave\nout how it runs (its working directory, sandbox escalation), so each\nselected call must name its ``tool_use_id`` (the rollout's ``call_id``),\nand the rollout's record of that call supplies those details. A call\nwithout an ID, or one the rollout does not hold, is never allowed\nautomatically."
       },
       "CodexLocalShellAction": {
         "properties": {
@@ -4876,6 +5714,17 @@
               }
             ],
             "title": "Citations"
+          },
+          "cache_breakpoint": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Breakpoint"
           }
         },
         "type": "object",
@@ -5116,6 +5965,32 @@
         ],
         "title": "CreateGraderRequest",
         "description": "Request body for POST /v1/graders."
+      },
+      "CreateSessionContentAccessRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "title": "CreateSessionContentAccessRequest",
+        "description": "Request content access to a known session; identity comes from authentication."
+      },
+      "DecidedBy": {
+        "type": "string",
+        "enum": [
+          "person",
+          "agent_review",
+          "interrupt"
+        ],
+        "title": "DecidedBy",
+        "description": "Who settled a call once Watcher handed it on, as the uploading client recorded it.\n\n``PERSON`` is a person answering a permission prompt: Watcher's own, or the host agent's\nnative prompt when the agent reported that a person answers it. ``AGENT_REVIEW`` is the\nhost agent's automated approval reviewer answering its native prompt (Codex's \"Approve for\nme\"), so the call's outcome is in ``tool_status`` and there is no ``human_decision``.\n``INTERRUPT`` is the person interrupting the turn before the call was answered, which\nleaves the call ``cancelled``. That includes a turn interrupted while Watcher was still\ngrading, which Watcher records as its own deny.\n\nNULL when the call is still unsettled, when the client cannot tell who answered (a host\nthat does not say who answers its native prompt), and on rows from clients that predate the\nfield. Readers then infer the actor from ``human_decision`` and ``tool_status``.\n\nRely on it only for escalations. Outside them a value can sit beside Watcher's own verdict:\nthe interrupted-while-grading deny above, and the hook path's pending-response merge, which\nkeeps a stored value when a later verdict replaces the row's decision."
       },
       "DecisionSource": {
         "type": "string",
@@ -5536,6 +6411,18 @@
             "type": "array",
             "title": "Not Found Ids",
             "default": []
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd",
+            "description": "Estimated USD cost of this request, including retries with reported usage, at prices set on the server. Null for UUID-addressed grading, missing usage or pricing, or stored-session grading without findings or content read access to that session. Otherwise zero when no model is called. Provider attempts whose usage is hidden by the provider client cannot be included."
           }
         },
         "type": "object",
@@ -5543,7 +6430,7 @@
           "grades"
         ],
         "title": "GradeResponse",
-        "description": "Response from POST /v1/grade."
+        "description": "Results from UUID-addressed or role-addressed grading.\n\nRole grading also reports the cost across every trajectory and retry in\nthis request. Only the selected role runs: an input triage assessment is\nnot another billed stage. Stored-session cost requires findings or content\nread access to that session. UUID-addressed grading leaves cost unknown.\nOlder servers omit the field, so clients must accept an absent value."
       },
       "GradeResult": {
         "properties": {
@@ -5655,7 +6542,7 @@
           "grades"
         ],
         "title": "GradeResult",
-        "description": "API representation of a trajectory grade.\n\nDB-backed grades include trajectory and session identifiers. Ephemeral\ngrades omit persisted trajectory identifiers and use ``trajectory_index`` to\nidentify the trajectory's position in the request.\n\nCallers can resolve ``(grader_id, grader_version)`` to the exact grader\nconfiguration used via GET /v1/graders/{grader_id}/{version}."
+        "description": "API representation of a trajectory grade.\n\nDB-backed grades include trajectory and session identifiers. Ephemeral\ngrades omit persisted trajectory identifiers and use ``trajectory_index`` to\nidentify the trajectory's position in the request.\n\nStored session summaries (including nested report summaries) require content\naccess. Mixed read responses omit fields outside the caller's read permissions.\n\nCallers can resolve ``(grader_id, grader_version)`` to the exact grader\nconfiguration used via GET /v1/graders/{grader_id}/{version}."
       },
       "GraderDetail": {
         "properties": {
@@ -5999,6 +6886,21 @@
           "message": {
             "type": "string",
             "title": "Message"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "triage",
+                  "gateway"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
           }
         },
         "type": "object",
@@ -6007,7 +6909,7 @@
           "message"
         ],
         "title": "GradingFailure",
-        "description": "Why a graded stage could not decide, when the org's failure policy answered instead.\n\n`code` is the stable vocabulary to branch and alert on \u2014 each value calls\nfor a different remedy (a larger caller budget or `triage_only` for\n`timeout`, server capacity for `at_capacity`, a raised allowance for\n`allowance_exhausted`, an outage for `grader_failed` and `no_result`).\n`message` is human-readable and may change between releases."
+        "description": "Why a graded stage could not decide, when the org's failure policy answered instead.\n\n`code` is the stable vocabulary to branch and alert on \u2014 each value calls\nfor a different remedy (a larger caller budget or `triage_only` for\n`timeout`, server capacity for `at_capacity`, a raised allowance for\n`allowance_exhausted`, an outage for `grader_failed` and `no_result`).\n`message` is human-readable and may change between releases. `stage` is\nthe graded stage that failed, so a caller that pauses a failing stage\n(the Watcher client's gateway breaker) does not blame the gateway for a\ntriage failure."
       },
       "GradingUsageBreakdownRow": {
         "properties": {
@@ -6427,6 +7329,57 @@
         ],
         "title": "HealthResponse",
         "description": "Response from GET /v1/health."
+      },
+      "HookAppendAnchor": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "trajectory_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Trajectory Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "trajectory_id"
+        ],
+        "title": "HookAppendAnchor",
+        "description": "The exact stored message after which a hook's delta begins.\n\nObtain the first pair from session search or trajectory ingestion, then use\nthe committed anchor returned by each successful hook append. An\nexplicit session and trajectory disambiguate branches; the server never\nguesses which leaf the caller observed. A missing anchor returns 404 and\na conflicting continuation returns 409. Retry once with the full transcript\nand without this field on 404, 409, or 422 (including older servers)."
+      },
+      "HookAppendResponse": {
+        "properties": {
+          "append_after": {
+            "$ref": "#/components/schemas/HookAppendAnchor"
+          },
+          "results": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PreToolUseHookResponse"
+                },
+                {
+                  "$ref": "#/components/schemas/HookCallError"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "append_after",
+          "results"
+        ],
+        "title": "HookAppendResponse",
+        "description": "A committed append anchor and its ordered per-call results.\n\nUse ``append_after`` directly in the next append request; it identifies\nthe last stored message from this request, not a tentative write or a\nserver-selected latest branch. An empty delta echoes its input anchor.\nMessages and available decisions are recorded before this response. Stage\ngrades that exceeded their wait deadline may still finish afterwards.\n``results`` is always a list, including for scalar input, and is empty for\ntranscript-only ingestion. Another writer can still advance the chain\nbefore the next request, which then uses the normal conflict recovery."
       },
       "HookCallError": {
         "properties": {
@@ -7184,6 +8137,16 @@
             "title": "Slack Webhook Managed",
             "default": false
           },
+          "slack_alert_detail": {
+            "type": "string",
+            "enum": [
+              "full",
+              "findings_only"
+            ],
+            "title": "Slack Alert Detail",
+            "description": "Slack alert detail level. Findings-only alerts include findings and aggregates, excluding session content.",
+            "default": "full"
+          },
           "session_content_retention_days": {
             "anyOf": [
               {
@@ -7205,13 +8168,18 @@
               "mdm"
             ],
             "title": "Settings Distribution"
+          },
+          "restrict_cross_user_session_content": {
+            "type": "boolean",
+            "title": "Restrict Cross User Session Content"
           }
         },
         "type": "object",
         "required": [
           "organization_id",
           "name",
-          "settings_distribution"
+          "settings_distribution",
+          "restrict_cross_user_session_content"
         ],
         "title": "OrgSettings",
         "description": "Response from GET /v1/org/settings.\n\nThe Slack webhook URL is write-only: responses expose only the\n`slack_webhook_configured` flag and `slack_webhook_hint` (the URL's\nlast 4 characters, for confirming which webhook is set), never the\nfull URL.\n\n`slack_webhook_managed` is True when the deployment supplies the webhook\nURL through the `SLACK_WEBHOOK_URL` environment variable. That value takes\nprecedence over anything stored per organization, so the configured flag\nand hint then describe the deployment's URL, and the settings API refuses\nwrites to `slack_webhook_url`."
@@ -7317,6 +8285,21 @@
             ],
             "title": "Slack Webhook Url"
           },
+          "slack_alert_detail": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "findings_only"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Alert Detail"
+          },
           "session_content_retention_days": {
             "anyOf": [
               {
@@ -7345,6 +8328,17 @@
               }
             ],
             "title": "Settings Distribution"
+          },
+          "restrict_cross_user_session_content": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restrict Cross User Session Content"
           }
         },
         "additionalProperties": false,
@@ -7404,10 +8398,16 @@
       },
       "PreToolUseHookRequest": {
         "properties": {
-          "format": {
-            "type": "string",
-            "const": "watcher",
-            "title": "Format"
+          "append_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Append messages after this exact stored session/trajectory anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered results. Retry once with the full transcript and without append_after on 404, 409, or 422."
           },
           "input": {
             "anyOf": [
@@ -7426,34 +8426,6 @@
               }
             ],
             "title": "Input"
-          },
-          "messages": {
-            "anyOf": [
-              {
-                "items": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/ChatMessageSystem"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ChatMessageUser"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ChatMessageAssistant"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ChatMessageTool"
-                    }
-                  ]
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Messages",
-            "description": "Shared conversation transcript. Required for zero or multiple inputs; a scalar or single-item list may supply input.messages instead."
           },
           "mode": {
             "type": "string",
@@ -7487,7 +8459,7 @@
               }
             ],
             "title": "External Ids",
-            "description": "Distinct conversation IDs from the harness and gateway, keyed by source. Required unless ephemeral is true; send every id you have, e.g. {\"claude_code\": \"<Claude Code session uuid>\", \"other\": \"<your own conversation id>\"}. The keys also name the harness. A caller with no id at all records id-less by sending an explicit null value, e.g. {\"other\": null} or {\"claude_code\": null}: the session is then found by transcript prefix."
+            "description": "Distinct conversation IDs from the harness and gateway, keyed by source. Required unless ephemeral is true; send every id you have, e.g. {\"claude_code\": \"<Claude Code session uuid>\", \"other\": \"<your own conversation id>\"}. The keys also name the harness. A caller with no id at all records id-less by sending an explicit null value, e.g. {\"other\": null} or {\"claude_code\": null}: the session is then found by transcript prefix. With append_after the explicit anchor selects the session; any non-null external IDs must already belong to that session."
           },
           "user": {
             "anyOf": [
@@ -7545,6 +8517,39 @@
             ],
             "title": "Settings Overrides",
             "description": "Per-request settings as YAML or a JSON object; at most 65,536 characters of YAML or serialized JSON. Administrator permission locks apply."
+          },
+          "format": {
+            "type": "string",
+            "const": "watcher",
+            "title": "Format"
+          },
+          "messages": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ChatMessageSystem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ChatMessageUser"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ChatMessageAssistant"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ChatMessageTool"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Messages",
+            "description": "Shared conversation transcript, or only new messages when append_after is set. Required for zero or multiple inputs; a scalar or single-item list may supply input.messages instead."
           }
         },
         "additionalProperties": false,
@@ -7553,7 +8558,7 @@
           "format"
         ],
         "title": "PreToolUseHookRequest",
-        "description": "Evaluate pending tool calls or ingest a transcript through the generic hook.\n\nSend the conversation once in `messages` and select pending calls with\n`input`. A scalar input returns one response; a list returns one outcome\nper input in the same order, including each input's `tool_use_id`. Null,\nomitted, or empty-list input ingests the transcript without grading or\nwriting decisions and returns an empty list, regardless of enforcement mode.\nNamed observe calls return completed judgments with a deferred applied\ndecision. Enforce and observe support ephemeral evaluation and evaluation\nwithout session-write permission; recording requires that permission.\nAll calls share one transcript, which is ingested once when recording is enabled.\n\nInput lists accept at most 32 items, including blank or ephemeral inputs.\nLarger lists are rejected with HTTP 422 before ingestion or grading.\nBatches with multiple inputs require top-level `messages`. Their inputs\nmust omit `messages` or supply null or an empty list, so the transcript is\nsent only once. Scalars and single-item lists may supply `input.messages`;\nif both locations are non-null, their transcripts must match. An input\nwith an explicitly blank tool name only ingests and retains its response shape.\nPaused and unnamed inputs need no grading admission;\nauthorized ingestion still uses normal database resources.\n\nSend structured `messages`, including the assistant message containing each\npending call. Pre-rendered `transcript` and caller `triage_assessment` are\nrejected. A recorded named call requires `input.tool_use_id` matching one\ncall in those messages; different batch inputs must name different ids.\nThe selected tool name and arguments must match every transcript occurrence\nof its ID. Argument object key order is ignored; JSON value types and string\ncontent must agree. Omitted `tool_input` matches an empty arguments object;\nexplicit null does not. Mismatches return HTTP 422 before grading or ingestion.\n`ephemeral` suppresses transcript, decision, and grade persistence, but not\nusage. Enforce and observe requests may both use it.\n\n`external_ids` includes each distinct conversation ID from the harness\nand gateway, including a separate gateway-issued ID when available.\nA null value explicitly opts into transcript-prefix\nreconciliation and still names the harness. Recorded requests require this\nmapping. `user` supplies the developer email only when the authenticated\ncaller can impersonate; otherwise attribution stays with that caller.\n\n`settings_overrides` accepts a YAML string or JSON object that the server\nwill merge onto administrator settings as a local settings layer.\nAdministrator locks reject overrides with HTTP 422, even when they repeat\na locked value. Set `enforcement.mode` there for observe or paused behavior;\nomitted overrides inherit the administrator's settings. A gateway's\nserver-owned capability limit independently prevents unsupported enforcement.\n\n`mode=triage_only` bounds grading depth: triage can allow but cannot deny;\notherwise it escalates without running the gateway monitor. `skip_rules`\nis for clients that already evaluated deterministic stages. When they send\n`policy_version` (`<version>@<builtin digest>`), a stale token forces those\nstages to run again against the server's current policy."
+        "description": "Evaluate pending tool calls or ingest a transcript through the generic hook.\n\nFull requests send the conversation in `messages` and select pending calls with\n`input`. A scalar input returns one response; a list returns one outcome\nper input in the same order, including each input's `tool_use_id`. Null,\nomitted, or empty-list input ingests the transcript without grading or\nwriting decisions and returns an empty list, regardless of enforcement mode.\nNamed observe calls return completed judgments with a deferred applied\ndecision. Enforce and observe support ephemeral full requests and evaluation\nwithout session-write permission; recording requires that permission.\nAll calls share one transcript, which is ingested once when recording is enabled.\n\nSet `append_after` to an explicit session and trajectory ID to send only new messages.\nAppend requires parent-session write authority and rejects `ephemeral=true`.\nThe stored prefix loads before validation and grading; pending calls may be in it.\nSuccess returns `HookAppendResponse` with the next anchor and ordered results after recording.\nReuse that anchor directly. HTTP 503 `append_recording_failed` retains ordered `results`\nwithout a new cursor: apply those decisions and retry the same append to finish recording.\nOn HTTP 404, 409, or 422, retry once with the full transcript and without `append_after`.\nOlder servers reject the additive field with 422. No implicit latest leaf is chosen.\n\nInput lists accept at most 32 items, including blank or ephemeral inputs.\nLarger lists are rejected with HTTP 422 before ingestion or grading.\nBatches with multiple inputs require top-level `messages`. Their inputs\nmust omit `messages` or supply null or an empty list, so the transcript is\nsent only once. Scalars and single-item lists may supply `input.messages`;\nif both locations are non-null, their transcripts must match. An input\nwith an explicitly blank tool name only ingests and retains its response shape.\nPaused and unnamed inputs need no grading admission;\nauthorized ingestion still uses normal database resources.\n\nSend structured `messages`, including the assistant message containing each\npending call. Pre-rendered `transcript` and caller `triage_assessment` are\nrejected. A recorded named call requires `input.tool_use_id` matching one\ncall in those messages; different batch inputs must name different ids.\nThe selected tool name and arguments must match every transcript occurrence\nof its ID. Argument object key order is ignored; JSON value types and string\ncontent must agree. Omitted `tool_input` matches an empty arguments object;\nexplicit null does not. Mismatches return HTTP 422 before grading or ingestion.\n`ephemeral` suppresses transcript, decision, and grade persistence, but not\nusage. Enforce and observe requests may both use it.\n\n`external_ids` includes each distinct conversation ID from the harness\nand gateway, including a separate gateway-issued ID when available.\nA null value explicitly opts into transcript-prefix\nreconciliation and still names the harness. Recorded requests require this\nmapping. `user` supplies the developer email only when the authenticated\ncaller can impersonate; otherwise attribution stays with that caller.\n\n`settings_overrides` accepts a YAML string or JSON object that the server\nwill merge onto administrator settings as a local settings layer.\nAn override that changes an administrator-locked value is refused with\nHTTP 422; one that repeats it is accepted. Set `enforcement.mode` there for observe or paused behavior;\nomitted overrides inherit the administrator's settings. A gateway's\nserver-owned capability limit independently prevents unsupported enforcement.\n\n`mode=triage_only` bounds grading depth: triage can allow but cannot deny;\notherwise it escalates without running the gateway monitor. `skip_rules`\nis for clients that already evaluated deterministic stages. When they send\n`policy_version` (`<version>@<builtin digest>`), a stale token forces those\nstages to run again against the server's current policy."
       },
       "PreToolUseHookResponse": {
         "properties": {
@@ -7636,6 +8641,18 @@
           "latency_ms": {
             "type": "number",
             "title": "Latency Ms"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd",
+            "description": "Estimated USD cost of this input's triage and gateway grading, including retries with reported usage. Zero when grading is skipped or reused; null when usage or pricing is missing or a stage is unfinished. Provider attempts whose usage is hidden by the provider client cannot be included."
           }
         },
         "type": "object",
@@ -7881,6 +8898,37 @@
         "title": "RefreshRequest",
         "description": "Request body for POST /v1/auth/refresh.\n\nThe refresh_token is optional \u2014 the backend also reads it from an\nhttpOnly cookie set during the callback flow."
       },
+      "ReviewSessionContentAccessRequest": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "denied"
+            ],
+            "title": "Status"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ReviewSessionContentAccessRequest",
+        "description": "A final decision; approvals default to eight hours and may use a shorter expiry."
+      },
       "RuleMatch": {
         "properties": {
           "label": {
@@ -7979,6 +9027,16 @@
           "session_id": {
             "type": "string",
             "title": "Session Id"
+          },
+          "can_read_findings": {
+            "type": "boolean",
+            "title": "Can Read Findings",
+            "description": "Whether this caller may read this session's findings."
+          },
+          "can_read_content": {
+            "type": "boolean",
+            "title": "Can Read Content",
+            "description": "Whether this caller may read this session's content. Scrubbed messages remain unavailable."
           },
           "agent_platform": {
             "type": "string",
@@ -8124,6 +9182,8 @@
         "type": "object",
         "required": [
           "session_id",
+          "can_read_findings",
+          "can_read_content",
           "agent_platform",
           "started_at",
           "ended_at",
@@ -8427,6 +9487,129 @@
         ],
         "title": "SessionAnalyticsTrendPoint",
         "description": "Bucketed trend counts for aggregate charts.\n\nBoth are daily-active session counts (distinct sessions with activity in the\nbucket), so ``matching_count`` reads directly as a slice of ``total_count``:\nthose whose deep-review severity meets the requested threshold."
+      },
+      "SessionContentAccessRequestListResponse": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/SessionContentAccessRequestSummary"
+            },
+            "type": "array",
+            "title": "Requests"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requests",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "SessionContentAccessRequestListResponse",
+        "description": "A page of the caller's requests, ordered newest first."
+      },
+      "SessionContentAccessRequestStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "denied",
+          "revoked"
+        ],
+        "title": "SessionContentAccessRequestStatus",
+        "description": "Stored request lifecycle; expiry is derived from the approval's validity window."
+      },
+      "SessionContentAccessRequestSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "requested_session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Requested Session Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionContentAccessRequestStatus"
+          },
+          "raised_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Raised At"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "requested_session_id",
+          "status",
+          "raised_at",
+          "reviewed_at",
+          "valid_until",
+          "revoked_at"
+        ],
+        "title": "SessionContentAccessRequestSummary",
+        "description": "Request history without session contents or other users' profile details.\n\nAn approved request remains approved after ``valid_until``; expiry is derived\nfrom the timestamps rather than stored as a separate review decision."
+      },
+      "SessionContentAccessRequestView": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "active",
+          "historical"
+        ],
+        "title": "SessionContentAccessRequestView",
+        "description": "Review queues derived from stored decisions and the approval validity window."
       },
       "SessionDeepReviewResponse": {
         "properties": {
@@ -9392,6 +10575,17 @@
             ],
             "title": "Human Decided At"
           },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecidedBy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who settled the call after Watcher handed it on: `person` (a person answered the permission prompt), `agent_review` (the agent's automated approval reviewer answered it, so there is no `human_decision` and `tool_status` holds the outcome) or `interrupt` (the person interrupted the turn before the call was answered, including while Watcher was still reviewing it). Null when the call is unsettled or the sender does not know who answered. Meaningful for escalations; other decisions may carry a value beside Watcher's own verdict."
+          },
           "decided_at": {
             "anyOf": [
               {
@@ -9630,6 +10824,17 @@
             ],
             "title": "Human Decided At"
           },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecidedBy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who settled the call after Watcher handed it on: `person` (a person answered the permission prompt), `agent_review` (the agent's automated approval reviewer answered it, so there is no `human_decision` and `tool_status` holds the outcome) or `interrupt` (the person interrupted the turn before the call was answered, including while Watcher was still reviewing it). Null when the call is unsettled or the sender does not know who answered. Meaningful for escalations; other decisions may carry a value beside Watcher's own verdict."
+          },
           "decided_at": {
             "anyOf": [
               {
@@ -9735,6 +10940,261 @@
         ],
         "title": "ToolCallError",
         "description": "Error raised by a tool call."
+      },
+      "ToolCallFindingsResponse": {
+        "properties": {
+          "tool_use_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Use Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Name"
+          },
+          "raw_tool_call": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Raw Tool Call"
+          },
+          "policy_decision": {
+            "$ref": "#/components/schemas/PolicyDecision"
+          },
+          "tool_status": {
+            "$ref": "#/components/schemas/ToolStatus"
+          },
+          "decision_source": {
+            "$ref": "#/components/schemas/DecisionSource"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "flag_threshold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flag Threshold"
+          },
+          "deny_threshold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deny Threshold"
+          },
+          "triage_max_allow_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triage Max Allow Score"
+          },
+          "rule_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Label"
+          },
+          "rule_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Pattern"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "decision_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Context"
+          },
+          "human_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HumanDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "human_decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Human Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecidedBy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who settled the call after Watcher handed it on: `person` (a person answered the permission prompt), `agent_review` (the agent's automated approval reviewer answered it, so there is no `human_decision` and `tool_status` holds the outcome) or `interrupt` (the person interrupted the turn before the call was answered, including while Watcher was still reviewing it). Null when the call is unsettled or the sender does not know who answered. Meaningful for escalations; other decisions may carry a value beside Watcher's own verdict."
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "applied_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppliedDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "judged_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JudgedDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enforcement_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnforcementMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bypass_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BypassReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_call_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tool Call Id"
+          },
+          "tool_call_decision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tool Call Decision Id"
+          },
+          "tool_call_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Tool Call Created At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "grades": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallGradeDetail"
+            },
+            "type": "array",
+            "title": "Grades"
+          },
+          "has_result": {
+            "type": "boolean",
+            "title": "Has Result",
+            "description": "Whether this session contains a tool response for this exact tool-use ID."
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_use_id",
+          "tool_name",
+          "raw_tool_call",
+          "policy_decision",
+          "tool_status",
+          "decision_source",
+          "tool_call_id",
+          "tool_call_decision_id",
+          "tool_call_created_at",
+          "created_at",
+          "updated_at",
+          "has_result"
+        ],
+        "title": "ToolCallFindingsResponse",
+        "description": "Decision and grades with result availability, never raw session content."
       },
       "ToolCallGradeDetail": {
         "properties": {
@@ -9916,7 +11376,7 @@
               }
             ],
             "title": "User Id",
-            "description": "Restrict results to one user. Callers without sessions:read:any may only name themselves."
+            "description": "Restrict results to one user. Callers without sessions:findings:read:any may only name themselves."
           },
           "tool_names": {
             "anyOf": [
@@ -10733,7 +12193,7 @@
             },
             "type": "array",
             "title": "Permissions",
-            "description": "Effective permission slugs for client UI gates: explicit grants plus known Watcher permissions granted implicitly to administrators. WorkOS widget permissions remain explicit."
+            "description": "Effective permission slugs for client UI gates: explicit grants plus known Watcher permissions granted by built-in roles. WorkOS widget permissions remain explicit."
           },
           "role": {
             "anyOf": [
@@ -10745,7 +12205,7 @@
               }
             ],
             "title": "Role",
-            "description": "The caller's role in the active organization, for display only; gating belongs on ``permissions``, which includes implicit administrator grants. Under WorkOS this is the role the token names; under proxy auth the only distinction the headers express is admin versus member. Null when the authentication in use vouches for no single role."
+            "description": "The caller's role in the active organization, for display only; gating belongs on ``permissions``, which includes built-in role grants. Under WorkOS this is the role the token names; proxy auth reports admin, org-viewer, or member. Null when the authentication in use vouches for no single role."
           }
         },
         "type": "object",

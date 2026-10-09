@@ -3,7 +3,9 @@
 The package stays compatible with Python 3.10 and avoids importing the heavier
 ``watcher_sdk`` package on hook startup. It exposes deterministic planning and
 Claude transcript semantics while each runtime owns persistence, HTTP,
-deadlines, and logging.
+deadlines, and logging. Codex boundaries live in ``codex``, imported directly
+rather than from here, so the remote collector's copy of this package can omit
+that module.
 """
 
 from watcher_transcript_transport import claude, upload

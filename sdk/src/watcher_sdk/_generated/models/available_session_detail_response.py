@@ -37,6 +37,9 @@ class AvailableSessionDetailResponse:
 
     Attributes:
         session_id (str):
+        can_read_findings (bool): Whether this caller may read this session's findings.
+        can_read_content (bool): Whether this caller may read this session's content. Scrubbed messages remain
+            unavailable.
         agent_platform (str): Reported coding agent. Retained SDK adapter identities can name the agent, including for
             historical sessions stored as 'other'. Reporting does not change the stored ingestion identity. Clients must
             tolerate additional platform strings.
@@ -60,6 +63,8 @@ class AvailableSessionDetailResponse:
     """
 
     session_id: str
+    can_read_findings: bool
+    can_read_content: bool
     agent_platform: str
     started_at: datetime.datetime
     ended_at: datetime.datetime
@@ -88,6 +93,10 @@ class AvailableSessionDetailResponse:
         )
 
         session_id = self.session_id
+
+        can_read_findings = self.can_read_findings
+
+        can_read_content = self.can_read_content
 
         agent_platform = self.agent_platform
 
@@ -172,6 +181,8 @@ class AvailableSessionDetailResponse:
         field_dict.update(
             {
                 "session_id": session_id,
+                "can_read_findings": can_read_findings,
+                "can_read_content": can_read_content,
                 "agent_platform": agent_platform,
                 "started_at": started_at,
                 "ended_at": ended_at,
@@ -217,6 +228,10 @@ class AvailableSessionDetailResponse:
 
         d = dict(src_dict)
         session_id = d.pop("session_id")
+
+        can_read_findings = d.pop("can_read_findings")
+
+        can_read_content = d.pop("can_read_content")
 
         agent_platform = d.pop("agent_platform")
 
@@ -357,6 +372,8 @@ class AvailableSessionDetailResponse:
 
         available_session_detail_response = cls(
             session_id=session_id,
+            can_read_findings=can_read_findings,
+            can_read_content=can_read_content,
             agent_platform=agent_platform,
             started_at=started_at,
             ended_at=ended_at,

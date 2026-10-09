@@ -185,7 +185,10 @@ def _default_retry_call(proxy_url: str, api: str, stream: bool) -> list[str]:
 
 
 @pytest.mark.parametrize("watcher_status", [401, 403, 413, 422])
-@pytest.mark.parametrize(("api", "stream"), [(api, stream) for api in APIS for stream in (False, True)])
+@pytest.mark.parametrize(
+    ("api", "stream"),
+    [(api, stream) for api in APIS for stream in (False, True) if (api, stream) != ("messages", True)],
+)
 def test_permanent_watcher_errors_are_not_retried_by_clients(
     proxy_url: str,
     provider_state: ProviderState,
@@ -202,6 +205,24 @@ def test_permanent_watcher_errors_are_not_retried_by_clients(
         _default_retry_call(proxy_url, api, stream)
 
     assert refused.value.status_code == 422
+    assert len(provider_state.requests) == 1
+    assert len(watcher_state.requests) == 1
+
+
+@pytest.mark.parametrize("watcher_status", [401, 403, 413, 422])
+def test_permanent_watcher_errors_end_a_messages_stream_with_an_error_clients_do_not_retry(
+    proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, watcher_status: int
+) -> None:
+    provider_state.tools = ["read_file"]
+    watcher_state.fail_status = watcher_status
+
+    with pytest.raises(anthropic.APIStatusError) as refused:
+        _default_retry_call(proxy_url, "messages", stream=True)
+
+    assert refused.value.body == {
+        "type": "error",
+        "error": {"type": "invalid_request_error", "message": "Watcher could not evaluate this response"},
+    }
     assert len(provider_state.requests) == 1
     assert len(watcher_state.requests) == 1
 
@@ -231,19 +252,34 @@ def test_incomplete_responses_stream_is_delivered_once(
     assert len(watcher_state.requests) == 1
 
 
-@pytest.mark.parametrize("fault", ["truncate", "error"])
-def test_a_failed_provider_stream_is_retried_and_only_the_complete_one_evaluated(
-    proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, fault: str
+def test_a_provider_error_before_the_stream_starts_is_retried_and_only_the_complete_one_evaluated(
+    proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState
 ) -> None:
-    """A truncated stream or a provider error event is retryable; the failed attempt never reaches the client."""
+    """The failed attempt never reaches the client."""
     provider_state.tools = ["read_file"]
-    provider_state.stream_faults = [fault]
+    provider_state.stream_faults = ["error"]
 
     delivered = _default_retry_call(proxy_url, "messages", stream=True)
 
     assert delivered == ["read_file"]
     assert len(provider_state.requests) == 2
     assert len(watcher_state.requests) == 1
+
+
+def test_a_truncated_provider_stream_ends_with_a_retryable_error_and_is_not_evaluated(
+    proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState
+) -> None:
+    provider_state.tools = ["read_file"]
+    provider_state.stream_faults = ["truncate"]
+
+    with pytest.raises(anthropic.APIStatusError) as failed:
+        _default_retry_call(proxy_url, "messages", stream=True)
+
+    assert failed.value.body == {
+        "type": "error",
+        "error": {"type": "overloaded_error", "message": "Model response stream was incomplete"},
+    }
+    assert len(watcher_state.requests) == 0
 
 
 @pytest.mark.parametrize("api", APIS)

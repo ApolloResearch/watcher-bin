@@ -54,8 +54,8 @@ def sync_detailed(
 
     Includes display identity (user_id, email, role), org context
     (organization_id, organization_name, memberships for multi-org
-    callers), and effective permission slugs. Explicit slugs are preserved;
-    known Watcher permissions granted implicitly to admins are included in
+    callers), and effective permission slugs after organization policy;
+    known Watcher permissions granted by built-in roles are included in
     both WorkOS and proxy modes. The role is for display only: clients gate
     controls on permissions, matching the backend authorization policy.
 
@@ -86,8 +86,8 @@ def sync(
 
     Includes display identity (user_id, email, role), org context
     (organization_id, organization_name, memberships for multi-org
-    callers), and effective permission slugs. Explicit slugs are preserved;
-    known Watcher permissions granted implicitly to admins are included in
+    callers), and effective permission slugs after organization policy;
+    known Watcher permissions granted by built-in roles are included in
     both WorkOS and proxy modes. The role is for display only: clients gate
     controls on permissions, matching the backend authorization policy.
 
@@ -114,8 +114,8 @@ async def asyncio_detailed(
 
     Includes display identity (user_id, email, role), org context
     (organization_id, organization_name, memberships for multi-org
-    callers), and effective permission slugs. Explicit slugs are preserved;
-    known Watcher permissions granted implicitly to admins are included in
+    callers), and effective permission slugs after organization policy;
+    known Watcher permissions granted by built-in roles are included in
     both WorkOS and proxy modes. The role is for display only: clients gate
     controls on permissions, matching the backend authorization policy.
 
@@ -144,8 +144,8 @@ async def asyncio(
 
     Includes display identity (user_id, email, role), org context
     (organization_id, organization_name, memberships for multi-org
-    callers), and effective permission slugs. Explicit slugs are preserved;
-    known Watcher permissions granted implicitly to admins are included in
+    callers), and effective permission slugs after organization policy;
+    known Watcher permissions granted by built-in roles are included in
     both WorkOS and proxy modes. The role is for display only: clients gate
     controls on permissions, matching the backend authorization policy.
 

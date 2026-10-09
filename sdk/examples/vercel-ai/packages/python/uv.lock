@@ -459,7 +459,7 @@ wheels = [
 
 [[package]]
 name = "watcher-sdk"
-version = "0.39.0"
+version = "0.41.0"
 source = { directory = "../../../../" }
 dependencies = [
     { name = "anyio" },

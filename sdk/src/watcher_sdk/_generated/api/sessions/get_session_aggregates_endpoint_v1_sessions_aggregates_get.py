@@ -119,7 +119,10 @@ def sync_detailed(
 ) -> Response[HTTPValidationError | SessionAggregatesResponse]:
     """Get Session Aggregates Endpoint
 
-     Return aggregate session metrics.
+     Return organization-wide aggregate session metrics, optionally filtered by owner.
+
+    Requires ``sessions:aggregates:read:any`` through a role or credential grant,
+    including when filtering to the caller's own ``user_id``. Otherwise returns HTTP 403.
 
     Args:
         start_date (datetime.datetime | None | Unset):
@@ -164,7 +167,10 @@ def sync(
 ) -> HTTPValidationError | SessionAggregatesResponse | None:
     """Get Session Aggregates Endpoint
 
-     Return aggregate session metrics.
+     Return organization-wide aggregate session metrics, optionally filtered by owner.
+
+    Requires ``sessions:aggregates:read:any`` through a role or credential grant,
+    including when filtering to the caller's own ``user_id``. Otherwise returns HTTP 403.
 
     Args:
         start_date (datetime.datetime | None | Unset):
@@ -204,7 +210,10 @@ async def asyncio_detailed(
 ) -> Response[HTTPValidationError | SessionAggregatesResponse]:
     """Get Session Aggregates Endpoint
 
-     Return aggregate session metrics.
+     Return organization-wide aggregate session metrics, optionally filtered by owner.
+
+    Requires ``sessions:aggregates:read:any`` through a role or credential grant,
+    including when filtering to the caller's own ``user_id``. Otherwise returns HTTP 403.
 
     Args:
         start_date (datetime.datetime | None | Unset):
@@ -247,7 +256,10 @@ async def asyncio(
 ) -> HTTPValidationError | SessionAggregatesResponse | None:
     """Get Session Aggregates Endpoint
 
-     Return aggregate session metrics.
+     Return organization-wide aggregate session metrics, optionally filtered by owner.
+
+    Requires ``sessions:aggregates:read:any`` through a role or credential grant,
+    including when filtering to the caller's own ``user_id``. Otherwise returns HTTP 403.
 
     Args:
         start_date (datetime.datetime | None | Unset):

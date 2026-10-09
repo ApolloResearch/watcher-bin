@@ -5,6 +5,7 @@ cover edge cases directly and measure coverage. Watcher is an HTTP stub behind
 the real SDK client.
 """
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
@@ -18,6 +19,7 @@ from anthropic.lib.streaming._messages import accumulate_event
 from anthropic.types import RawMessageStreamEvent
 from fastapi import HTTPException
 from litellm.proxy._types import UserAPIKeyAuth
+from openai._streaming import SSEDecoder
 from openai.lib.streaming.chat import ChatCompletionStreamState
 from openai.types.chat import ChatCompletionChunk
 from pydantic import BaseModel, TypeAdapter
@@ -585,28 +587,15 @@ class TestHooks:
     @pytest.mark.parametrize(
         ("events", "status"),
         [
-            # Truncated before message_stop, or a provider error: a retry may succeed.
-            ([b'event: message_start\ndata: {"type": "message_start", "message": {"content": []}}\n\n'], 502),
+            # A provider error: a retry may succeed.
             ([b'event: error\ndata: {"type": "error", "error": {"type": "overloaded_error"}}\n\n'], 502),
             # A shape the example does not interpret: a retry would fail the same way.
-            (
-                [
-                    b'event: message_start\ndata: {"type": "message_start", "message": {"content": []}}\n\n',
-                    b'event: content_block_start\ndata: {"type": "content_block_start", "index": 0,'
-                    b' "content_block": {"type": "text", "text": ""}}\n\n',
-                    b'event: content_block_delta\ndata: {"type": "content_block_delta", "index": 0,'
-                    b' "delta": {"type": "future_delta"}}\n\n',
-                ],
-                422,
-            ),
             ([b"data: {}\n\n"], 422),
             (["not bytes"], 422),
         ],
-        ids=["truncated", "provider-error", "unsupported-delta", "malformed-event", "unexpected-chunk"],
+        ids=["provider-error", "malformed-event", "unexpected-chunk"],
     )
-    async def test_stream_failures_are_retryable_only_when_a_retry_could_succeed(
-        self, events: list[Any], status: int
-    ) -> None:
+    async def test_stream_failures_before_the_first_event_are_http_errors(self, events: list[Any], status: int) -> None:
         with pytest.raises(HTTPException) as refused:
             _ = [
                 c
@@ -616,9 +605,174 @@ class TestHooks:
             ]
         assert refused.value.status_code == status
 
+    @pytest.mark.parametrize(
+        ("events", "error_type"),
+        [
+            # Truncated before message_stop: a retry may succeed.
+            (
+                [b'event: message_start\ndata: {"type": "message_start", "message": {"content": []}}\n\n'],
+                "overloaded_error",
+            ),
+            # A shape the example does not interpret: a retry would fail the same way.
+            (
+                [
+                    b'event: message_start\ndata: {"type": "message_start", "message": {"content": []}}\n\n',
+                    b'event: content_block_start\ndata: {"type": "content_block_start", "index": 0,'
+                    b' "content_block": {"type": "text", "text": ""}}\n\n',
+                    b'event: content_block_delta\ndata: {"type": "content_block_delta", "index": 0,'
+                    b' "delta": {"type": "future_delta"}}\n\n',
+                ],
+                "invalid_request_error",
+            ),
+        ],
+        ids=["truncated", "unsupported-delta"],
+    )
+    async def test_stream_failures_after_the_first_event_are_stream_errors(
+        self, events: list[Any], error_type: str
+    ) -> None:
+        out = [
+            c
+            async for c in WatcherCallback().async_post_call_streaming_iterator_hook(
+                USER, _aiter(events), _proxy_data("/v1/messages", {})
+            )
+        ]
+
+        assert _events(out)[0]["type"] == "message_start"
+        assert _events(out)[-1]["error"]["type"] == error_type
+
+    @pytest.mark.parametrize(("status", "error_type"), [(500, "overloaded_error"), (401, "invalid_request_error")])
+    async def test_watcher_failures_after_the_first_event_are_stream_errors(self, status: int, error_type: str) -> None:
+        callback = WatcherCallback(_stub_client(lambda request: httpx.Response(status, json={"detail": "no"})))
+        out = [
+            c
+            async for c in callback.async_post_call_streaming_iterator_hook(
+                USER, _aiter(_messages_stream_bytes()), _proxy_data("/v1/messages", {})
+            )
+        ]
+
+        events = _events(out)
+        assert [event["type"] for event in events if event["type"] in ("message_stop", "error")] == ["error"]
+        assert events[-1]["error"]["type"] == error_type
+        assert "tool_use" not in [event.get("content_block", {}).get("type") for event in events]
+
+    async def test_events_before_the_first_tool_call_reach_the_client_before_watcher_decides(self) -> None:
+        asked: list[bool] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            asked.append(True)
+            return httpx.Response(200, json=_payload(("t", ["content", 2], _outcome("allow", "t"))))
+
+        callback = WatcherCallback(_stub_client(handler))
+        sent_before_watcher = [
+            event
+            async for chunk in callback.async_post_call_streaming_iterator_hook(
+                USER, _aiter(_messages_stream_bytes()), _proxy_data("/v1/messages", {})
+            )
+            if not asked
+            for event in _events([chunk])
+        ]
+
+        assert [event["type"] for event in sent_before_watcher if event["type"] != "ping"] == [
+            "message_start",
+            "content_block_start",
+            "content_block_delta",
+            "content_block_delta",
+            "content_block_stop",
+            "content_block_start",
+            "content_block_delta",
+            "content_block_stop",
+        ]
+
+    async def test_pings_keep_the_stream_alive_while_watcher_decides(self) -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            await asyncio.sleep(0.5)
+            return httpx.Response(200, json=_payload(("t", ["content", 2], _outcome("allow", "t"))))
+
+        callback = WatcherCallback(_stub_client(handler), ping_seconds=0.1)
+        events = _events(
+            [
+                c
+                async for c in callback.async_post_call_streaming_iterator_hook(
+                    USER, _aiter(_messages_stream_bytes()), _proxy_data("/v1/messages", {})
+                )
+            ]
+        )
+        assert [event["type"] for event in events].count("ping") >= 3
+
+    @pytest.mark.parametrize(
+        ("path", "chunks", "status"),
+        [
+            (
+                "/v1/chat/completions",
+                [litellm.ModelResponseStream(id="c", model="m", choices=[{"index": 0, "delta": {"content": "hi"}}])],
+                502,
+            ),
+            ("/v1/responses", [{"type": "response.completed"}], 422),
+            ("/v1/chat/completions", [b"a", b"b", b"c"], 413),
+        ],
+        ids=["chat-unfinished", "responses-malformed", "too-long"],
+    )
+    async def test_buffered_stream_failures_are_http_errors(self, path: str, chunks: list[Any], status: int) -> None:
+        callback = WatcherCallback(_stub_client(lambda request: pytest.fail("not evaluated")), max_stream_chunks=2)
+        with pytest.raises(HTTPException) as refused:
+            _ = [
+                c
+                async for c in callback.async_post_call_streaming_iterator_hook(
+                    USER, _aiter(chunks), _proxy_data(path, {})
+                )
+            ]
+        assert refused.value.status_code == status
+
+    async def test_unknown_messages_events_are_not_forwarded(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_payload(("t", ["content", 2], _outcome("allow", "t"))))
+
+        events = b"".join(_messages_stream_bytes()).split(b"\n\n")
+        future = b'event: future_event\ndata: {"type": "future_event"}'
+        chunks = [b"\n\n".join([*events[:2], future, *events[2:]])]
+        callback = WatcherCallback(_stub_client(handler))
+        out = [
+            c
+            async for c in callback.async_post_call_streaming_iterator_hook(
+                USER, _aiter(chunks), _proxy_data("/v1/messages", {})
+            )
+        ]
+
+        assert "future_event" not in [event["type"] for event in _events(out)]
+        assert assemble("messages", out) == assemble("messages", _messages_stream_bytes())
+
+    async def test_pings_keep_the_stream_alive_while_tool_calls_are_generated(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_payload(("t", ["content", 2], _outcome("allow", "t"))))
+
+        callback = WatcherCallback(_stub_client(handler), ping_seconds=0.05)
+        events = _events(
+            [
+                c
+                async for c in callback.async_post_call_streaming_iterator_hook(
+                    USER, _slow_aiter(_messages_stream_bytes(), 0.02), _proxy_data("/v1/messages", {})
+                )
+            ]
+        )
+        call_start = next(
+            i for i, event in enumerate(events) if event.get("content_block", {}).get("type") == "tool_use"
+        )
+
+        assert "ping" in [event["type"] for event in events[:call_start]][1:]
+
+
+def _events(chunks: list[bytes]) -> list[dict[str, Any]]:
+    return [json.loads(sse.data) for sse in SSEDecoder().iter_bytes(iter(chunks))]
+
 
 async def _aiter(items: list[Any]) -> AsyncIterator[Any]:
     for item in items:
+        yield item
+
+
+async def _slow_aiter(items: list[Any], delay: float) -> AsyncIterator[Any]:
+    for item in items:
+        await asyncio.sleep(delay)
         yield item
 
 
@@ -690,6 +844,20 @@ class TestStreams:
                     {"type": "message_start", "message": {"content": []}},
                     {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
                     {"type": "content_block_delta", "index": 0, "delta": {"type": "mystery_delta"}},
+                ],
+                UnsupportedStream,
+            ),
+            (
+                [
+                    {"type": "message_start", "message": {"content": []}},
+                    {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+                ],
+                UnsupportedStream,
+            ),
+            (
+                [
+                    {"type": "message_start", "message": {"content": []}},
+                    {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}},
                 ],
                 UnsupportedStream,
             ),

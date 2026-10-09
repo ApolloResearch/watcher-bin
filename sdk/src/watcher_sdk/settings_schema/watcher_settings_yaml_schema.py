@@ -228,10 +228,10 @@ class PolicyMonitorSettings(PermissionedSettingsModel):
     """Graders and thresholds for the live policy pipeline that gates tool calls."""
 
     policy_gateway_grader_id: StrSetting = Field(
-        description="Grader that decides allow/deny/escalate for a tool call at the gateway.",
+        description="Legacy custom gateway grader. Blocking review always runs the managed gateway monitor; current Watcher clients ignore this field.",
     )
     policy_triage_grader_id: StrSetting = Field(
-        description="Grader used to triage calls escalated for review.",
+        description="Legacy custom triage grader. Blocking review always runs the managed triage monitor; current Watcher clients ignore this field.",
     )
     # Legacy key, accepted and ignored. The pre-tool guard stage never ran: no
     # hook consumed this grader id. StrictSettingsModel forbids unknown keys, and
@@ -248,15 +248,19 @@ class PolicyMonitorSettings(PermissionedSettingsModel):
         description="Highest triage score still allowed automatically; above it the call is escalated.",
     )
     context_user_messages: ContextWindowSetting = Field(
-        description='How many recent user messages to include as grading context, or "all" for the whole transcript.',
+        description='How many recent user messages a custom grader saw as context, or "all" for the whole transcript. '
+        "Live grading runs the managed monitors on the whole transcript under their own context policy, so this has "
+        "no effect there.",
     )
     include_tool_outputs: BoolSetting = Field(
         default=True,
-        description="Whether tool results are shown to the monitors. The tool calls themselves are always shown.",
+        description="Whether tool results were shown to a custom grader; the tool calls themselves always were. Live "
+        "grading runs the managed monitors under their own context policy, so this has no effect there.",
     )
     include_agent_reasoning: BoolSetting = Field(
         default=True,
-        description="Whether the agent's reasoning blocks are shown to the monitors.",
+        description="Whether the agent's reasoning blocks were shown to a custom grader. Live grading runs the managed "
+        "monitors under their own context policy, so this has no effect there.",
     )
     include_triage_assessment: BoolSetting = Field(
         default=True,
@@ -338,7 +342,7 @@ class DecisionSyncSettings(PermissionedSettingsModel):
     """
 
     drain_interval_seconds: IntSetting = Field(
-        default=300,
+        default=30,
         description="Seconds between sweeps that retry tool-call decisions still waiting to reach the cloud.",
     )
 

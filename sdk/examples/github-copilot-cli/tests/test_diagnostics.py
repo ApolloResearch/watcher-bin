@@ -29,6 +29,41 @@ def configuration(tmp_path: Path) -> Path:
     )
 
 
+@pytest.mark.parametrize("has_partial_tail", [False, True])
+@pytest.mark.parametrize("record_only", [False, True])
+def test_unfinished_turn_is_quiet_but_keeps_recording_failure(
+    configuration: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    has_partial_tail: bool,
+    record_only: bool,
+) -> None:
+    native_id = "20b61067-e5e7-4432-b614-8a819df7a4c9"
+    transcript = tmp_path / "session-state" / native_id / "events.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text(
+        '{"type":"user.message","data":{"content":"PRIVATE_TRANSCRIPT"}}\n'
+        '{"type":"assistant.message","data":{"content":"Finished"}}\n' + ('{"type":' if has_partial_tail else "")
+    )
+    monkeypatch.setenv("COPILOT_HOME", str(tmp_path))
+    result = CliRunner().invoke(
+        integration.app,
+        ["observe", "--config", str(configuration), *(["--record-only"] if record_only else [])],
+        input=json.dumps({"sessionId": native_id, "transcriptPath": str(transcript), "timestamp": 200}),
+    )
+    assert result.exit_code == 0
+    assert result.stdout == "{}\n"
+    assert result.stderr == ""
+    status = read_status(configuration)
+    assert status.last_delivery is None
+    assert status.last_error is not None
+    assert status.last_error.failure == "recording"
+    assert status.last_error.hook == "observe"
+    log = configuration.with_name("events.jsonl").read_text()
+    assert [json.loads(line)["kind"] for line in log.splitlines()] == ["started", "failed"]
+    assert "PRIVATE_TRANSCRIPT" not in log
+
+
 @pytest.mark.parametrize("mode", ["enforce"])
 def test_unreadable_login_is_a_persisted_failure(configuration: Path, mode: str) -> None:
     key = next((configuration.parent / "watcher" / "credentials").glob("*.json"))

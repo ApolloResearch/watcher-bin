@@ -106,7 +106,7 @@ enforcement:
 watcher_ignore_files:
   enabled: false
 decision_sync:
-  drain_interval_seconds: 300
+  drain_interval_seconds: 30
 grading:
   model: null
 tool_thresholds:

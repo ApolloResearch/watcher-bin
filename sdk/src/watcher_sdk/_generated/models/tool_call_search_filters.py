@@ -30,8 +30,8 @@ class ToolCallSearchFilters:
         end_date (datetime.datetime | None | Unset): Include only tool calls whose message was recorded at or before
             this time.
         session_id (None | Unset | UUID): Restrict results to one session.
-        user_id (None | Unset | UUID): Restrict results to one user. Callers without sessions:read:any may only name
-            themselves.
+        user_id (None | Unset | UUID): Restrict results to one user. Callers without sessions:findings:read:any may only
+            name themselves.
         tool_names (list[str] | None | Unset): Tool names to match with OR semantics. Unknown names are valid and match
             no calls.
         severities (list[ToolCallSearchFiltersSeveritiesType0Item] | None | Unset): Score bands to match with OR

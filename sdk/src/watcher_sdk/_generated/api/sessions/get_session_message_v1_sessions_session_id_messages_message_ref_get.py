@@ -74,7 +74,8 @@ def sync_detailed(
     the truncated form is what the trajectory response already provides.
     Extended-thinking replay payloads are stripped like every other read path.
 
-    404 for sessions the caller can't read and for refs not in the session.
+    Requires ownership, ``sessions:content:read:any``, or an active session content
+    approval. Returns 404 for inaccessible or scrubbed content and for refs not in the session.
 
     Args:
         session_id (str):
@@ -117,7 +118,8 @@ def sync(
     the truncated form is what the trajectory response already provides.
     Extended-thinking replay payloads are stripped like every other read path.
 
-    404 for sessions the caller can't read and for refs not in the session.
+    Requires ownership, ``sessions:content:read:any``, or an active session content
+    approval. Returns 404 for inaccessible or scrubbed content and for refs not in the session.
 
     Args:
         session_id (str):
@@ -155,7 +157,8 @@ async def asyncio_detailed(
     the truncated form is what the trajectory response already provides.
     Extended-thinking replay payloads are stripped like every other read path.
 
-    404 for sessions the caller can't read and for refs not in the session.
+    Requires ownership, ``sessions:content:read:any``, or an active session content
+    approval. Returns 404 for inaccessible or scrubbed content and for refs not in the session.
 
     Args:
         session_id (str):
@@ -196,7 +199,8 @@ async def asyncio(
     the truncated form is what the trajectory response already provides.
     Extended-thinking replay payloads are stripped like every other read path.
 
-    404 for sessions the caller can't read and for refs not in the session.
+    Requires ownership, ``sessions:content:read:any``, or an active session content
+    approval. Returns 404 for inaccessible or scrubbed content and for refs not in the session.
 
     Args:
         session_id (str):

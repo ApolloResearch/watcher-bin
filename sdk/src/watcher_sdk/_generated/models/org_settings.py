@@ -7,6 +7,7 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from ..models.org_settings_settings_distribution import OrgSettingsSettingsDistribution
+from ..models.org_settings_slack_alert_detail import OrgSettingsSlackAlertDetail
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="OrgSettings")
@@ -31,6 +32,7 @@ class OrgSettings:
             organization_id (str):
             name (str):
             settings_distribution (OrgSettingsSettingsDistribution):
+            restrict_cross_user_session_content (bool):
             s3_output_bucket (None | str | Unset):
             s3_output_prefix (str | Unset):  Default: 'flagged-sessions/'.
             s3_input_prefix (str | Unset):  Default: ''.
@@ -41,12 +43,15 @@ class OrgSettings:
             slack_webhook_configured (bool | Unset):  Default: False.
             slack_webhook_hint (None | str | Unset):
             slack_webhook_managed (bool | Unset):  Default: False.
+            slack_alert_detail (OrgSettingsSlackAlertDetail | Unset): Slack alert detail level. Findings-only alerts include
+                findings and aggregates, excluding session content. Default: OrgSettingsSlackAlertDetail.FULL.
             session_content_retention_days (int | None | Unset):
     """
 
     organization_id: str
     name: str
     settings_distribution: OrgSettingsSettingsDistribution
+    restrict_cross_user_session_content: bool
     s3_output_bucket: None | str | Unset = UNSET
     s3_output_prefix: str | Unset = "flagged-sessions/"
     s3_input_prefix: str | Unset = ""
@@ -57,6 +62,9 @@ class OrgSettings:
     slack_webhook_configured: bool | Unset = False
     slack_webhook_hint: None | str | Unset = UNSET
     slack_webhook_managed: bool | Unset = False
+    slack_alert_detail: OrgSettingsSlackAlertDetail | Unset = (
+        OrgSettingsSlackAlertDetail.FULL
+    )
     session_content_retention_days: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -66,6 +74,8 @@ class OrgSettings:
         name = self.name
 
         settings_distribution = self.settings_distribution.value
+
+        restrict_cross_user_session_content = self.restrict_cross_user_session_content
 
         s3_output_bucket: None | str | Unset
         if isinstance(self.s3_output_bucket, Unset):
@@ -99,6 +109,10 @@ class OrgSettings:
 
         slack_webhook_managed = self.slack_webhook_managed
 
+        slack_alert_detail: str | Unset = UNSET
+        if not isinstance(self.slack_alert_detail, Unset):
+            slack_alert_detail = self.slack_alert_detail.value
+
         session_content_retention_days: int | None | Unset
         if isinstance(self.session_content_retention_days, Unset):
             session_content_retention_days = UNSET
@@ -112,6 +126,7 @@ class OrgSettings:
                 "organization_id": organization_id,
                 "name": name,
                 "settings_distribution": settings_distribution,
+                "restrict_cross_user_session_content": restrict_cross_user_session_content,
             }
         )
         if s3_output_bucket is not UNSET:
@@ -134,6 +149,8 @@ class OrgSettings:
             field_dict["slack_webhook_hint"] = slack_webhook_hint
         if slack_webhook_managed is not UNSET:
             field_dict["slack_webhook_managed"] = slack_webhook_managed
+        if slack_alert_detail is not UNSET:
+            field_dict["slack_alert_detail"] = slack_alert_detail
         if session_content_retention_days is not UNSET:
             field_dict["session_content_retention_days"] = (
                 session_content_retention_days
@@ -150,6 +167,10 @@ class OrgSettings:
 
         settings_distribution = OrgSettingsSettingsDistribution(
             d.pop("settings_distribution")
+        )
+
+        restrict_cross_user_session_content = d.pop(
+            "restrict_cross_user_session_content"
         )
 
         def _parse_s3_output_bucket(data: object) -> None | str | Unset:
@@ -197,6 +218,13 @@ class OrgSettings:
 
         slack_webhook_managed = d.pop("slack_webhook_managed", UNSET)
 
+        _slack_alert_detail = d.pop("slack_alert_detail", UNSET)
+        slack_alert_detail: OrgSettingsSlackAlertDetail | Unset
+        if isinstance(_slack_alert_detail, Unset):
+            slack_alert_detail = UNSET
+        else:
+            slack_alert_detail = OrgSettingsSlackAlertDetail(_slack_alert_detail)
+
         def _parse_session_content_retention_days(data: object) -> int | None | Unset:
             if data is None:
                 return data
@@ -212,6 +240,7 @@ class OrgSettings:
             organization_id=organization_id,
             name=name,
             settings_distribution=settings_distribution,
+            restrict_cross_user_session_content=restrict_cross_user_session_content,
             s3_output_bucket=s3_output_bucket,
             s3_output_prefix=s3_output_prefix,
             s3_input_prefix=s3_input_prefix,
@@ -222,6 +251,7 @@ class OrgSettings:
             slack_webhook_configured=slack_webhook_configured,
             slack_webhook_hint=slack_webhook_hint,
             slack_webhook_managed=slack_webhook_managed,
+            slack_alert_detail=slack_alert_detail,
             session_content_retention_days=session_content_retention_days,
         )
 

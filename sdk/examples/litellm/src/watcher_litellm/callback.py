@@ -10,9 +10,13 @@ and returns one decision per call with that call's location in the response.
 A response is released only when every client tool call in it has an allow
 (or observe-mode deferred) decision. Otherwise the callback removes every
 client tool call and appends an explanation, so the client receives a normal
-text reply. Streams are buffered until the decision and then re-encoded from
-the evaluated body, never replayed, so the client can only execute what
-Watcher saw. A Watcher failure withholds the response with an HTTP error.
+text reply. Chat Completions and Responses streams are buffered until the
+decision and then re-encoded from the evaluated body. Messages streams are
+forwarded as their events arrive, re-encoded from the parsed events, but every
+tool call and the end of the message are held until the decision. Nothing is
+replayed, so the client can only execute what Watcher saw. A Watcher failure
+withholds the response with an HTTP error, or with a stream error event once a
+Messages stream has started.
 
 Configure ``WATCHER_API_URL`` and ``WATCHER_API_KEY`` on the proxy process.
 Clients can send ``x-watcher-session-id`` to group their requests into one
@@ -21,8 +25,10 @@ session ID, as Claude Code's and Codex's normally do, group by it. Without
 either, Watcher groups requests by their shared conversation history.
 """
 
+import asyncio
 import logging
 import os
+import time
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -31,9 +37,21 @@ from urllib.parse import urlsplit
 from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
+from openai._streaming import SSEDecoder
 from pydantic import BaseModel
 
-from watcher_litellm.streams import API, IncompleteStream, UnsupportedStream, as_dict, assemble, encode
+from watcher_litellm.streams import (
+    API,
+    MESSAGES_EVENT_TYPES,
+    IncompleteStream,
+    MessageAssembler,
+    UnsupportedStream,
+    as_dict,
+    assemble,
+    encode,
+    encode_messages_event,
+    encode_messages_from,
+)
 from watcher_sdk import AsyncWatcherClient, WatcherAPIError, WatcherError
 from watcher_sdk._generated.models import HookCallError, PreToolUseHookResponse
 
@@ -52,6 +70,7 @@ _RELEASED = {"allow", "deferred"}
 # send back the stored ID it looked up without it gaining a second prefix.
 SESSION_PREFIX = "litellm:"
 _NOTICE = "Watcher withheld the proposed tool call{plural} ({names}). No tool was run.\n\n{reasons}"
+_PING = encode_messages_event({"type": "ping"})
 
 
 def route(data: dict[str, Any]) -> API | None:
@@ -238,11 +257,13 @@ class WatcherCallback(CustomLogger):
         *,
         timeout_seconds: float = 240,
         max_stream_chunks: int = 100_000,
+        ping_seconds: float = 10,
     ) -> None:
         super().__init__()
         self.client_factory = client_factory
         self.timeout_seconds = timeout_seconds
         self.max_stream_chunks = max_stream_chunks
+        self.ping_seconds = ping_seconds
 
     @asynccontextmanager
     async def _client(self) -> AsyncGenerator[AsyncWatcherClient]:
@@ -324,11 +345,15 @@ class WatcherCallback(CustomLogger):
     async def async_post_call_streaming_iterator_hook(
         self, user_api_key_dict: UserAPIKeyAuth, response: Any, request_data: dict[str, Any]
     ) -> AsyncGenerator[Any, None]:
-        """Buffer the whole stream, decide, then stream an encoding of the evaluated body."""
+        """Gate the stream on Watcher's decision, forwarding Messages events as they arrive."""
         api = route(request_data)
         if api is None:
             async for chunk in response:
                 yield chunk
+            return
+        if api == "messages":
+            async for event in self._messages_stream(request_data, response, user_api_key_dict):
+                yield event
             return
         chunks: list[Any] = []
         async for chunk in response:
@@ -341,7 +366,7 @@ class WatcherCallback(CustomLogger):
             # A truncated stream or a provider error event: a client retry
             # regenerates the response and may succeed.
             raise HTTPException(502, "Model response stream was incomplete") from None
-        except (UnsupportedStream, KeyError, TypeError, ValueError):
+        except UnsupportedStream:
             # A shape this example cannot interpret comes back the same way on
             # retry, so the client is told not to retry.
             raise HTTPException(422, "Model response stream is not supported") from None
@@ -351,6 +376,85 @@ class WatcherCallback(CustomLogger):
         # Responses event absent from the completed body), so only the
         # evaluated body is streamed.
         for event in encode(api, replacement if replacement is not None else assembled):
+            yield event
+
+    async def _messages_stream(
+        self, data: dict[str, Any], response: Any, user: UserAPIKeyAuth
+    ) -> AsyncGenerator[bytes]:
+        has_started = False
+        try:
+            async for event in self._gated_messages_stream(data, response, user):
+                has_started = True
+                yield event
+        except HTTPException as error:
+            if not has_started:
+                raise
+            error_type = "overloaded_error" if error.status_code >= 500 else "invalid_request_error"
+            yield encode_messages_event({"type": "error", "error": {"type": error_type, "message": error.detail}})
+
+    async def _stream_chunks(self, response: Any) -> AsyncGenerator[bytes]:
+        count = 0
+        async for chunk in response:
+            count += 1
+            if count > self.max_stream_chunks:
+                raise HTTPException(413, "Model response is too long to evaluate")
+            if not isinstance(chunk, bytes):
+                raise UnsupportedStream("Unexpected Messages stream chunk")
+            yield chunk
+
+    async def _gated_messages_stream(
+        self, data: dict[str, Any], response: Any, user: UserAPIKeyAuth
+    ) -> AsyncGenerator[bytes]:
+        assembler = MessageAssembler()
+        held: list[bytes] = []
+        is_holding = False
+        forwarded_blocks = 0
+        last_sent = time.monotonic()
+        try:
+            async for sse in SSEDecoder().aiter_bytes(self._stream_chunks(response)):
+                event = assembler.add(sse.data)
+                kind = event["type"]
+                if kind not in MESSAGES_EVENT_TYPES or (kind == "ping" and assembler.message is None):
+                    continue
+
+                is_call = kind == "content_block_start" and event["content_block"]["type"] == "tool_use"
+                if is_call or kind in ("message_delta", "message_stop"):
+                    is_holding = True
+                if kind == "ping" or not is_holding:
+                    if kind == "content_block_start":
+                        forwarded_blocks += 1
+                    last_sent = time.monotonic()
+                    yield encode_messages_event(event)
+                    continue
+
+                held.append(encode_messages_event(event))
+                if time.monotonic() - last_sent >= self.ping_seconds:
+                    last_sent = time.monotonic()
+                    yield _PING
+
+            message = assembler.result()
+        except IncompleteStream:
+            # A truncated stream or a provider error event: a client retry
+            # regenerates the response and may succeed.
+            raise HTTPException(502, "Model response stream was incomplete") from None
+        except UnsupportedStream:
+            # A shape this example cannot interpret comes back the same way on
+            # retry, so the client is told not to retry.
+            raise HTTPException(422, "Model response stream is not supported") from None
+
+        decision = asyncio.create_task(self._decide("messages", data, message, user))
+        try:
+            while True:
+                done, _ = await asyncio.wait({decision}, timeout=self.ping_seconds)
+                if done:
+                    break
+                yield _PING
+        finally:
+            decision.cancel()
+
+        replacement = decision.result()
+        released = held if replacement is None else list(encode_messages_from(replacement, forwarded_blocks))
+        for event in released:
             yield event
 
 

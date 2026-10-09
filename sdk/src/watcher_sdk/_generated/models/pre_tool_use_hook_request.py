@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from ..models.chat_message_system import ChatMessageSystem
     from ..models.chat_message_tool import ChatMessageTool
     from ..models.chat_message_user import ChatMessageUser
+    from ..models.hook_append_anchor import HookAppendAnchor
     from ..models.monitoring_input import MonitoringInput
     from ..models.pre_tool_use_hook_request_external_ids_type_0 import (
         PreToolUseHookRequestExternalIdsType0,
@@ -35,15 +36,24 @@ T = TypeVar("T", bound="PreToolUseHookRequest")
 class PreToolUseHookRequest:
     """Evaluate pending tool calls or ingest a transcript through the generic hook.
 
-    Send the conversation once in `messages` and select pending calls with
+    Full requests send the conversation in `messages` and select pending calls with
     `input`. A scalar input returns one response; a list returns one outcome
     per input in the same order, including each input's `tool_use_id`. Null,
     omitted, or empty-list input ingests the transcript without grading or
     writing decisions and returns an empty list, regardless of enforcement mode.
     Named observe calls return completed judgments with a deferred applied
-    decision. Enforce and observe support ephemeral evaluation and evaluation
+    decision. Enforce and observe support ephemeral full requests and evaluation
     without session-write permission; recording requires that permission.
     All calls share one transcript, which is ingested once when recording is enabled.
+
+    Set `append_after` to an explicit session and trajectory ID to send only new messages.
+    Append requires parent-session write authority and rejects `ephemeral=true`.
+    The stored prefix loads before validation and grading; pending calls may be in it.
+    Success returns `HookAppendResponse` with the next anchor and ordered results after recording.
+    Reuse that anchor directly. HTTP 503 `append_recording_failed` retains ordered `results`
+    without a new cursor: apply those decisions and retry the same append to finish recording.
+    On HTTP 404, 409, or 422, retry once with the full transcript and without `append_after`.
+    Older servers reject the additive field with 422. No implicit latest leaf is chosen.
 
     Input lists accept at most 32 items, including blank or ephemeral inputs.
     Larger lists are rejected with HTTP 422 before ingestion or grading.
@@ -75,8 +85,8 @@ class PreToolUseHookRequest:
 
     `settings_overrides` accepts a YAML string or JSON object that the server
     will merge onto administrator settings as a local settings layer.
-    Administrator locks reject overrides with HTTP 422, even when they repeat
-    a locked value. Set `enforcement.mode` there for observe or paused behavior;
+    An override that changes an administrator-locked value is refused with
+    HTTP 422; one that repeats it is accepted. Set `enforcement.mode` there for observe or paused behavior;
     omitted overrides inherit the administrator's settings. A gateway's
     server-owned capability limit independently prevents unsupported enforcement.
 
@@ -88,16 +98,18 @@ class PreToolUseHookRequest:
 
         Attributes:
             format_ (Literal['watcher']):
+            append_after (HookAppendAnchor | None | Unset): Append messages after this exact stored session/trajectory
+                anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and
+                cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered
+                results. Retry once with the full transcript and without append_after on 404, 409, or 422.
             input_ (list[MonitoringInput] | MonitoringInput | None | Unset):
-            messages (list[ChatMessageAssistant | ChatMessageSystem | ChatMessageTool | ChatMessageUser] | None | Unset):
-                Shared conversation transcript. Required for zero or multiple inputs; a scalar or single-item list may supply
-                input.messages instead.
             mode (PreToolUseHookRequestMode | Unset):  Default: PreToolUseHookRequestMode.FULL.
             external_ids (None | PreToolUseHookRequestExternalIdsType0 | Unset): Distinct conversation IDs from the harness
                 and gateway, keyed by source. Required unless ephemeral is true; send every id you have, e.g. {"claude_code":
                 "<Claude Code session uuid>", "other": "<your own conversation id>"}. The keys also name the harness. A caller
                 with no id at all records id-less by sending an explicit null value, e.g. {"other": null} or {"claude_code":
-                null}: the session is then found by transcript prefix.
+                null}: the session is then found by transcript prefix. With append_after the explicit anchor selects the
+                session; any non-null external IDs must already belong to that session.
             user (None | str | Unset):
             ephemeral (bool | Unset):  Default: False.
             force_regrade (bool | Unset): Evaluate again even when this session and tool-use ID have a completed judgment.
@@ -109,17 +121,14 @@ class PreToolUseHookRequest:
             settings_overrides (None | PreToolUseHookRequestSettingsOverridesType1 | str | Unset): Per-request settings as
                 YAML or a JSON object; at most 65,536 characters of YAML or serialized JSON. Administrator permission locks
                 apply.
+            messages (list[ChatMessageAssistant | ChatMessageSystem | ChatMessageTool | ChatMessageUser] | None | Unset):
+                Shared conversation transcript, or only new messages when append_after is set. Required for zero or multiple
+                inputs; a scalar or single-item list may supply input.messages instead.
     """
 
     format_: Literal["watcher"]
+    append_after: HookAppendAnchor | None | Unset = UNSET
     input_: list[MonitoringInput] | MonitoringInput | None | Unset = UNSET
-    messages: (
-        list[
-            ChatMessageAssistant | ChatMessageSystem | ChatMessageTool | ChatMessageUser
-        ]
-        | None
-        | Unset
-    ) = UNSET
     mode: PreToolUseHookRequestMode | Unset = PreToolUseHookRequestMode.FULL
     external_ids: None | PreToolUseHookRequestExternalIdsType0 | Unset = UNSET
     user: None | str | Unset = UNSET
@@ -130,11 +139,19 @@ class PreToolUseHookRequest:
     settings_overrides: (
         None | PreToolUseHookRequestSettingsOverridesType1 | str | Unset
     ) = UNSET
+    messages: (
+        list[
+            ChatMessageAssistant | ChatMessageSystem | ChatMessageTool | ChatMessageUser
+        ]
+        | None
+        | Unset
+    ) = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.chat_message_assistant import ChatMessageAssistant
         from ..models.chat_message_system import ChatMessageSystem
         from ..models.chat_message_user import ChatMessageUser
+        from ..models.hook_append_anchor import HookAppendAnchor
         from ..models.monitoring_input import MonitoringInput
         from ..models.pre_tool_use_hook_request_external_ids_type_0 import (
             PreToolUseHookRequestExternalIdsType0,
@@ -144,6 +161,14 @@ class PreToolUseHookRequest:
         )
 
         format_ = self.format_
+
+        append_after: dict[str, Any] | None | Unset
+        if isinstance(self.append_after, Unset):
+            append_after = UNSET
+        elif isinstance(self.append_after, HookAppendAnchor):
+            append_after = self.append_after.to_dict()
+        else:
+            append_after = self.append_after
 
         input_: dict[str, Any] | list[dict[str, Any]] | None | Unset
         if isinstance(self.input_, Unset):
@@ -158,27 +183,6 @@ class PreToolUseHookRequest:
 
         else:
             input_ = self.input_
-
-        messages: list[dict[str, Any]] | None | Unset
-        if isinstance(self.messages, Unset):
-            messages = UNSET
-        elif isinstance(self.messages, list):
-            messages = []
-            for messages_type_0_item_data in self.messages:
-                messages_type_0_item: dict[str, Any]
-                if isinstance(messages_type_0_item_data, ChatMessageSystem):
-                    messages_type_0_item = messages_type_0_item_data.to_dict()
-                elif isinstance(messages_type_0_item_data, ChatMessageUser):
-                    messages_type_0_item = messages_type_0_item_data.to_dict()
-                elif isinstance(messages_type_0_item_data, ChatMessageAssistant):
-                    messages_type_0_item = messages_type_0_item_data.to_dict()
-                else:
-                    messages_type_0_item = messages_type_0_item_data.to_dict()
-
-                messages.append(messages_type_0_item)
-
-        else:
-            messages = self.messages
 
         mode: str | Unset = UNSET
         if not isinstance(self.mode, Unset):
@@ -220,6 +224,27 @@ class PreToolUseHookRequest:
         else:
             settings_overrides = self.settings_overrides
 
+        messages: list[dict[str, Any]] | None | Unset
+        if isinstance(self.messages, Unset):
+            messages = UNSET
+        elif isinstance(self.messages, list):
+            messages = []
+            for messages_type_0_item_data in self.messages:
+                messages_type_0_item: dict[str, Any]
+                if isinstance(messages_type_0_item_data, ChatMessageSystem):
+                    messages_type_0_item = messages_type_0_item_data.to_dict()
+                elif isinstance(messages_type_0_item_data, ChatMessageUser):
+                    messages_type_0_item = messages_type_0_item_data.to_dict()
+                elif isinstance(messages_type_0_item_data, ChatMessageAssistant):
+                    messages_type_0_item = messages_type_0_item_data.to_dict()
+                else:
+                    messages_type_0_item = messages_type_0_item_data.to_dict()
+
+                messages.append(messages_type_0_item)
+
+        else:
+            messages = self.messages
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -227,10 +252,10 @@ class PreToolUseHookRequest:
                 "format": format_,
             }
         )
+        if append_after is not UNSET:
+            field_dict["append_after"] = append_after
         if input_ is not UNSET:
             field_dict["input"] = input_
-        if messages is not UNSET:
-            field_dict["messages"] = messages
         if mode is not UNSET:
             field_dict["mode"] = mode
         if external_ids is not UNSET:
@@ -247,6 +272,8 @@ class PreToolUseHookRequest:
             field_dict["policy_version"] = policy_version
         if settings_overrides is not UNSET:
             field_dict["settings_overrides"] = settings_overrides
+        if messages is not UNSET:
+            field_dict["messages"] = messages
 
         return field_dict
 
@@ -256,6 +283,7 @@ class PreToolUseHookRequest:
         from ..models.chat_message_system import ChatMessageSystem
         from ..models.chat_message_tool import ChatMessageTool
         from ..models.chat_message_user import ChatMessageUser
+        from ..models.hook_append_anchor import HookAppendAnchor
         from ..models.monitoring_input import MonitoringInput
         from ..models.pre_tool_use_hook_request_external_ids_type_0 import (
             PreToolUseHookRequestExternalIdsType0,
@@ -268,6 +296,23 @@ class PreToolUseHookRequest:
         format_ = cast(Literal["watcher"], d.pop("format"))
         if format_ != "watcher":
             raise ValueError(f"format must match const 'watcher', got '{format_}'")
+
+        def _parse_append_after(data: object) -> HookAppendAnchor | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                append_after_type_0 = HookAppendAnchor.from_dict(data)
+
+                return append_after_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(HookAppendAnchor | None | Unset, data)
+
+        append_after = _parse_append_after(d.pop("append_after", UNSET))
 
         def _parse_input_(
             data: object,
@@ -302,6 +347,83 @@ class PreToolUseHookRequest:
             return cast(list[MonitoringInput] | MonitoringInput | None | Unset, data)
 
         input_ = _parse_input_(d.pop("input", UNSET))
+
+        _mode = d.pop("mode", UNSET)
+        mode: PreToolUseHookRequestMode | Unset
+        if isinstance(_mode, Unset):
+            mode = UNSET
+        else:
+            mode = PreToolUseHookRequestMode(_mode)
+
+        def _parse_external_ids(
+            data: object,
+        ) -> None | PreToolUseHookRequestExternalIdsType0 | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                external_ids_type_0 = PreToolUseHookRequestExternalIdsType0.from_dict(
+                    data
+                )
+
+                return external_ids_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | PreToolUseHookRequestExternalIdsType0 | Unset, data)
+
+        external_ids = _parse_external_ids(d.pop("external_ids", UNSET))
+
+        def _parse_user(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        user = _parse_user(d.pop("user", UNSET))
+
+        ephemeral = d.pop("ephemeral", UNSET)
+
+        force_regrade = d.pop("force_regrade", UNSET)
+
+        skip_rules = d.pop("skip_rules", UNSET)
+
+        def _parse_policy_version(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        policy_version = _parse_policy_version(d.pop("policy_version", UNSET))
+
+        def _parse_settings_overrides(
+            data: object,
+        ) -> None | PreToolUseHookRequestSettingsOverridesType1 | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                settings_overrides_type_1 = (
+                    PreToolUseHookRequestSettingsOverridesType1.from_dict(data)
+                )
+
+                return settings_overrides_type_1
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(
+                None | PreToolUseHookRequestSettingsOverridesType1 | str | Unset, data
+            )
+
+        settings_overrides = _parse_settings_overrides(
+            d.pop("settings_overrides", UNSET)
+        )
 
         def _parse_messages(
             data: object,
@@ -393,87 +515,10 @@ class PreToolUseHookRequest:
 
         messages = _parse_messages(d.pop("messages", UNSET))
 
-        _mode = d.pop("mode", UNSET)
-        mode: PreToolUseHookRequestMode | Unset
-        if isinstance(_mode, Unset):
-            mode = UNSET
-        else:
-            mode = PreToolUseHookRequestMode(_mode)
-
-        def _parse_external_ids(
-            data: object,
-        ) -> None | PreToolUseHookRequestExternalIdsType0 | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            try:
-                if not isinstance(data, dict):
-                    raise TypeError()
-                external_ids_type_0 = PreToolUseHookRequestExternalIdsType0.from_dict(
-                    data
-                )
-
-                return external_ids_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(None | PreToolUseHookRequestExternalIdsType0 | Unset, data)
-
-        external_ids = _parse_external_ids(d.pop("external_ids", UNSET))
-
-        def _parse_user(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        user = _parse_user(d.pop("user", UNSET))
-
-        ephemeral = d.pop("ephemeral", UNSET)
-
-        force_regrade = d.pop("force_regrade", UNSET)
-
-        skip_rules = d.pop("skip_rules", UNSET)
-
-        def _parse_policy_version(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        policy_version = _parse_policy_version(d.pop("policy_version", UNSET))
-
-        def _parse_settings_overrides(
-            data: object,
-        ) -> None | PreToolUseHookRequestSettingsOverridesType1 | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            try:
-                if not isinstance(data, dict):
-                    raise TypeError()
-                settings_overrides_type_1 = (
-                    PreToolUseHookRequestSettingsOverridesType1.from_dict(data)
-                )
-
-                return settings_overrides_type_1
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(
-                None | PreToolUseHookRequestSettingsOverridesType1 | str | Unset, data
-            )
-
-        settings_overrides = _parse_settings_overrides(
-            d.pop("settings_overrides", UNSET)
-        )
-
         pre_tool_use_hook_request = cls(
             format_=format_,
+            append_after=append_after,
             input_=input_,
-            messages=messages,
             mode=mode,
             external_ids=external_ids,
             user=user,
@@ -482,6 +527,7 @@ class PreToolUseHookRequest:
             skip_rules=skip_rules,
             policy_version=policy_version,
             settings_overrides=settings_overrides,
+            messages=messages,
         )
 
         return pre_tool_use_hook_request

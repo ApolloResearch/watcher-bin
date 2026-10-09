@@ -7,7 +7,7 @@ officially supported integration.
 
 ## Install and configure
 
-Use Python 3.12 or later and `uv`. The pinned framework packages are `langgraph==1.0.3`, `langgraph-prebuilt==1.0.2`, `langchain-core==1.0.7`.
+Use Python 3.12 or later and `uv`. The pinned framework packages are `langgraph==1.0.10`, `langgraph-prebuilt==1.0.8`, `langchain-core==1.3.3`.
 From this example directory:
 
 ```bash
@@ -91,10 +91,10 @@ in Watcher, uploads an outcome-only decision, and reads back the stored human
 choice and tool status. Only then can an approved tool execute. Original grades
 and escalation remain intact; approval is recorded as pending execution,
 rejection as blocked.
-This requires session-read access and permission to update the session as its
+This requires findings and content access and permission to update the session as its
 owner or with `sessions:write:any`.
-For a service API key, configure `sessions:ingest`, `sessions:read:any` and
-`sessions:write:any` for transcript recording and human-decision reporting.
+For a service API key, configure `sessions:ingest`, `sessions:findings:read:any`,
+`sessions:content:read:any` and `sessions:write:any` for transcript recording and human-decision reporting.
 Lookup, permission, upload, content-scrub or readback failures block execution. The default reporting deadline is 10 seconds; configure
 `human_audit_timeout` to change it. Recent human decisions accompany later grading
 requests as context. Persist the human choice in your application if recovery is

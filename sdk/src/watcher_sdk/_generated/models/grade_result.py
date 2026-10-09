@@ -26,6 +26,9 @@ class GradeResult:
     grades omit persisted trajectory identifiers and use ``trajectory_index`` to
     identify the trajectory's position in the request.
 
+    Stored session summaries (including nested report summaries) require content
+    access. Mixed read responses omit fields outside the caller's read permissions.
+
     Callers can resolve ``(grader_id, grader_version)`` to the exact grader
     configuration used via GET /v1/graders/{grader_id}/{version}.
 

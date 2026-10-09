@@ -73,8 +73,10 @@ def sync_detailed(
 
      Grade trajectories with explicitly named graders.
 
-    DB-backed grading is gated by session ownership: callers may only grade
-    sessions they own, unless they hold ``sessions:write:any`` or administrator
+    Callers may grade their own stored sessions. Grading another user's stored
+    session requires ``sessions:grade:any`` and access to that session's content.
+    Results respect findings permissions. Grading supplied messages needs no
+    session-read grant; attaching tool-call results to a session requires write
     authority. Flagged-grade Slack notifications are sent after the response,
     only for DB-backed trajectory grading. Tool-call grading
     (``tool_call_run_kind``) persists the grade but does NOT notify here — its
@@ -127,8 +129,10 @@ def sync(
 
      Grade trajectories with explicitly named graders.
 
-    DB-backed grading is gated by session ownership: callers may only grade
-    sessions they own, unless they hold ``sessions:write:any`` or administrator
+    Callers may grade their own stored sessions. Grading another user's stored
+    session requires ``sessions:grade:any`` and access to that session's content.
+    Results respect findings permissions. Grading supplied messages needs no
+    session-read grant; attaching tool-call results to a session requires write
     authority. Flagged-grade Slack notifications are sent after the response,
     only for DB-backed trajectory grading. Tool-call grading
     (``tool_call_run_kind``) persists the grade but does NOT notify here — its
@@ -176,8 +180,10 @@ async def asyncio_detailed(
 
      Grade trajectories with explicitly named graders.
 
-    DB-backed grading is gated by session ownership: callers may only grade
-    sessions they own, unless they hold ``sessions:write:any`` or administrator
+    Callers may grade their own stored sessions. Grading another user's stored
+    session requires ``sessions:grade:any`` and access to that session's content.
+    Results respect findings permissions. Grading supplied messages needs no
+    session-read grant; attaching tool-call results to a session requires write
     authority. Flagged-grade Slack notifications are sent after the response,
     only for DB-backed trajectory grading. Tool-call grading
     (``tool_call_run_kind``) persists the grade but does NOT notify here — its
@@ -228,8 +234,10 @@ async def asyncio(
 
      Grade trajectories with explicitly named graders.
 
-    DB-backed grading is gated by session ownership: callers may only grade
-    sessions they own, unless they hold ``sessions:write:any`` or administrator
+    Callers may grade their own stored sessions. Grading another user's stored
+    session requires ``sessions:grade:any`` and access to that session's content.
+    Results respect findings permissions. Grading supplied messages needs no
+    session-read grant; attaching tool-call results to a session requires write
     authority. Flagged-grade Slack notifications are sent after the response,
     only for DB-backed trajectory grading. Tool-call grading
     (``tool_call_run_kind``) persists the grade but does NOT notify here — its

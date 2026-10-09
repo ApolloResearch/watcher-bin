@@ -8,6 +8,9 @@ from attrs import define as _attrs_define
 from ..models.org_settings_update_settings_distribution_type_0 import (
     OrgSettingsUpdateSettingsDistributionType0,
 )
+from ..models.org_settings_update_slack_alert_detail_type_0 import (
+    OrgSettingsUpdateSlackAlertDetailType0,
+)
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="OrgSettingsUpdate")
@@ -27,8 +30,10 @@ class OrgSettingsUpdate:
         notifications_enabled (bool | None | Unset):
         flag_threshold (float | None | Unset):
         slack_webhook_url (None | str | Unset):
+        slack_alert_detail (None | OrgSettingsUpdateSlackAlertDetailType0 | Unset):
         session_content_retention_days (int | None | Unset):
         settings_distribution (None | OrgSettingsUpdateSettingsDistributionType0 | Unset):
+        restrict_cross_user_session_content (bool | None | Unset):
     """
 
     name: None | str | Unset = UNSET
@@ -40,10 +45,12 @@ class OrgSettingsUpdate:
     notifications_enabled: bool | None | Unset = UNSET
     flag_threshold: float | None | Unset = UNSET
     slack_webhook_url: None | str | Unset = UNSET
+    slack_alert_detail: None | OrgSettingsUpdateSlackAlertDetailType0 | Unset = UNSET
     session_content_retention_days: int | None | Unset = UNSET
     settings_distribution: None | OrgSettingsUpdateSettingsDistributionType0 | Unset = (
         UNSET
     )
+    restrict_cross_user_session_content: bool | None | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         name: None | str | Unset
@@ -100,6 +107,16 @@ class OrgSettingsUpdate:
         else:
             slack_webhook_url = self.slack_webhook_url
 
+        slack_alert_detail: None | str | Unset
+        if isinstance(self.slack_alert_detail, Unset):
+            slack_alert_detail = UNSET
+        elif isinstance(
+            self.slack_alert_detail, OrgSettingsUpdateSlackAlertDetailType0
+        ):
+            slack_alert_detail = self.slack_alert_detail.value
+        else:
+            slack_alert_detail = self.slack_alert_detail
+
         session_content_retention_days: int | None | Unset
         if isinstance(self.session_content_retention_days, Unset):
             session_content_retention_days = UNSET
@@ -115,6 +132,14 @@ class OrgSettingsUpdate:
             settings_distribution = self.settings_distribution.value
         else:
             settings_distribution = self.settings_distribution
+
+        restrict_cross_user_session_content: bool | None | Unset
+        if isinstance(self.restrict_cross_user_session_content, Unset):
+            restrict_cross_user_session_content = UNSET
+        else:
+            restrict_cross_user_session_content = (
+                self.restrict_cross_user_session_content
+            )
 
         field_dict: dict[str, Any] = {}
 
@@ -137,12 +162,18 @@ class OrgSettingsUpdate:
             field_dict["flag_threshold"] = flag_threshold
         if slack_webhook_url is not UNSET:
             field_dict["slack_webhook_url"] = slack_webhook_url
+        if slack_alert_detail is not UNSET:
+            field_dict["slack_alert_detail"] = slack_alert_detail
         if session_content_retention_days is not UNSET:
             field_dict["session_content_retention_days"] = (
                 session_content_retention_days
             )
         if settings_distribution is not UNSET:
             field_dict["settings_distribution"] = settings_distribution
+        if restrict_cross_user_session_content is not UNSET:
+            field_dict["restrict_cross_user_session_content"] = (
+                restrict_cross_user_session_content
+            )
 
         return field_dict
 
@@ -235,6 +266,27 @@ class OrgSettingsUpdate:
 
         slack_webhook_url = _parse_slack_webhook_url(d.pop("slack_webhook_url", UNSET))
 
+        def _parse_slack_alert_detail(
+            data: object,
+        ) -> None | OrgSettingsUpdateSlackAlertDetailType0 | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                slack_alert_detail_type_0 = OrgSettingsUpdateSlackAlertDetailType0(data)
+
+                return slack_alert_detail_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | OrgSettingsUpdateSlackAlertDetailType0 | Unset, data)
+
+        slack_alert_detail = _parse_slack_alert_detail(
+            d.pop("slack_alert_detail", UNSET)
+        )
+
         def _parse_session_content_retention_days(data: object) -> int | None | Unset:
             if data is None:
                 return data
@@ -269,6 +321,21 @@ class OrgSettingsUpdate:
             d.pop("settings_distribution", UNSET)
         )
 
+        def _parse_restrict_cross_user_session_content(
+            data: object,
+        ) -> bool | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(bool | None | Unset, data)
+
+        restrict_cross_user_session_content = (
+            _parse_restrict_cross_user_session_content(
+                d.pop("restrict_cross_user_session_content", UNSET)
+            )
+        )
+
         org_settings_update = cls(
             name=name,
             s3_output_bucket=s3_output_bucket,
@@ -279,8 +346,10 @@ class OrgSettingsUpdate:
             notifications_enabled=notifications_enabled,
             flag_threshold=flag_threshold,
             slack_webhook_url=slack_webhook_url,
+            slack_alert_detail=slack_alert_detail,
             session_content_retention_days=session_content_retention_days,
             settings_distribution=settings_distribution,
+            restrict_cross_user_session_content=restrict_cross_user_session_content,
         )
 
         return org_settings_update

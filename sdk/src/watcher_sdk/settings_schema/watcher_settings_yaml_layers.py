@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections.abc import Callable, Hashable
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import regex as regex_module
 import yaml
@@ -22,12 +23,15 @@ from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
     diff_against_base,
     drop_derived_local_settings,
     get_path_or_none,
+    is_rule_list,
+    is_setting_value,
     locked_override_paths,
     merge_admin,
     merge_local,
     merge_profile_admin,
     merge_profile_local,
     node_permission,
+    strip_permissions,
     unwrap,
     unwrap_composite_wrappers,
 )
@@ -50,6 +54,27 @@ PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 type LocalSettingsScope = Literal["none", "global", "all"]
 type SettingsCacheKey = tuple[str, tuple[tuple[str, tuple[int, int] | None], ...]]
+
+
+class AppliedOverlay(NamedTuple):
+    """One layer above the administrator baseline, exactly as the effective merge applied it.
+
+    ``base`` is the tree the layer merged onto, ``written`` the layer as its
+    source holds it, ``overlay`` the layer after sanitizing against ``base``,
+    and ``merge`` the function that merged them (with its permission root
+    bound), so ``merge(base, overlay)`` reproduces the layer's step. Replaying
+    the step with a stand-in overlay shows which paths the layer actually set:
+    a path its permissions refused, or a value sanitizing pruned, never
+    reaches the result. Sanitizing can also put the base's value in place of
+    an invalid one it keeps the wrapper of, so ``written`` tells a value the
+    source wrote from one sanitizing supplied.
+    """
+
+    base: dict[str, Any]
+    written: dict[str, Any]
+    overlay: dict[str, Any]
+    merge: Callable[[Any, Any], Any]
+
 
 _YAML_MERGE_KEY_TAG = "tag:yaml.org,2002:merge"
 _YAML_MERGE_KEY = object()
@@ -92,7 +117,7 @@ def load_settings_yaml(yaml_text: str) -> object:
 class SettingsOverridesError(ValueError):
     """A per-request YAML or JSON settings overlay was rejected.
 
-    Invalid documents and attempts to touch admin-locked paths raise this
+    Invalid documents and attempts to change admin-locked values raise this
     error. API handlers may forward `safe_detail` in a 422 response: it names
     setting paths and parser errors without including document contents.
     """
@@ -214,9 +239,10 @@ def merge_local_overrides(base: dict[str, Any], overrides: str | dict[str, Any])
     `settings.local.yaml` would (`merge_local` semantics, admin
     `permission` locks honored) with one deliberate departure: where a
     machine's stale local file is silently pruned at a locked path, a
-    per-request override is *rejected* — `SettingsOverridesError`
-    naming the locked paths — because the caller would otherwise enforce under
-    a policy it merely believes is in force. Unparseable or non-mapping
+    per-request override that changes a locked value is *rejected* —
+    `SettingsOverridesError` naming the locked paths — because the caller
+    would otherwise enforce under a policy it merely believes is in force. An
+    entry that repeats the locked value is accepted (`_changes_only`). Unparseable or non-mapping
     documents raise it too, as does one whose merge produces a schema-invalid
     tree (a bad enum, an unorderable threshold pair, a non-numeric threshold):
     where a machine's boot path *repairs* an invalid merged tree because the
@@ -247,7 +273,9 @@ def merge_local_overrides(base: dict[str, Any], overrides: str | dict[str, Any])
         raise SettingsOverridesError("settings_overrides must be a YAML or JSON mapping")
     data = unwrap_composite_wrappers(data)
     _reject_unmergeable_override_rules(data)
-    locked = locked_override_paths(base, data)
+    changes = _changes_only(base, data)
+    # Nothing left to change asks for nothing locked, even under a root lock.
+    locked = locked_override_paths(base, changes) if changes else []
     if locked:
         paths = ", ".join(sorted(set(locked)))
         raise SettingsOverridesError(f"settings_overrides changes admin-locked settings: {paths}")
@@ -262,6 +290,83 @@ def merge_local_overrides(base: dict[str, Any], overrides: str | dict[str, Any])
     return merged
 
 
+def _changes_only(base: Any, overlay: Any) -> Any:
+    """``overlay`` without the entries that already hold ``base``'s value, so only real changes meet the locks.
+
+    An override that repeats a locked value asks for nothing the administrator
+    locked: a machine in observe mode restates the mode it runs in, which a
+    server locking observe would otherwise refuse. Mappings are compared key
+    by key, rule lists rule by rule (`_changed_rules`) and anything else
+    whole; ``permission`` keys are dropped, as the merge ignores them. Returns
+    an empty mapping when nothing changes.
+    """
+    if not (_is_mapping(overlay) and _is_mapping(base)):
+        return overlay
+    changed: dict[str, Any] = {}
+    for key, value in overlay.items():
+        if key == "permission":
+            continue
+        if key not in base:
+            changed[key] = value
+        elif not _same_value(value, base[key]):
+            if key == "rules" and is_rule_list(base[key]) and isinstance(value, list):
+                # Rules merge by id, so each is narrowed against the base rule
+                # with its id, as the lock check reads them.
+                rules = _changed_rules(base[key], value)
+                if rules:
+                    changed[key] = rules
+                continue
+            narrowed = _changes_only(base[key], value)
+            # A partial mapping can differ from the whole base node yet change
+            # none of the keys it names.
+            if not (_is_mapping(value) and narrowed == {}):
+                changed[key] = narrowed
+    return changed
+
+
+def _same_value(overlay: Any, base: Any) -> bool:
+    """Whether two settings values are equal as JSON once permissions are stripped.
+
+    Compared as JSON, not with Python equality, so ``true`` never equals ``1``
+    and a value of the wrong type still counts as a change. A value JSON cannot
+    represent or order (a YAML date, mixed key types) counts as a change too, so
+    validation or the lock check sees it rather than its text passing for the
+    base's string.
+    """
+    try:
+        return json.dumps(strip_permissions(overlay), sort_keys=True) == json.dumps(
+            strip_permissions(base), sort_keys=True
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def _changed_rules(base_rules: list[Any], overlay_rules: list[Any]) -> list[Any]:
+    """``overlay_rules`` narrowed to what each changes in the base rule with its id.
+
+    A rule that changes nothing is dropped, and one that changes some fields
+    keeps only those and its id, so a field it repeats is not read as a change
+    to a locked field. A rule with no base counterpart, or no string id, is
+    kept whole.
+    """
+    by_id = {rule["id"]: rule for rule in base_rules if isinstance(rule, dict) and isinstance(rule.get("id"), str)}
+    changed: list[Any] = []
+    for rule in overlay_rules:
+        rule_id = rule.get("id") if isinstance(rule, dict) else None
+        if not isinstance(rule_id, str) or rule_id not in by_id:
+            changed.append(rule)
+            continue
+        narrowed = _changes_only(by_id[rule_id], rule)
+        if narrowed:
+            changed.append({**narrowed, "id": rule_id})
+    return changed
+
+
+def _is_mapping(node: Any) -> bool:
+    """A settings mapping, not a ``{value: ...}`` leaf."""
+    return isinstance(node, dict) and not is_setting_value(node)
+
+
 def effective_raw(
     local_scope: LocalSettingsScope,
     admin_path: Path,
@@ -270,7 +375,18 @@ def effective_raw(
     ensure_local_imported: Callable[[], None],
     raw_cache: dict[tuple[LocalSettingsScope, SettingsCacheKey], dict[str, Any]],
     load_issues_cache: dict[tuple[LocalSettingsScope, SettingsCacheKey], list[SettingsLoadIssue]],
+    applied_overlays: list[AppliedOverlay] | None = None,
 ) -> dict[str, Any]:
+    """The builtin, administrator, local and active-profile layers merged into one settings tree.
+
+    ``local_scope`` picks which machine-local layers apply: none, only the
+    global local file, or that file plus the active profile's local entry and
+    file. Results are cached in ``raw_cache`` (and the load issues in
+    ``load_issues_cache``) on the files' fingerprints. When
+    ``applied_overlays`` is given, every layer above the administrator
+    baseline is appended to it in merge order (see `AppliedOverlay`); the
+    cache is then bypassed, since a cached tree records no layers.
+    """
     ensure_local_imported()
 
     builtin = load_builtin_settings()
@@ -280,9 +396,10 @@ def effective_raw(
     _report_retired_admin_profile_files(admin_path, issues)
     admin = sanitize_overlay(builtin, admin, "admin", admin_path, issues, merge_admin)
     baseline_admin = merge_admin(builtin, admin)
+    local_written = load_local_settings(local_path, issues)
     local = sanitize_overlay(
         baseline_admin,
-        load_local_settings(local_path, issues),
+        local_written,
         "local",
         local_path,
         issues,
@@ -293,11 +410,13 @@ def effective_raw(
 
     cache_key = (local_scope, settings_cache_key(admin_path, local_path, active_profile_id))
     cached = raw_cache.get(cache_key)
-    if cached is not None:
+    if cached is not None and applied_overlays is None:
         return cached
 
     merged = baseline_admin
     if local_scope in ("global", "all"):
+        if applied_overlays is not None:
+            applied_overlays.append(AppliedOverlay(merged, local_written, local, merge_local))
         merged = merge_local(merged, local)
     if active_profile_id != DEFAULT_PROFILE_ID:
         merged = apply_profile_layers(
@@ -311,6 +430,7 @@ def effective_raw(
             builtin_doc=builtin,
             admin_doc=admin,
             local_doc=local,
+            applied_overlays=applied_overlays,
         )
     merged = repair_settings_tree(merged, baseline_admin, "local", local_path, issues)
     raw_cache[cache_key] = merged
@@ -451,6 +571,7 @@ def apply_profile_layers(
     builtin_doc: dict[str, Any],
     admin_doc: dict[str, Any],
     local_doc: dict[str, Any],
+    applied_overlays: list[AppliedOverlay] | None = None,
 ) -> dict[str, Any]:
     """Layer the active profile's overrides onto the merged baseline+local tree.
 
@@ -466,10 +587,24 @@ def apply_profile_layers(
     applied with its own layer's merge semantics and permission root. It also keeps
     the shipped profiles intact when an admin locks the catalog, since a locked
     catalog replaces the builtin one in the merged tree.
+
+    Each overlay applied is appended to ``applied_overlays`` when given (see
+    `AppliedOverlay`).
     """
+
+    def merge_admin_layer(base: Any, overlay: Any) -> Any:
+        return merge_profile_admin(base, overlay, baseline_admin)
+
+    def apply(
+        base: dict[str, Any], written: dict[str, Any], overlay: dict[str, Any], merge: Callable[[Any, Any], Any]
+    ) -> dict[str, Any]:
+        if applied_overlays is not None:
+            applied_overlays.append(AppliedOverlay(base, written, overlay, merge))
+        return merge(base, overlay)
+
     builtin_inline = inline_profile_overlay(builtin_doc, profile_id)
     if builtin_inline:
-        merged = merge_profile_admin(merged, builtin_inline, baseline_admin)
+        merged = apply(merged, builtin_inline, builtin_inline, merge_admin_layer)
         merged = repair_settings_tree(merged, baseline_admin, "local", local_path, issues)
 
     admin_inline = sanitize_inline_profile_overlay(
@@ -479,9 +614,9 @@ def apply_profile_layers(
         "admin",
         admin_path,
         issues,
-        lambda base, overlay: merge_profile_admin(base, overlay, baseline_admin),
+        merge_admin_layer,
     )
-    merged = merge_profile_admin(merged, admin_inline, baseline_admin)
+    merged = apply(merged, inline_profile_overlay(admin_doc, profile_id), admin_inline, merge_admin_layer)
 
     if local_scope == "all":
         local_inline = sanitize_inline_profile_overlay(
@@ -493,7 +628,7 @@ def apply_profile_layers(
             issues,
             merge_profile_local,
         )
-        merged = merge_profile_local(merged, local_inline)
+        merged = apply(merged, inline_profile_overlay(local_doc, profile_id), local_inline, merge_profile_local)
 
         # Unlike the retired organization profile file, this one is still written by
         # Watcher every time a setting changes while a non-default profile is active. It
@@ -505,6 +640,7 @@ def apply_profile_layers(
             "local",
             issues,
             merge_profile_local,
+            applied_overlays,
         )
     return merged
 
@@ -516,6 +652,7 @@ def _apply_profile_file(
     source: SettingsSource,
     issues: list[SettingsLoadIssue],
     merge: Callable[[Any, Any], Any],
+    applied_overlays: list[AppliedOverlay] | None,
 ) -> dict[str, Any]:
     """Layer one separate ``settings.<id>`` profile file on, or leave the tree alone.
 
@@ -526,9 +663,9 @@ def _apply_profile_file(
     no current code anticipates could still raise.
     """
     try:
-        overlay = load(path, issues)
-        overlay = sanitize_overlay(merged, overlay, source, path, issues, merge)
-        return merge(merged, overlay)
+        written = load(path, issues)
+        overlay = sanitize_overlay(merged, written, source, path, issues, merge)
+        result = merge(merged, overlay)
     except Exception as error:  # noqa: BLE001 - a deprecated profile file must not fail the load
         add_settings_load_issue(
             issues,
@@ -539,6 +676,9 @@ def _apply_profile_file(
             "Move its contents into the profiles entry in settings.yaml.",
         )
         return merged
+    if applied_overlays is not None:
+        applied_overlays.append(AppliedOverlay(merged, written, overlay, merge))
+    return result
 
 
 # Keys of a profile catalog entry that mark up the entry itself rather than

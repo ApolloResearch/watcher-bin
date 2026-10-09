@@ -33,6 +33,7 @@ class ContentText:
         type_ (Literal['text'] | Unset):  Default: 'text'.
         refusal (bool | None | Unset):
         citations (list[ContentCitation | DocumentCitation | UrlCitation] | None | Unset):
+        cache_breakpoint (bool | None | Unset):
     """
 
     text: str
@@ -42,6 +43,7 @@ class ContentText:
     citations: list[ContentCitation | DocumentCitation | UrlCitation] | None | Unset = (
         UNSET
     )
+    cache_breakpoint: bool | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -83,6 +85,12 @@ class ContentText:
         else:
             citations = self.citations
 
+        cache_breakpoint: bool | None | Unset
+        if isinstance(self.cache_breakpoint, Unset):
+            cache_breakpoint = UNSET
+        else:
+            cache_breakpoint = self.cache_breakpoint
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -98,6 +106,8 @@ class ContentText:
             field_dict["refusal"] = refusal
         if citations is not UNSET:
             field_dict["citations"] = citations
+        if cache_breakpoint is not UNSET:
+            field_dict["cache_breakpoint"] = cache_breakpoint
 
         return field_dict
 
@@ -191,12 +201,22 @@ class ContentText:
 
         citations = _parse_citations(d.pop("citations", UNSET))
 
+        def _parse_cache_breakpoint(data: object) -> bool | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(bool | None | Unset, data)
+
+        cache_breakpoint = _parse_cache_breakpoint(d.pop("cache_breakpoint", UNSET))
+
         content_text = cls(
             text=text,
             internal=internal,
             type_=type_,
             refusal=refusal,
             citations=citations,
+            cache_breakpoint=cache_breakpoint,
         )
 
         content_text.additional_properties = d

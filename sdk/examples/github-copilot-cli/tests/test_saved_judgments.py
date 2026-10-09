@@ -49,6 +49,7 @@ class Judgment(BaseModel):
     judged: str | None = "deny"
     mode: str = "enforce"
     source: str = "policy_gateway"
+    tool_status: str = "pending"
     grade_ids: list[UUID] = Field(default_factory=lambda: [UUID(int=3)])
 
     def wire(self) -> dict[str, JsonValue]:
@@ -57,7 +58,7 @@ class Judgment(BaseModel):
             "tool_name": self.tool_name,
             "raw_tool_call": {"tool_name": self.tool_name, "tool_input": self.tool_input, "cwd": "/workspace"},
             "policy_decision": "deny",
-            "tool_status": "pending",
+            "tool_status": self.tool_status,
             "decision_source": self.source,
             "tool_call_id": str(UUID(int=1)),
             "tool_call_decision_id": str(UUID(int=2)),
@@ -183,6 +184,19 @@ class JudgmentServer(BaseModel):
             [target] = [item for item in self.sessions.values() if item.session_id == batch.session_id]
             for decision in batch.decisions:
                 self.uploads.append(decision)
+                existing = [
+                    judgment
+                    for judgment in target.trajectories[0].judgments
+                    if judgment.tool_use_id == decision.tool_use_id
+                ]
+                if (
+                    decision.decision_source == "not_evaluated"
+                    and decision.applied_decision == "not_evaluated"
+                    and existing
+                ):
+                    assert len(existing) == 1
+                    existing[0].tool_status = decision.tool_status
+                    continue
                 target.trajectories[0].judgments.append(
                     Judgment(
                         tool_use_id=decision.tool_use_id,

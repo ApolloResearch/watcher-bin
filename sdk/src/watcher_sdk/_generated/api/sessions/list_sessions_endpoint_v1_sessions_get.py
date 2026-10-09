@@ -93,7 +93,7 @@ def sync_detailed(
 
      List all sessions with pagination and sort. For filtered queries use POST /sessions/search.
 
-    Callers without ``sessions:read:any`` see only their own sessions
+    Callers without ``sessions:findings:read:any`` see only their own sessions
     (naming another user in ``user_id`` returns 403).
 
     Args:
@@ -139,7 +139,7 @@ def sync(
 
      List all sessions with pagination and sort. For filtered queries use POST /sessions/search.
 
-    Callers without ``sessions:read:any`` see only their own sessions
+    Callers without ``sessions:findings:read:any`` see only their own sessions
     (naming another user in ``user_id`` returns 403).
 
     Args:
@@ -180,7 +180,7 @@ async def asyncio_detailed(
 
      List all sessions with pagination and sort. For filtered queries use POST /sessions/search.
 
-    Callers without ``sessions:read:any`` see only their own sessions
+    Callers without ``sessions:findings:read:any`` see only their own sessions
     (naming another user in ``user_id`` returns 403).
 
     Args:
@@ -224,7 +224,7 @@ async def asyncio(
 
      List all sessions with pagination and sort. For filtered queries use POST /sessions/search.
 
-    Callers without ``sessions:read:any`` see only their own sessions
+    Callers without ``sessions:findings:read:any`` see only their own sessions
     (naming another user in ``user_id`` returns 403).
 
     Args:

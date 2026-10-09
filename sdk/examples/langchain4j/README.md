@@ -22,8 +22,8 @@ export WATCHER_SESSION_ID="your-unique-conversation-id"
 Use a Watcher key with `sessions:ingest` to store transcripts. Human-decision
 reporting also needs session-read access and authority to update the session as
 its owner or with `sessions:write:any`.
-For a service API key, configure `sessions:ingest`, `sessions:read:any` and
-`sessions:write:any` for transcript recording and human-decision reporting.
+For a service API key, configure `sessions:ingest`, `sessions:findings:read:any`,
+`sessions:content:read:any` and `sessions:write:any` for transcript recording and human-decision reporting.
 
 ## Connect an application
 

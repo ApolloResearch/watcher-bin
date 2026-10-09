@@ -2,13 +2,14 @@
 
 import asyncio
 import math
-from typing import Any
+from collections import Counter
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from watcher_github_copilot_cli.diagnostics import ReviewReceipt
-from watcher_github_copilot_cli.identity import RecordedMessage
+from watcher_github_copilot_cli.identity import RecordedCall, RecordedMessage
 from watcher_github_copilot_cli.reviews import call_hash
 from watcher_github_copilot_cli.transcript import (
     ConvertedSession,
@@ -36,6 +37,21 @@ class RecordedSession(BaseModel):
 
     session: UUID
     subagents: dict[str, UUID]
+
+
+class OutcomeToolCall(BaseModel):
+    tool_name: str
+    tool_input: dict[str, JsonValue]
+
+
+class ToolOutcome(BaseModel):
+    tool_use_id: str
+    tool_name: str
+    raw_tool_call: OutcomeToolCall
+    policy_decision: Literal["not_evaluated"] = "not_evaluated"
+    applied_decision: Literal["not_evaluated"] = "not_evaluated"
+    decision_source: Literal["not_evaluated"] = "not_evaluated"
+    tool_status: Literal["completed", "blocked"]
 
 
 def _preserves_fields(stored: JsonValue, supplied: JsonValue) -> bool:
@@ -181,6 +197,56 @@ def _restricts(judgment: ReviewReceipt) -> bool:
     return judgment.enforcement_mode == "enforce" and judgment.decision == judgment.judged_decision
 
 
+async def upload_completed_calls(
+    client: AsyncWatcherClient,
+    session_id: UUID,
+    identity: str,
+    messages: list[dict[str, JsonValue]],
+    receipts: list[ReviewReceipt],
+) -> None:
+    """Report confirmed tool results without replacing the gate's judgment or grades.
+
+    Only gate receipts for this conversation, matching one recorded call and
+    one result, can update its execution status. Calls awaiting a result and
+    paused or escalated receipts are left to their existing reporting paths.
+    Failed batches raise so the next recording callback retries them.
+    """
+    recorded = [RecordedMessage.model_validate(message) for message in messages]
+    calls: dict[str, list[RecordedCall]] = {}
+    for message in recorded:
+        for call in message.tool_calls:
+            calls.setdefault(call.id, []).append(call)
+    results = Counter(message.tool_call_id for message in recorded if message.tool_call_id is not None)
+    decisions: dict[str, ToolOutcome] = {}
+    for receipt in receipts:
+        if (
+            receipt.stored_by != "gate"
+            or receipt.identity != identity
+            or receipt.enforcement_mode == "paused"
+            or receipt.decision == "escalate"
+        ):
+            continue
+        matches = calls.get(receipt.tool_use_id)
+        if matches is None or len(matches) != 1 or results[receipt.tool_use_id] != 1:
+            continue
+        call = matches[0]
+        if call_hash(call.function, call.arguments) != receipt.call_hash:
+            continue
+        decisions[call.id] = ToolOutcome(
+            tool_use_id=call.id,
+            tool_name=call.function,
+            raw_tool_call=OutcomeToolCall(tool_name=call.function, tool_input=call.arguments),
+            tool_status="blocked" if receipt.decision == "deny" else "completed",
+        )
+    if not decisions:
+        return
+    result = await client.upload_tool_call_decisions_batch(
+        session_id=str(session_id), decisions=[decision.model_dump(mode="json") for decision in decisions.values()]
+    )
+    if result.failed_tool_use_ids:
+        raise ValueError("Watcher could not store every tool outcome")
+
+
 async def upload_decisions(
     client: AsyncWatcherClient,
     session_id: UUID,
@@ -221,7 +287,7 @@ async def upload_decisions(
     same call in one batch. Repeating an upload changes nothing. Calls the server
     cannot resolve raise ``ValueError``.
     """
-    decisions: dict[str, dict[str, Any]] = {}
+    decisions: dict[str, dict[str, JsonValue]] = {}
     for response in responses:
         decisions[response.tool_use_id] = {
             "tool_use_id": response.tool_use_id,

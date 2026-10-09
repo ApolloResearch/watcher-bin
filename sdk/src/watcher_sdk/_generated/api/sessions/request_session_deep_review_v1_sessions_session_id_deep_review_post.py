@@ -68,6 +68,7 @@ def sync_detailed(
 
      Queue a deep review of the session's latest transcript, or return the one already queued.
 
+    Requires ownership or ``sessions:grade:any``, without requiring content access.
     Repeating the request for an unchanged transcript returns the same operation.
     If that review failed, a fresh attempt is queued. 402 when the organization
     is over its monthly grading cap.
@@ -103,6 +104,7 @@ def sync(
 
      Queue a deep review of the session's latest transcript, or return the one already queued.
 
+    Requires ownership or ``sessions:grade:any``, without requiring content access.
     Repeating the request for an unchanged transcript returns the same operation.
     If that review failed, a fresh attempt is queued. 402 when the organization
     is over its monthly grading cap.
@@ -133,6 +135,7 @@ async def asyncio_detailed(
 
      Queue a deep review of the session's latest transcript, or return the one already queued.
 
+    Requires ownership or ``sessions:grade:any``, without requiring content access.
     Repeating the request for an unchanged transcript returns the same operation.
     If that review failed, a fresh attempt is queued. 402 when the organization
     is over its monthly grading cap.
@@ -166,6 +169,7 @@ async def asyncio(
 
      Queue a deep review of the session's latest transcript, or return the one already queued.
 
+    Requires ownership or ``sessions:grade:any``, without requiring content access.
     Repeating the request for an unchanged transcript returns the same operation.
     If that review failed, a fresh attempt is queued. 402 when the organization
     is over its monthly grading cap.

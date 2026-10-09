@@ -14,6 +14,9 @@ import anyio.from_thread
 import httpx
 
 from watcher_sdk._generated.models.activated_monitors_response import ActivatedMonitorsResponse
+from watcher_sdk._generated.models.admin_session_content_access_request_list_response import (
+    AdminSessionContentAccessRequestListResponse,
+)
 from watcher_sdk._generated.models.aperture_hook_accepted import ApertureHookAccepted
 from watcher_sdk._generated.models.aperture_log import ApertureLog
 from watcher_sdk._generated.models.auth_client_config import AuthClientConfig
@@ -28,6 +31,7 @@ from watcher_sdk._generated.models.grader_list_response import GraderListRespons
 from watcher_sdk._generated.models.grader_search_response import GraderSearchResponse
 from watcher_sdk._generated.models.grading_usage_response import GradingUsageResponse
 from watcher_sdk._generated.models.health_response import HealthResponse
+from watcher_sdk._generated.models.hook_append_response import HookAppendResponse
 from watcher_sdk._generated.models.hook_call_error import HookCallError
 from watcher_sdk._generated.models.ingest_response import IngestResponse
 from watcher_sdk._generated.models.message_detail_response import MessageDetailResponse
@@ -38,11 +42,19 @@ from watcher_sdk._generated.models.org_managed_settings_doc import OrgManagedSet
 from watcher_sdk._generated.models.org_managed_settings_resolved import OrgManagedSettingsResolved
 from watcher_sdk._generated.models.permission_check_response import PermissionCheckResponse
 from watcher_sdk._generated.models.pre_tool_use_hook_response import PreToolUseHookResponse
+from watcher_sdk._generated.models.review_session_content_access_request import ReviewSessionContentAccessRequest
 from watcher_sdk._generated.models.session_aggregates_response import SessionAggregatesResponse
+from watcher_sdk._generated.models.session_content_access_request_list_response import (
+    SessionContentAccessRequestListResponse,
+)
+from watcher_sdk._generated.models.session_content_access_request_status import SessionContentAccessRequestStatus
+from watcher_sdk._generated.models.session_content_access_request_summary import SessionContentAccessRequestSummary
+from watcher_sdk._generated.models.session_content_access_request_view import SessionContentAccessRequestView
 from watcher_sdk._generated.models.session_deep_review_response import SessionDeepReviewResponse
 from watcher_sdk._generated.models.session_filter_options_response import SessionFilterOptionsResponse
 from watcher_sdk._generated.models.session_list_response import SessionListResponse
 from watcher_sdk._generated.models.session_summary import SessionSummary
+from watcher_sdk._generated.models.tool_call_findings_response import ToolCallFindingsResponse
 from watcher_sdk._generated.models.tool_call_list_response import ToolCallListResponse
 from watcher_sdk._generated.models.trajectory_detail_response import TrajectoryDetailResponse
 from watcher_sdk._generated.models.trajectory_list_in_session_response import TrajectoryListInSessionResponse
@@ -134,9 +146,28 @@ class WatcherClient:
     @overload
     def pre_tool_use_hook(
         self,
+        input: Mapping[str, Any] | list[_HookInputMapping] | None = None,
+        *,
+        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        append_after: Mapping[str, str],
+        external_ids: Mapping[str, str | None] | None = None,
+        tool_use_id: str | None = None,
+        user: str | None = None,
+        ephemeral: bool | None = None,
+        mode: str | None = None,
+        force_regrade: bool = False,
+        timeout: float | None = None,
+        skip_rules: bool | None = None,
+        policy_version: str | None = None,
+        settings_overrides: str | dict[str, Any] | None = None,
+    ) -> HookAppendResponse: ...
+    @overload
+    def pre_tool_use_hook(
+        self,
         input: Mapping[str, Any],
         *,
-        messages: Sequence[Mapping[str, Any]] | None = None,
+        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        append_after: None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: str | None = None,
         user: str | None = None,
@@ -153,7 +184,8 @@ class WatcherClient:
         self,
         input: list[_HookInputMapping] | None = None,
         *,
-        messages: Sequence[Mapping[str, Any]] | None = None,
+        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        append_after: None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: None = None,
         user: str | None = None,
@@ -317,6 +349,7 @@ class WatcherClient:
     def get_usage_limits(self) -> UsageLimitsResponse: ...
     def get_session_filter_options(self) -> SessionFilterOptionsResponse: ...
     def get_session(self, session_id: str) -> SessionDetailResponse: ...
+    def get_session_tool_call_decision(self, session_id: str, tool_use_id: str) -> ToolCallFindingsResponse: ...
     def scrub_session_content(self, session_id: str) -> None: ...
     def request_deep_review(self, session_id: str) -> DeepReviewRequestResponse: ...
     def get_deep_review_request(self, session_id: str, operation_id: str) -> DeepReviewRequestResponse: ...
@@ -327,7 +360,29 @@ class WatcherClient:
     ) -> TrajectoryDetailResponse: ...
     def get_message(self, session_id: str, message_ref: str) -> MessageDetailResponse: ...
     def list_users(self, limit: int = 100, offset: int = 0) -> UserListResponse: ...
+    def list_my_session_content_access_requests(
+        self,
+        *,
+        session_id: UUID | None = None,
+        status: SessionContentAccessRequestStatus | None = None,
+        active_only: bool = False,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> SessionContentAccessRequestListResponse: ...
+    def request_session_content_access(self, session_id: UUID) -> SessionContentAccessRequestSummary: ...
+    def list_session_content_access_requests(
+        self,
+        *,
+        status: list[SessionContentAccessRequestStatus] | None = None,
+        view: SessionContentAccessRequestView | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> AdminSessionContentAccessRequestListResponse: ...
     def get_user(self, user_id: str) -> UserSummary: ...
+    def review_session_content_access_request(
+        self, request_id: UUID, body: ReviewSessionContentAccessRequest
+    ) -> SessionContentAccessRequestSummary: ...
+    def revoke_session_content_access_request(self, request_id: UUID) -> SessionContentAccessRequestSummary: ...
     def get_me(self) -> UserSummary: ...
     def health(self) -> HealthResponse: ...
     def version(self) -> VersionResponse: ...

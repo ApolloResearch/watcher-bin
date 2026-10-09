@@ -27,11 +27,10 @@ class UserProfile:
         organization_name (None | str | Unset):
         memberships (list[UserProfileMembershipsItem] | Unset):
         permissions (list[str] | Unset): Effective permission slugs for client UI gates: explicit grants plus known
-            Watcher permissions granted implicitly to administrators. WorkOS widget permissions remain explicit.
+            Watcher permissions granted by built-in roles. WorkOS widget permissions remain explicit.
         role (None | str | Unset): The caller's role in the active organization, for display only; gating belongs on
-            ``permissions``, which includes implicit administrator grants. Under WorkOS this is the role the token names;
-            under proxy auth the only distinction the headers express is admin versus member. Null when the authentication
-            in use vouches for no single role.
+            ``permissions``, which includes built-in role grants. Under WorkOS this is the role the token names; proxy auth
+            reports admin, org-viewer, or member. Null when the authentication in use vouches for no single role.
     """
 
     user_id: str

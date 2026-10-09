@@ -70,7 +70,7 @@ def sync_detailed(
      Search tool calls with filtering, pagination, and sort.
 
     Read scope matches the sessions list exactly: a caller holding
-    ``sessions:read:any`` sees the whole organization and may filter by any owner,
+    ``sessions:findings:read:any`` sees the whole organization and may filter by any owner,
     while everyone else is confined to their own calls and naming somebody else is
     refused rather than silently answered about themselves.
 
@@ -109,7 +109,7 @@ def sync(
      Search tool calls with filtering, pagination, and sort.
 
     Read scope matches the sessions list exactly: a caller holding
-    ``sessions:read:any`` sees the whole organization and may filter by any owner,
+    ``sessions:findings:read:any`` sees the whole organization and may filter by any owner,
     while everyone else is confined to their own calls and naming somebody else is
     refused rather than silently answered about themselves.
 
@@ -143,7 +143,7 @@ async def asyncio_detailed(
      Search tool calls with filtering, pagination, and sort.
 
     Read scope matches the sessions list exactly: a caller holding
-    ``sessions:read:any`` sees the whole organization and may filter by any owner,
+    ``sessions:findings:read:any`` sees the whole organization and may filter by any owner,
     while everyone else is confined to their own calls and naming somebody else is
     refused rather than silently answered about themselves.
 
@@ -180,7 +180,7 @@ async def asyncio(
      Search tool calls with filtering, pagination, and sort.
 
     Read scope matches the sessions list exactly: a caller holding
-    ``sessions:read:any`` sees the whole organization and may filter by any owner,
+    ``sessions:findings:read:any`` sees the whole organization and may filter by any owner,
     while everyone else is confined to their own calls and naming somebody else is
     refused rather than silently answered about themselves.
 

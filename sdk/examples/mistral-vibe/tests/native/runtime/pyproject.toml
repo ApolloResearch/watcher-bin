@@ -8,6 +8,15 @@ dependencies = ["mistral-vibe==2.25.4"]
 [tool.uv]
 package = false
 exclude-newer = "7 days"
+# mistral-vibe pins these with ==, so a security fix needs an override here.
+# pyjwt keeps the crypto extra that mcp asks for; an override replaces it.
+override-dependencies = [
+    "anyio>=4.14.2",
+    "gitpython>=3.1.62",
+    "pyjwt[crypto]>=2.15.0",
+    "soupsieve>=2.9.0",
+    "urllib3>=2.8.0",
+]
 
 [tool.uv.sources]
 mistral-vibe = { git = "https://github.com/mistralai/mistral-vibe.git", rev = "d4b3223bbd74f83cbc08da4b9c3776c8ad196955" }

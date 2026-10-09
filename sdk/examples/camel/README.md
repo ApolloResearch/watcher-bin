@@ -68,10 +68,10 @@ For a human-in-the-loop application, pass an async `approval_callback` accepting
 obtain an authorized human choice and return literal `True` or `False`. The monitor
 uploads that choice with the public SDK and confirms the stored human choice
 and tool status before releasing an approval, preserving the original evaluation
-and grades. This requires session-read access and permission to update the
+and grades. This requires findings and content access and permission to update the
 session as its owner or with `sessions:write:any`.
-For a service API key, configure `sessions:ingest`, `sessions:read:any` and
-`sessions:write:any` for transcript recording and human-decision reporting.
+For a service API key, configure `sessions:ingest`, `sessions:findings:read:any`,
+`sessions:content:read:any` and `sessions:write:any` for transcript recording and human-decision reporting.
 A reporting error blocks execution. The example includes no approval UI or persistent approval queue.
 
 ## Completed-history observation

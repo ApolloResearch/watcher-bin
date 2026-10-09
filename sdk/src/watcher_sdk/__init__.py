@@ -55,7 +55,7 @@ Exported models (from the generated API schema):
     ModelsConfig, OrgManagedSettingsDoc, OrgManagedSettingsResolved, SuggestedModel,
     IngestResponse, MessageDetailResponse, ScoreDefinition, SessionDetailResponse,
     ScrubbedSessionDetailResponse, SessionListResponse, SessionSearchParams, SessionSummary,
-    TrajectoryDetailResponse, TrajectoryListInSessionResponse, TrajectorySummary,
+    ToolCallDecisionDetail, TrajectoryDetailResponse, TrajectoryListInSessionResponse, TrajectorySummary,
     TrajectoryView, UpdateGraderRequest
 """
 
@@ -88,6 +88,8 @@ from watcher_sdk._generated.models import (
     SessionSearchParams,
     SessionSummary,
     SuggestedModel,
+    ToolCallDecisionDetail,
+    ToolCallFindingsResponse,
     TrajectoryDetailResponse,
     TrajectoryListInSessionResponse,
     TrajectorySummary,
@@ -170,6 +172,8 @@ __all__ = [
     "SessionListResponse",
     "SessionSearchParams",
     "SessionSummary",
+    "ToolCallDecisionDetail",
+    "ToolCallFindingsResponse",
     "ScrubbedSessionDetailResponse",
     "MessageDetailResponse",
     "TrajectoryDetailResponse",

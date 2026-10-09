@@ -94,8 +94,9 @@ limitations:
   mode: both
   cause: integration-scope
   kind: constraint
-  description: Streamed responses are buffered until Watcher decides; clients see
-    no output before then.
+  description: Streamed Chat Completions and Responses replies are buffered until
+    Watcher decides; clients see no output before then. Streamed Messages replies
+    hold only their tool calls and their end until Watcher decides.
 - id: full-history
   mode: both
   cause: integration-scope

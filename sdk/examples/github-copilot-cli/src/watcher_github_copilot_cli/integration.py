@@ -43,6 +43,7 @@ from watcher_github_copilot_cli.recording import (
     PartialRecordingError,
     RecordedSession,
     record_session,
+    upload_completed_calls,
     upload_decisions,
 )
 from watcher_github_copilot_cli.reviews import call_hash, confirm_reviews, receipt
@@ -53,6 +54,7 @@ from watcher_github_copilot_cli.transcript import (
     MAX_HOOK_EVENT_BYTES,
     CompletedTurn,
     ConvertedSession,
+    IncompleteTranscriptError,
     SessionEnded,
     TranscriptError,
     check_deadline,
@@ -448,8 +450,9 @@ async def _sync_decisions(
     not confirmed waits for a later callback. Answers come from Copilot's log,
     which the agent can append to, so only answers to calls the gate escalated in
     ``native_id``, as recorded beside ``config``, are uploaded; they belong to the
-    parent conversation. Without ``config`` there is no such record, and nothing is
-    uploaded. Recording is already confirmed, so a failed upload is saved as an
+    parent conversation. Confirmed results also update gate-recorded calls'
+    execution status without replacing their judgments. Without ``config`` there
+    is no such record, and nothing is uploaded. Recording is already confirmed, so a failed upload is saved as an
     ``unsynced_decisions`` event, never raised. The next callback uploads everything
     again, and the server keeps what is stored.
     """
@@ -472,6 +475,11 @@ async def _sync_decisions(
                 answers = responses if identity == parent else []
                 if selected or answers:
                     await upload_decisions(client, session_id, messages, selected, answers)
+                outcomes = [
+                    item for item in evidence.receipts if item.identity == identity and item.stored_by == "gate"
+                ]
+                if outcomes:
+                    await upload_completed_calls(client, session_id, identity, messages, outcomes)
     except Exception:
         record_event(config, "unsynced_decisions")
 
@@ -728,7 +736,9 @@ def dispatch_hook(
 ) -> None:
     """Emit one native decision without copying input or service errors into logs.
 
-    A failed observation exits with status 2 so Copilot shows the warning. Enforce
+    An unfinished agentStop transcript is logged without a warning; later
+    callbacks retry the full history. Other failed observations exit with
+    status 2 so Copilot shows the warning. Enforce
     answers as Watcher's Claude Code hook does: an explicit allow when Watcher
     approves, which skips Copilot's own permission prompt, ask when Watcher
     escalates, and deny when Watcher withholds the call or does not confirm
@@ -818,6 +828,9 @@ def dispatch_hook(
             else:
                 answer = {"permissionDecision": "deny", "permissionDecisionReason": _denial_reason(error)}
             sys.stdout.write(json.dumps(answer) + "\n")
+            return
+        if isinstance(error, IncompleteTranscriptError) and "transcriptPath" in payload:
+            sys.stdout.write("{}\n")
             return
         if isinstance(error, AssessmentFailure):
             sys.stderr.write("Watcher recorded this turn but could not complete retrospective assessment.\n")

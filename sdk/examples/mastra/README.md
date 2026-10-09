@@ -129,10 +129,10 @@ The local Python sidecar verifies that the choice belongs to the pending call,
 waits for the original escalation record, uploads the human choice and reads back
 the stored human choice and pending/blocked status. Only then does approval permit execution. Original
 grades and escalation remain intact. Approval records a pending execution;
-rejection records blocked. This requires session-read access and permission to
+rejection records blocked. This requires findings and content access and permission to
 update the session as its owner or with `sessions:write:any`.
-For a service API key, configure `sessions:ingest`, `sessions:read:any` and
-`sessions:write:any` for transcript recording and human-decision reporting.
+For a service API key, configure `sessions:ingest`, `sessions:findings:read:any`,
+`sessions:content:read:any` and `sessions:write:any` for transcript recording and human-decision reporting.
 Upload/readback failures, including an acknowledged content-scrub no-op, block
 the call.
 

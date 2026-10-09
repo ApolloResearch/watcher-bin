@@ -835,7 +835,7 @@ wheels = [
 
 [[package]]
 name = "smolagents"
-version = "1.22.0"
+version = "1.25.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -845,9 +845,9 @@ dependencies = [
     { name = "requests" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/bc/ad2f168b82d26597257adb071c51348dd94da0bc29a6cc10ba4c1bee27c8/smolagents-1.22.0.tar.gz", hash = "sha256:5fb66f48e3b3ab5e8defcef577a89d5b6dfa8fcb55fc98a58e156cb3c59eb68f", size = 213047, upload-time = "2025-09-25T08:42:56.086Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/b0/bb21276a171d99910649da5fd54f450033135858caf63257532bbac7b7fe/smolagents-1.25.0.tar.gz", hash = "sha256:f394a65cb1de76c5938624ca8ef56573460f55a9ab517c2a4b6c2c4dbc932228", size = 242056, upload-time = "2026-05-14T11:36:18.356Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/17/54d7de27b7ac2722ac2c0f452da612bf4af80ae09f90231b44bb7b12b33d/smolagents-1.22.0-py3-none-any.whl", hash = "sha256:5334adb4e7e5814cd814f1d9ad7efa806ef57f53db40635a29d2bd727774c5f5", size = 149836, upload-time = "2025-09-25T08:42:54.205Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/f9/8e3c92bdf5310c307d3d1ec105e8a6677c34b9c85650facc890569395efa/smolagents-1.25.0-py3-none-any.whl", hash = "sha256:fbb6716ef9ff164c9ca6238d8bd2559736c9e171a21443e2c61c400d443bdcde", size = 164726, upload-time = "2026-05-14T11:36:16.367Z" },
 ]
 
 [[package]]
@@ -903,7 +903,7 @@ wheels = [
 
 [[package]]
 name = "watcher-sdk"
-version = "0.39.0"
+version = "0.41.0"
 source = { directory = "../../" }
 dependencies = [
     { name = "anyio" },
@@ -950,7 +950,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "smolagents", specifier = "==1.22.0" },
+    { name = "smolagents", specifier = "==1.25.0" },
     { name = "watcher-sdk", directory = "../../" },
 ]
 

@@ -6,6 +6,10 @@ from .activated_monitors_response import ActivatedMonitorsResponse
 from .activated_monitors_response_distribution import (
     ActivatedMonitorsResponseDistribution,
 )
+from .admin_session_content_access_request import AdminSessionContentAccessRequest
+from .admin_session_content_access_request_list_response import (
+    AdminSessionContentAccessRequestListResponse,
+)
 from .aperture_hook_accepted import ApertureHookAccepted
 from .aperture_hook_metadata import ApertureHookMetadata
 from .aperture_hook_request import ApertureHookRequest
@@ -53,12 +57,26 @@ from .claude_api_message import ClaudeAPIMessage
 from .claude_api_message_usage_type_0 import ClaudeAPIMessageUsageType0
 from .claude_code_attachment import ClaudeCodeAttachment
 from .claude_code_entry import ClaudeCodeEntry
+from .claude_code_hook_request import ClaudeCodeHookRequest
+from .claude_code_hook_request_external_ids_type_0 import (
+    ClaudeCodeHookRequestExternalIdsType0,
+)
+from .claude_code_hook_request_mode import ClaudeCodeHookRequestMode
+from .claude_code_hook_request_settings_overrides_type_1 import (
+    ClaudeCodeHookRequestSettingsOverridesType1,
+)
 from .claude_code_trajectory import ClaudeCodeTrajectory
 from .claude_code_trajectory_metadata_type_0 import ClaudeCodeTrajectoryMetadataType0
 from .codex_content_item import CodexContentItem
 from .codex_content_item_type_type_0 import CodexContentItemTypeType0
 from .codex_entry import CodexEntry
 from .codex_git_info import CodexGitInfo
+from .codex_hook_request import CodexHookRequest
+from .codex_hook_request_external_ids_type_0 import CodexHookRequestExternalIdsType0
+from .codex_hook_request_mode import CodexHookRequestMode
+from .codex_hook_request_settings_overrides_type_1 import (
+    CodexHookRequestSettingsOverridesType1,
+)
 from .codex_local_shell_action import CodexLocalShellAction
 from .codex_local_shell_action_env_type_0 import CodexLocalShellActionEnvType0
 from .codex_payload import CodexPayload
@@ -91,6 +109,8 @@ from .create_grader_request_reasoning_effort_type_0 import (
     CreateGraderRequestReasoningEffortType0,
 )
 from .create_grader_request_scores import CreateGraderRequestScores
+from .create_session_content_access_request import CreateSessionContentAccessRequest
+from .decided_by import DecidedBy
 from .decision_source import DecisionSource
 from .deep_review_request_response import DeepReviewRequestResponse
 from .deep_review_request_response_status import DeepReviewRequestResponseStatus
@@ -136,6 +156,7 @@ from .grader_summary import GraderSummary
 from .grader_summary_scores import GraderSummaryScores
 from .grading_failure import GradingFailure
 from .grading_failure_code import GradingFailureCode
+from .grading_failure_stage_type_0 import GradingFailureStageType0
 from .grading_usage_breakdown_row import GradingUsageBreakdownRow
 from .grading_usage_bucket import GradingUsageBucket
 from .grading_usage_cost_bucket import GradingUsageCostBucket
@@ -145,6 +166,8 @@ from .grading_usage_response import GradingUsageResponse
 from .grading_usage_response_bucket import GradingUsageResponseBucket
 from .grading_usage_user_option import GradingUsageUserOption
 from .health_response import HealthResponse
+from .hook_append_anchor import HookAppendAnchor
+from .hook_append_response import HookAppendResponse
 from .hook_call_error import HookCallError
 from .http_validation_error import HTTPValidationError
 from .human_decision import HumanDecision
@@ -168,9 +191,13 @@ from .org_managed_settings_resolved import OrgManagedSettingsResolved
 from .org_managed_settings_update import OrgManagedSettingsUpdate
 from .org_settings import OrgSettings
 from .org_settings_settings_distribution import OrgSettingsSettingsDistribution
+from .org_settings_slack_alert_detail import OrgSettingsSlackAlertDetail
 from .org_settings_update import OrgSettingsUpdate
 from .org_settings_update_settings_distribution_type_0 import (
     OrgSettingsUpdateSettingsDistributionType0,
+)
+from .org_settings_update_slack_alert_detail_type_0 import (
+    OrgSettingsUpdateSlackAlertDetailType0,
 )
 from .permission_check_request import PermissionCheckRequest
 from .permission_check_response import PermissionCheckResponse
@@ -200,6 +227,10 @@ from .raw_pre_tool_use_hook_request_settings_overrides_type_1 import (
     RawPreToolUseHookRequestSettingsOverridesType1,
 )
 from .refresh_request import RefreshRequest
+from .review_session_content_access_request import ReviewSessionContentAccessRequest
+from .review_session_content_access_request_status import (
+    ReviewSessionContentAccessRequestStatus,
+)
 from .rule_match import RuleMatch
 from .score_definition import ScoreDefinition
 from .score_definition_type import ScoreDefinitionType
@@ -223,6 +254,12 @@ from .session_aggregates_response_severity_threshold import (
 )
 from .session_analytics_summary import SessionAnalyticsSummary
 from .session_analytics_trend_point import SessionAnalyticsTrendPoint
+from .session_content_access_request_list_response import (
+    SessionContentAccessRequestListResponse,
+)
+from .session_content_access_request_status import SessionContentAccessRequestStatus
+from .session_content_access_request_summary import SessionContentAccessRequestSummary
+from .session_content_access_request_view import SessionContentAccessRequestView
 from .session_deep_review_response import SessionDeepReviewResponse
 from .session_filter_options_response import SessionFilterOptionsResponse
 from .session_list_response import SessionListResponse
@@ -265,6 +302,10 @@ from .tool_call_decision_payload import ToolCallDecisionPayload
 from .tool_call_decision_payload_raw_tool_call import ToolCallDecisionPayloadRawToolCall
 from .tool_call_error import ToolCallError
 from .tool_call_error_type import ToolCallErrorType
+from .tool_call_findings_response import ToolCallFindingsResponse
+from .tool_call_findings_response_raw_tool_call import (
+    ToolCallFindingsResponseRawToolCall,
+)
 from .tool_call_grade_detail import ToolCallGradeDetail
 from .tool_call_grade_detail_grades import ToolCallGradeDetailGrades
 from .tool_call_grade_detail_input_messages_item import (
@@ -324,6 +365,8 @@ __all__ = (
     "ActivatedMonitorsResponse",
     "ActivatedMonitorsResponseDistribution",
     "ActivatedMonitorStagesItem",
+    "AdminSessionContentAccessRequest",
+    "AdminSessionContentAccessRequestListResponse",
     "ApertureHookAccepted",
     "ApertureHookMetadata",
     "ApertureHookRequest",
@@ -359,12 +402,20 @@ __all__ = (
     "ClaudeAPIMessageUsageType0",
     "ClaudeCodeAttachment",
     "ClaudeCodeEntry",
+    "ClaudeCodeHookRequest",
+    "ClaudeCodeHookRequestExternalIdsType0",
+    "ClaudeCodeHookRequestMode",
+    "ClaudeCodeHookRequestSettingsOverridesType1",
     "ClaudeCodeTrajectory",
     "ClaudeCodeTrajectoryMetadataType0",
     "CodexContentItem",
     "CodexContentItemTypeType0",
     "CodexEntry",
     "CodexGitInfo",
+    "CodexHookRequest",
+    "CodexHookRequestExternalIdsType0",
+    "CodexHookRequestMode",
+    "CodexHookRequestSettingsOverridesType1",
     "CodexLocalShellAction",
     "CodexLocalShellActionEnvType0",
     "CodexPayload",
@@ -395,6 +446,8 @@ __all__ = (
     "CreateGraderRequest",
     "CreateGraderRequestReasoningEffortType0",
     "CreateGraderRequestScores",
+    "CreateSessionContentAccessRequest",
+    "DecidedBy",
     "DecisionSource",
     "DeepReviewRequestResponse",
     "DeepReviewRequestResponseStatus",
@@ -428,6 +481,7 @@ __all__ = (
     "GraderSummaryScores",
     "GradingFailure",
     "GradingFailureCode",
+    "GradingFailureStageType0",
     "GradingUsageBreakdownRow",
     "GradingUsageBucket",
     "GradingUsageCostBucket",
@@ -437,6 +491,8 @@ __all__ = (
     "GradingUsageResponseBucket",
     "GradingUsageUserOption",
     "HealthResponse",
+    "HookAppendAnchor",
+    "HookAppendResponse",
     "HookCallError",
     "HTTPValidationError",
     "HumanDecision",
@@ -460,8 +516,10 @@ __all__ = (
     "OrgManagedSettingsUpdate",
     "OrgSettings",
     "OrgSettingsSettingsDistribution",
+    "OrgSettingsSlackAlertDetail",
     "OrgSettingsUpdate",
     "OrgSettingsUpdateSettingsDistributionType0",
+    "OrgSettingsUpdateSlackAlertDetailType0",
     "PermissionCheckRequest",
     "PermissionCheckResponse",
     "PolicyDecision",
@@ -478,6 +536,8 @@ __all__ = (
     "RawPreToolUseHookRequestResponseBody",
     "RawPreToolUseHookRequestSettingsOverridesType1",
     "RefreshRequest",
+    "ReviewSessionContentAccessRequest",
+    "ReviewSessionContentAccessRequestStatus",
     "RuleMatch",
     "ScoreDefinition",
     "ScoreDefinitionType",
@@ -491,6 +551,10 @@ __all__ = (
     "SessionAggregatesResponseSeverityThreshold",
     "SessionAnalyticsSummary",
     "SessionAnalyticsTrendPoint",
+    "SessionContentAccessRequestListResponse",
+    "SessionContentAccessRequestStatus",
+    "SessionContentAccessRequestSummary",
+    "SessionContentAccessRequestView",
     "SessionDeepReviewResponse",
     "SessionFilterOptionsResponse",
     "SessionListResponse",
@@ -523,6 +587,8 @@ __all__ = (
     "ToolCallDecisionPayloadRawToolCall",
     "ToolCallError",
     "ToolCallErrorType",
+    "ToolCallFindingsResponse",
+    "ToolCallFindingsResponseRawToolCall",
     "ToolCallGradeDetail",
     "ToolCallGradeDetailGrades",
     "ToolCallGradeDetailInputMessagesItem",

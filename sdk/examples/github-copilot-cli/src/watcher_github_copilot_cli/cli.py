@@ -58,10 +58,10 @@ def setup_command(
     ] = False,
     record_only: Annotated[bool, typer.Option(help="Install recording without blocking review.")] = False,
     watcher_auth: Annotated[
-        bool, typer.Option(help="Reuse and refresh this user's saved Watcher login for the same API URL.")
+        bool, typer.Option(help="Reuse and refresh this user's saved Watcher sign-in for the same API URL.")
     ] = False,
     watcher_state_dir: Annotated[
-        Path | None, typer.Option(help="Saved Watcher login directory to bind to these hooks.")
+        Path | None, typer.Option(help="Saved Watcher sign-in directory to bind to these hooks.")
     ] = None,
     auth_profile: Annotated[Path | None, typer.Option(hidden=True)] = None,
 ) -> None:

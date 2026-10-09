@@ -1,12 +1,9 @@
-"""Assemble LiteLLM proxy streams into complete responses, and encode responses as streams.
+"""Assemble provider content and encode complete replies for the LiteLLM example.
 
-Watcher evaluates complete provider responses, so a streamed reply is assembled
-into the equivalent non-streaming body first. Chat Completions and Responses
-streams are buffered and the callback streams a fresh encoding of the evaluated
-body. Messages streams are assembled as their events arrive, and every event the
-client receives is re-encoded from a parsed event. Either way nothing is
-replayed, so a client can only execute the exact calls Watcher saw. Each encoder
-emits the standard event sequence for its API.
+``incremental`` uses ``MessageAssembler`` at each block boundary and the Chat
+builder at choice completion. The callback releases validated events in their
+original order after the required decisions. Complete-body assembly/encoding
+also supports protocol fixtures and comparison through official client parsers.
 
 The three client-facing APIs arrive differently from LiteLLM:
 
@@ -85,6 +82,20 @@ def _chat(chunks: list[Any]) -> dict[str, Any]:
     )
     if refusal and response["choices"] and not response["choices"][0]["message"].get("refusal"):
         response["choices"][0]["message"]["refusal"] = refusal
+    # LiteLLM loses name fragments and some interleaved ID fragments. Both
+    # fields are deltas, like arguments; grading must match SDK accumulation.
+    for choice in response["choices"]:
+        fragments = [
+            call
+            for chunk in chunks
+            for part in as_dict(chunk).get("choices") or []
+            if part["index"] == choice["index"]
+            for call in part.get("delta", {}).get("tool_calls") or []
+        ]
+        for index, call in enumerate(choice["message"].get("tool_calls") or []):
+            parts = [part for part in fragments if part["index"] == index]
+            call["id"] = "".join(part.get("id") or "" for part in parts)
+            call["function"]["name"] = "".join((part.get("function") or {}).get("name") or "" for part in parts)
     return response
 
 
@@ -99,6 +110,13 @@ def _responses(chunks: list[Any]) -> dict[str, Any]:
 
 
 class MessageAssembler:
+    """Accumulate ordered Messages blocks, rejecting deltas that change their declared type.
+
+    ``add`` accepts one SSE data field and returns the parsed event. ``result``
+    requires a complete message. The incremental callback also inspects the
+    current message after each closed block to evaluate complete tool inputs.
+    """
+
     def __init__(self) -> None:
         self.message: dict[str, Any] | None = None
         self.partial_json: dict[int, str] = {}
@@ -106,6 +124,7 @@ class MessageAssembler:
         self.stopped = False
 
     def add(self, data: str) -> dict[str, Any]:
+        """Apply one event, mapping malformed provider fields to a fail-closed error."""
         try:
             event = json.loads(data)
             self._apply(event)
@@ -123,6 +142,8 @@ class MessageAssembler:
         if kind == "message_start":
             if self.message is not None:
                 raise UnsupportedStream("Messages stream started twice")
+            if event["message"].get("content"):
+                raise UnsupportedStream("Messages start contains unstreamed content")
             self.message = {**event["message"], "content": []}
             return
         if kind == "error" or self.message is None:
@@ -138,6 +159,15 @@ class MessageAssembler:
             raise UnsupportedStream("Messages content block event out of order")
         elif kind == "content_block_delta":
             block, delta = content[event["index"]], event["delta"]
+            expected = {
+                "input_json_delta": {"tool_use", "server_tool_use"},
+                "text_delta": {"text"},
+                "thinking_delta": {"thinking"},
+                "signature_delta": {"thinking"},
+                "citations_delta": {"text"},
+            }
+            if block["type"] not in expected.get(delta["type"], set()):
+                raise UnsupportedStream("Messages delta does not match its block type")
             if delta["type"] == "input_json_delta":
                 self.partial_json[event["index"]] = self.partial_json.get(event["index"], "") + delta["partial_json"]
             elif delta["type"] in ("text_delta", "thinking_delta", "signature_delta"):
@@ -153,12 +183,22 @@ class MessageAssembler:
                 content[event["index"]]["input"] = json.loads(self.partial_json.pop(event["index"]) or "{}")
             self.open_block = None
         elif kind == "message_delta":
+            if self.open_block is not None or set(event["delta"]) - {
+                "stop_reason",
+                "stop_sequence",
+                "stop_details",
+                "container",
+            }:
+                raise UnsupportedStream("Messages final delta changes content or interrupts a block")
             self.message.update(event["delta"])
             self.message["usage"] = {**self.message.get("usage", {}), **event.get("usage", {})}
         elif kind == "message_stop":
+            if self.open_block is not None:
+                raise IncompleteStream("Messages ended with an open block")
             self.stopped = True
 
     def result(self) -> dict[str, Any]:
+        """Return the assembled message only after its terminal event."""
         if self.message is None or not self.stopped:
             raise IncompleteStream("Messages stream ended before message_stop")
 
@@ -263,6 +303,7 @@ def _encode_responses(response: dict[str, Any]) -> Iterator[bytes]:
 
 
 def encode_messages_event(data: dict[str, Any]) -> bytes:
+    """Encode a parsed Messages event with matching SSE event and JSON type names."""
     return _sse(data, data["type"])
 
 
@@ -272,6 +313,7 @@ def _encode_messages(response: dict[str, Any]) -> Iterator[bytes]:
 
 
 def encode_messages_from(response: dict[str, Any], first_block: int) -> Iterator[bytes]:
+    """Encode a message suffix and terminator after earlier complete blocks were sent."""
     usage = response.get("usage") or {}
     for index, block in enumerate(response["content"][first_block:], start=first_block):
         if block["type"] == "text":
@@ -327,6 +369,7 @@ def encode_messages_from(response: dict[str, Any], first_block: int) -> Iterator
                 "stop_reason": response.get("stop_reason"),
                 "stop_sequence": response.get("stop_sequence"),
                 **({"stop_details": response["stop_details"]} if response.get("stop_details") else {}),
+                **({"container": response["container"]} if "container" in response else {}),
             },
             "usage": {"output_tokens": usage.get("output_tokens", 0)},
         }

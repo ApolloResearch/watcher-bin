@@ -1,4 +1,4 @@
-"""Authenticate local SDK integrations with the installed Watcher's saved login."""
+"""Authenticate local SDK integrations with the installed Watcher's saved sign-in."""
 
 import asyncio
 import errno
@@ -47,23 +47,23 @@ _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 class InsecureLoginURLError(ValueError):
-    """A login URL uses plain HTTP to a host other than this machine.
+    """A sign-in URL uses plain HTTP to a host other than this machine.
 
     Its message is fixed text with no URL or credential, so command-line tools
-    may show it to explain why the login was refused.
+    may show it to explain why the sign-in was refused.
     """
 
 
 def _login_api_url(value: str) -> httpx.URL:
     """Normalize a URL that will carry bearer and refresh tokens.
 
-    Login, refresh and saved-login requests send long-lived secrets, so they
+    Sign-in, refresh and saved sign-in requests send long-lived secrets, so they
     require HTTPS except to this machine, matching Watcher's credential helpers.
     API-key clients keep accepting any HTTP URL.
     """
     url = _api_url(value)
     if url.scheme == "http" and url.host.lower() not in _LOOPBACK_HOSTS:
-        raise InsecureLoginURLError("Watcher login requires an HTTPS URL unless the server runs on this machine")
+        raise InsecureLoginURLError("Watcher sign-in requires an HTTPS URL unless the server runs on this machine")
     return url
 
 
@@ -81,14 +81,14 @@ def _credential_name(url: httpx.URL) -> str:
 
 
 def watcher_login_superseded(state_dir: Path, base_url: str) -> bool:
-    """Whether Watcher sends another identity than its saved login to ``base_url``.
+    """Whether Watcher sends another identity than its saved sign-in to ``base_url``.
 
     Mirrors Watcher Live's request-credential precedence. A credential helper
     (``credential_helpers/<sha256 of the API URL>/config.json``, even a broken or
-    symlinked one) always replaces the saved login, and Watcher refuses to write
+    symlinked one) always replaces the saved sign-in, and Watcher refuses to write
     one while it exists. Captured hook headers (``hook_headers/<env>.json``)
     replace it only when they carry ``Authorization`` or ``x-api-key``; routing
-    headers coexist with the login. An unreadable headers file is a fatal
+    headers coexist with the sign-in. An unreadable headers file is a fatal
     configuration error for Watcher, so it also counts as superseded here.
     """
     url = _api_url(base_url)
@@ -109,20 +109,20 @@ def watcher_login_superseded(state_dir: Path, base_url: str) -> bool:
 
 
 class UnsafeLoginStoreError(PermissionError):
-    """Another local account owns, or can write, a saved login or the folder holding it.
+    """Another local account owns, or can write, a saved sign-in or the folder holding it.
 
-    Such an account could swap in its own login, so this user's sessions would
+    Such an account could swap in its own sign-in, so this user's sessions would
     upload into its account. The message is fixed text without a path.
     """
 
     def __init__(self) -> None:
-        super().__init__("Another account can change the saved login or its folder")
+        super().__init__("Another account can change the saved sign-in or its folder")
 
 
 class LinkedCredentialFolderError(OSError):
-    """The folder a new saved login would go in is a symbolic link, even one whose target is missing.
+    """The folder a new saved sign-in would go in is a symbolic link, even one whose target is missing.
 
-    Login refuses such a folder before creating or changing anything, because the
+    Sign-in refuses such a folder before creating or changing anything, because the
     link could point anywhere. The system's own errors ("File exists", "Not a
     directory" or "Too many levels of symbolic links") do not name this cause, so
     this error does. It is an OSError with ``errno.ELOOP``, so handlers for
@@ -201,14 +201,14 @@ def _cookie_jar_refusing_all() -> http.cookiejar.CookieJar:
 
 
 class WatcherLoginAuth(httpx.Auth):
-    """Use the current user's Watcher login in an asynchronous HTTP client.
+    """Use the current user's Watcher sign-in in an asynchronous HTTP client.
 
     Reads the installed client's credential store on each request and retries one
-    token rejected with HTTP 401 after refresh. A login without a refresh token
+    token rejected with HTTP 401 after refresh. A sign-in without a refresh token
     returns that 401 to the caller without refreshing; other statuses do not refresh.
     Missing, unreadable or destination-mismatched credentials raise WatcherAuthenticationError.
     The saved server must match ``base_url``, including
-    its port and path. A missing or rejected login never falls back to another identity.
+    its port and path. A missing or rejected sign-in never falls back to another identity.
     Refresh uses Watcher's existing per-file lock and updates that same credential file.
 
     ``state_dir`` defaults to APOLLO_MONITOR_HOME or ~/.apollo_monitor. This requires
@@ -242,11 +242,11 @@ class WatcherLoginAuth(httpx.Auth):
         self.credential_file = self.state_dir.expanduser() / "credentials" / f"{_credential_name(self.base_url)}.json"
 
     def validate(self) -> None:
-        """Check local login availability and server binding without making a request."""
+        """Check local sign-in availability and server binding without making a request."""
         self._read_login()
 
     def validate_project_location(self, project: Path) -> None:
-        """Reject project-contained stores before login or refresh can write credentials.
+        """Reject project-contained stores before sign-in or refresh can write credentials.
 
         Resolves the project, store, credential directory and file independently
         so symlinks cannot place either saved tokens or temporary writes in the project.
@@ -255,10 +255,10 @@ class WatcherLoginAuth(httpx.Auth):
         project = project.expanduser().resolve()
         paths = (self.credential_file.parent.parent, self.credential_file.parent, self.credential_file)
         if any(path.resolve().is_relative_to(project) for path in paths):
-            raise ValueError("The saved login must be stored outside the project")
+            raise ValueError("The saved sign-in must be stored outside the project")
 
     def _superseded(self) -> bool:
-        """Watcher's own store ignores a login once headers or a helper own the server."""
+        """Watcher's own store ignores a sign-in once headers or a helper own the server."""
         return watcher_login_superseded(self.state_dir, str(self.base_url))
 
     def _read_login(self) -> _Login:
@@ -267,18 +267,18 @@ class WatcherLoginAuth(httpx.Auth):
                 401,
                 "watcher_login_superseded",
                 "Watcher authenticates this server with hook headers or a credential helper, which the SDK "
-                "cannot reuse; use an SDK login or an API key",
+                "cannot reuse; use an SDK sign-in or an API key",
             )
         try:
             login = _Login.model_validate_json(_read_login_file(self.credential_file, private=self._private_store))
             if _api_url(login.xylon_url) != self.base_url:
-                raise ValueError("Saved login belongs to a different server")
+                raise ValueError("Saved sign-in belongs to a different server")
             return login
         except UnsafeLoginStoreError:
             raise WatcherAuthenticationError(
                 401,
                 "watcher_login_unsafe",
-                f"{self._login_instruction} again: another account can change the saved login",
+                f"{self._login_instruction} again: another account can change the saved sign-in",
             ) from None
         except (OSError, ValueError, httpx.InvalidURL):
             raise WatcherAuthenticationError(
@@ -289,7 +289,7 @@ class WatcherLoginAuth(httpx.Auth):
     async def _refresh_lock(self) -> AsyncIterator[None]:
         """Share Watcher's lock across the read, token exchange and atomic write."""
         if os.name != "posix":
-            raise RuntimeError("Watcher login refresh requires a POSIX credential store")
+            raise RuntimeError("Watcher sign-in refresh requires a POSIX credential store")
         import fcntl
 
         descriptor = os.open(self.credential_file.with_suffix(".lock"), os.O_CREAT | os.O_RDWR, 0o600)
@@ -303,7 +303,7 @@ class WatcherLoginAuth(httpx.Auth):
                         except BlockingIOError:
                             await asyncio.sleep(0.05)
             except TimeoutError:
-                raise WatcherTimeoutError("Timed out waiting to refresh the saved login; retry the request") from None
+                raise WatcherTimeoutError("Timed out waiting to refresh the saved sign-in; retry the request") from None
             yield
         finally:
             os.close(descriptor)
@@ -366,7 +366,7 @@ class WatcherLoginAuth(httpx.Auth):
             or request.url.port != target.port
             or not request.url.path.startswith(target.path + "/")
         ):
-            raise ValueError("Watcher login cannot authenticate a different server or API path")
+            raise ValueError("Watcher sign-in cannot authenticate a different server or API path")
         await request.aread()
         login = self._read_login()
         self._apply_login(request, login)
@@ -399,7 +399,7 @@ class WatcherLoginAuth(httpx.Auth):
                 )
                 refreshed = await self._send_refresh(refresh_request)
                 if refreshed.request is not refresh_request or refreshed.is_redirect:
-                    # A redirect means Watcher did not refresh the login at this address, and
+                    # A redirect means Watcher did not refresh the sign-in at this address, and
                     # following it could hand the token to another server. _send_refresh
                     # never follows one, so the answer always belongs to refresh_request.
                     # The identity check stays as a second safeguard: if a redirect were
@@ -408,7 +408,7 @@ class WatcherLoginAuth(httpx.Auth):
                     raise WatcherAuthenticationError(
                         502,
                         "watcher_refresh_redirected",
-                        f"{self._login_instruction} again: Watcher redirected the login refresh",
+                        f"{self._login_instruction} again: Watcher redirected the sign-in refresh",
                     )
                 latest = self._read_login()
                 if latest.refresh_token != current.refresh_token:
@@ -421,7 +421,7 @@ class WatcherLoginAuth(httpx.Auth):
                         refresh_token = refreshed.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
                         if refreshed.status_code != 200 and not (refreshed.status_code == 503 and refresh_token):
                             raise WatcherAPIError(
-                                refreshed.status_code, "watcher_refresh_failed", "Watcher login refresh failed"
+                                refreshed.status_code, "watcher_refresh_failed", "Watcher sign-in refresh failed"
                             )
                         if not refresh_token:
                             raise ValueError("Invalid refreshed credentials")
@@ -444,14 +444,14 @@ class WatcherLoginAuth(httpx.Auth):
                     self._save_login(current)
                     if refreshed.status_code != 200:
                         raise WatcherAPIError(
-                            refreshed.status_code, "watcher_refresh_failed", "Watcher login refresh failed"
+                            refreshed.status_code, "watcher_refresh_failed", "Watcher sign-in refresh failed"
                         )
             self._apply_login(request, current)
         yield request
 
 
 def login_transport(auth: WatcherLoginAuth, *, timeout: float) -> httpx.AsyncClient:
-    """An HTTP client for saved-login auth that never stores cookies.
+    """An HTTP client for saved sign-in auth that never stores cookies.
 
     Watcher's sign-in and refresh routes answer with the refresh token as a cookie.
     A caller that sends one of them through this client would otherwise leave that
@@ -474,10 +474,10 @@ def async_client_from_watcher(
     timeout: float = 30,
     max_retries: int = 0,
 ) -> AsyncWatcherClient:
-    """Create an SDK client using the installed Watcher's login and token refresh.
+    """Create an SDK client using the installed Watcher's sign-in and token refresh.
 
     Use with ``async with`` to close its HTTP connections. Reads credentials only
-    when requesting or explicitly validating them, and never starts a login flow.
+    when requesting or explicitly validating them, and never starts a sign-in flow.
     The installed Watcher app can be frozen; its Python modules are not needed.
     """
     auth = WatcherLoginAuth(base_url, state_dir=state_dir)

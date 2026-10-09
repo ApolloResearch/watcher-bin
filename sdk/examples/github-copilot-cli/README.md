@@ -4,7 +4,7 @@ Record Copilot CLI conversations through the public Watcher SDK and find them in
 
 | Install | What it does | Main limit |
 |---|---|---|
-| Record only (`setup --record-only`) | Records each turn, including reasoning, compaction, subagents and attachments, and the final state when the session ends, then confirms the stored history. | Requires the user's own Watcher login. |
+| Record only (`setup --record-only`) | Records each turn, including reasoning, compaction, subagents and attachments, and the final state when the session ends, then confirms the stored history. | Requires the user's own Watcher sign-in. |
 | [Blocking review](https://watcher-docs.apolloresearch.ai/concepts/blocking-and-trailing-review/#blocking-review) (`setup`, the default) | Also sends each tool call to Watcher before it runs. In enforce mode, it withholds each call until Watcher approves it, asking you when Watcher escalates. In observe or paused mode, Copilot's own permissions decide. | Adds a Watcher decision to every tool call. In enforce mode, a Watcher approval skips Copilot's own prompt and overrides your Copilot deny rules. Copilot runs the tool if its 480-second hook timeout expires. |
 | Grade completed tool calls after each turn (`demo/hooks.observe.json`) | Records the history and grades each turn's completed tool calls. | It cannot stop a tool that has run. |
 
@@ -18,8 +18,8 @@ provides the adapter, Python and uv in a permanent managed environment. It needs
 no source checkout or local Watcher app. Setup verifies server access before
 installing recording and tool review. Like `setup` below, it installs the
 personal hooks for every Copilot session by default, or one project's with
-`--project`. Browser login belongs to the shared SDK; reuse of a saved Watcher
-login is optional.
+`--project`. Browser sign-in belongs to the shared SDK; reuse of a saved Watcher
+sign-in is optional.
 
 Use `watcher-sdk integrations status copilot` to check confirmed delivery and the
 read-back of stored judgments, `doctor copilot` to check access and read the
@@ -32,9 +32,9 @@ interactive terminal to type the project folder. Prefix each subcommand with
 the personal install unless you add `--project`. Status and install warn when both
 installs cover a project. Reinstall and update preserve the saved mode and
 credential source, and repair a configuration that names another server than its
-hooks only when you name the server with `--cloud` or `--url`. SDK logout keeps the
-Watcher app's saved login file, though the server may sign out a browser or
-Watcher app that shared the SDK login's session.
+hooks only when you name the server with `--cloud` or `--url`. SDK sign-out keeps the
+Watcher app's saved sign-in file, though the server may sign out a browser or
+Watcher app that shared the SDK sign-in's session.
 
 The source-based commands below remain available for custom deployments and
 adapter development. Their low-level `setup` checks local configuration only;
@@ -48,11 +48,11 @@ Copilot model access and Watcher API access are separate:
 
 - For GitHub-hosted inference, use `copilot login` with an account that has Copilot access. Verify a real prompt before installing this sample; `gh auth status` alone does not prove inference access.
 - Copilot also supports a custom provider, documented by `copilot help providers`. Supply `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_WIRE_API` and `COPILOT_MODEL` only to the Copilot command. Supply `COPILOT_PROVIDER_API_KEY` securely if that provider requires it. This example was tested with Claude Sonnet 4.6 through an Anthropic-compatible endpoint and GPT-6 Luna through an OpenAI-compatible Responses endpoint, both with `--reasoning-effort high`. Copilot only enables reasoning for model IDs it recognizes; when your provider's model name differs, set `COPILOT_PROVIDER_MODEL_ID` to the matching Copilot model ID, such as `claude-sonnet-4.6`, and `COPILOT_PROVIDER_WIRE_MODEL` to the provider's name.
-- Get your Watcher API URL and sign in to the installed Watcher app for that server. Saved-login authentication supports macOS and Linux and runs as the same OS user as Watcher. The integration authenticates only with a user's own login; it does not accept API keys. The URL must use HTTPS unless Watcher runs on this machine (`localhost`, `127.0.0.1` or `::1`); setup and the hooks refuse plain HTTP to any other host.
+- Get your Watcher API URL and sign in to the installed Watcher app for that server. Saved sign-in authentication supports macOS and Linux and runs as the same OS user as Watcher. The integration authenticates only with a user's own sign-in; it does not accept API keys. The URL must use HTTPS unless Watcher runs on this machine (`localhost`, `127.0.0.1` or `::1`); setup and the hooks refuse plain HTTP to any other host.
 
-An installation from an earlier version that used an API key stops recording and withholds tools with a message asking you to run setup again with a login. Confirming delivery reads the session back; with a user's login, Watcher limits those reads to that user's own sessions, so no organization-wide read permission is needed.
+An installation from an earlier version that used an API key stops recording and withholds tools with a message asking you to run setup again with a sign-in. Confirming delivery reads the session back; with a user's sign-in, Watcher limits those reads to that user's own sessions, so no organization-wide read permission is needed.
 
-Recording also stores your answers to Watcher's prompts as human decisions, and the decision for a multi-file patch that recording stores after the turn (see [Tool names](#tool-names)). Your login may change your own sessions, so this needs no further permission. If that upload fails, transcripts and the gate's other decisions are still stored, and the recording adds an `unsynced_decisions` event to `events.jsonl`; the next callback tries again.
+Recording also stores your answers to Watcher's prompts as human decisions, and the decision for a multi-file patch that recording stores after the turn (see [Tool names](#tool-names)). Your sign-in may change your own sessions, so this needs no further permission. If that upload fails, transcripts and the gate's other decisions are still stored, and the recording adds an `unsynced_decisions` event to `events.jsonl`; the next callback tries again.
 
 After setup, restart Copilot and complete a test turn. Use the status command below to confirm that `last_delivery` has a timestamp from that turn and `last_error` is `null`. If the turn ran a tool, `last_review_check` should also count its stored decision as confirmed.
 
@@ -79,11 +79,11 @@ Configuration defaults to `~/.config/watcher-copilot/`, or `$XDG_CONFIG_HOME/wat
 
 Each hook command also names the server with `--watcher-url`, the same URL the private configuration holds. If the configuration later names a different server, the hooks refuse to run: the gate denies the tool call, and recording fails with a warning. Run setup again to change servers or to repair such a configuration; it rewrites both files. Hooks installed by an earlier version of this sample do not name the server, so they skip this check and follow whatever server the configuration names. The status command warns when any hook in the installation's hook file or the private configuration names no server, including hooks left behind by an upgrade that stopped partway. Run setup again to add the check.
 
-Keep saved login stores outside the project too. For a project install, setup rejects a store or credential file inside the project, including symlink targets, before replacing any hooks.
+Keep saved sign-in stores outside the project too. For a project install, setup rejects a store or credential file inside the project, including symlink targets, before replacing any hooks.
 
-The `--watcher-auth` option uses the SDK's shared saved-login helper. It works with the packaged Watcher app; no Watcher Python package is needed. Setup refuses a missing login or one saved for a different server URL, including another localhost port. Hooks and replay read current credentials and refresh expired tokens using Watcher's lock. Tokens stay in Watcher's credential store; setup saves the source, server URL and store location. If you use `APOLLO_MONITOR_HOME` for Watcher, set it during setup; hooks and replay use the saved location.
+The `--watcher-auth` option uses the SDK's shared saved sign-in helper. It works with the packaged Watcher app; no Watcher Python package is needed. Setup refuses a missing sign-in or one saved for a different server URL, including another localhost port. Hooks and replay read current credentials and refresh expired tokens using Watcher's lock. Tokens stay in Watcher's credential store; setup saves the source, server URL and store location. If you use `APOLLO_MONITOR_HOME` for Watcher, set it during setup; hooks and replay use the saved location.
 
-API keys are not supported: the key would sit in a file or variable the Copilot agent's own shell can read, and confirming delivery with a key needs permission to read every session in the organization. A missing or rejected saved login never falls back to another credential or another server's login.
+API keys are not supported: the key would sit in a file or variable the Copilot agent's own shell can read, and confirming delivery with a key needs permission to read every session in the organization. A missing or rejected saved sign-in never falls back to another credential or another server's sign-in.
 
 New installs use Blocking review, a `preToolUse` gate that follows Watcher's policy; see [Blocking review](#blocking-review). Use `--record-only` for Record only, or `--enforce` to turn Blocking review back on. Repeating setup without either flag keeps the current choice.
 
@@ -160,11 +160,11 @@ To remove the personal install, run:
 ./examples/github-copilot-cli/.venv/bin/watcher-github-copilot-cli remove
 ```
 
-Add `--project /path/to/project` to remove a project install instead. Removal deletes the installed callback and its configuration, including the personal install's opt-outs. It keeps the saved login, recorded sessions and other hooks. The personal hook file is removed from the Copilot folder it was installed into, even if `COPILOT_HOME` has changed since. Until you remove it, setup refuses a different `COPILOT_HOME`. If an installed entry was edited by hand, restore it before removing the integration.
+Add `--project /path/to/project` to remove a project install instead. Removal deletes the installed callback and its configuration, including the personal install's opt-outs. It keeps the saved sign-in, recorded sessions and other hooks. The personal hook file is removed from the Copilot folder it was installed into, even if `COPILOT_HOME` has changed since. Until you remove it, setup refuses a different `COPILOT_HOME`. If an installed entry was edited by hand, restore it before removing the integration.
 
 ## Optional demo hooks
 
-The `observe` and `enforce` commands also serve the separate demo hooks. Each demo command takes `--config` with a placeholder path; replace it with the configuration path printed by setup, whose saved login the hooks use. The demo commands leave out `--watcher-url`; add it with the server URL you gave setup to get the same check as setup's hooks. There is no environment-variable fallback. These files are for wiring hooks by hand instead of running setup. Copy `demo/hooks.observe.json` to a new file under the project's `.github/hooks/` to grade completed tool calls after each turn, or use `demo/hooks.enforce.json` for the same Blocking review gate that setup installs. `hooks.observe.json` runs `observe` at `agentStop` and at `sessionEnd`; `hooks.enforce.json` runs `observe --record-only` there, because its gate already judges each call. `sessionEnd` records the final state, including subagents that finish after the last turn, without assessing it again. Configure one set of recording hooks per project to avoid redundant callbacks. A demo hook runs beside the personal install, which records and judges the same calls. Opting the project out does not separate them when the demo hook's `--config` names a configuration in the same configuration root, because the opt-out turns that hook off too. The `observe` command confirms storage by reading it back, so the login needs session read and write access; failures other than an unfinished `agentStop` transcript exit with status 2 so Copilot shows its warning.
+The `observe` and `enforce` commands also serve the separate demo hooks. Each demo command takes `--config` with a placeholder path; replace it with the configuration path printed by setup, whose saved sign-in the hooks use. The demo commands leave out `--watcher-url`; add it with the server URL you gave setup to get the same check as setup's hooks. There is no environment-variable fallback. These files are for wiring hooks by hand instead of running setup. Copy `demo/hooks.observe.json` to a new file under the project's `.github/hooks/` to grade completed tool calls after each turn, or use `demo/hooks.enforce.json` for the same Blocking review gate that setup installs. `hooks.observe.json` runs `observe` at `agentStop` and at `sessionEnd`; `hooks.enforce.json` runs `observe --record-only` there, because its gate already judges each call. `sessionEnd` records the final state, including subagents that finish after the last turn, without assessing it again. Configure one set of recording hooks per project to avoid redundant callbacks. A demo hook runs beside the personal install, which records and judges the same calls. Opting the project out does not separate them when the demo hook's `--config` names a configuration in the same configuration root, because the opt-out turns that hook off too. The `observe` command confirms storage by reading it back, so the sign-in needs session read and write access; failures other than an unfinished `agentStop` transcript exit with status 2 so Copilot shows its warning.
 
 In every copied demo command, replace `watcher-github-copilot-cli` with the
 quoted absolute path to its executable in the permanent SDK source directory.
@@ -351,7 +351,7 @@ prompt mode with `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true`. When the hooks do
 not run, tools are allowed without a warning.
 
 The agent runs as your user, so it can change every file your user can write.
-That includes the hook file, the private configuration and the saved logins.
+That includes the hook file, the private configuration and the saved sign-ins.
 An agent that rewrites both files can point the hooks at a server it runs
 itself, such as one on this machine that approves every call. Approved calls
 then skip Copilot's own permission prompt. `status` cannot detect this, because

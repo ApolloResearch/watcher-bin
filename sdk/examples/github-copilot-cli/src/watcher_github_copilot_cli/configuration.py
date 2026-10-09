@@ -102,11 +102,11 @@ def validate_watcher_url(value: str) -> None:
         raise ValueError("Watcher URL must use HTTPS unless Watcher runs on this machine")
 
 
-# Credential sources the integration accepts: a user's own login, whose session
+# Credential sources the integration accepts: a user's own sign-in, whose session
 # reads the server scopes to that user. API keys would need organization-wide read.
 LOGIN_KINDS = frozenset({"sdk_login", "watcher_login"})
 API_KEY_UNSUPPORTED = (
-    "API-key authentication is no longer supported by the Copilot integration; run setup again with a login"
+    "API-key authentication is no longer supported by the Copilot integration; run setup again with a sign-in"
 )
 # Setup writes the server into each hook command with this option as well as into
 # the private configuration. Anything that can rewrite the configuration could
@@ -208,13 +208,13 @@ class ObserverConfiguration(InstallationScope):
             return self
         # Nothing is sent to any server a redirected configuration names either, so a
         # server rewritten to plain HTTP elsewhere does not stop its repair. The same
-        # holds for its login, which the lenient read accepts on such a server (see
+        # holds for its sign-in, which the lenient read accepts on such a server (see
         # ``load_configuration``). A configuration that is not redirected names one
-        # server for both, so this check keeps refusing a plain-HTTP login there too.
+        # server for both, so this check keeps refusing a plain-HTTP sign-in there too.
         if not (lenient and names_another_server(self)):
             validate_watcher_url(self.watcher_url)
         if self.watcher_auth == (self.auth_profile is not None):
-            raise ValueError("Choose one Watcher login")
+            raise ValueError("Choose one Watcher sign-in")
         if not lenient and _login_names_another_server(self):
             raise ValueError("The credential profile belongs to a different server")
         return self
@@ -233,7 +233,7 @@ def _login_names_another_server(config: ObserverConfiguration) -> bool:
     try:
         return _api_url(config.watcher_url) != _api_url(config.auth_profile.base_url)
     except ValueError:
-        # A server that is not a valid URL cannot be the one the login belongs to.
+        # A server that is not a valid URL cannot be the one the sign-in belongs to.
         return True
 
 
@@ -241,7 +241,7 @@ def names_another_server(config: ObserverConfiguration) -> bool:
     """Whether ``config`` names more than one server, so something rewrote part of it after setup.
 
     That is the case when a hook command stored in it names a different server
-    than its ``watcher_url`` (see ``SERVER_OPTION``), or when its login profile
+    than its ``watcher_url`` (see ``SERVER_OPTION``), or when its sign-in profile
     belongs to a different server than that. Changing either field alone is
     enough. Hooks refuse such a configuration, and ``load_configuration`` refuses
     it too unless asked not to. Commands from earlier versions name no server and
@@ -324,8 +324,8 @@ def load_configuration(
     Such a configuration may name a plain-HTTP server on another machine, since
     nothing is sent to it. A configuration that names more than one server (see
     ``names_another_server``) also raises ``ValueError``, unless
-    ``allow_server_mismatch`` is set; its server and its login may then name a
-    plain-HTTP server on another machine too. Such a login still never signs in
+    ``allow_server_mismatch`` is set; its server and its sign-in may then name a
+    plain-HTTP server on another machine too. Such a sign-in still never signs in
     (see ``ALLOW_INSECURE_LOGIN_URL``). Setup, removal and opt-out changes set
     both, because they replace or delete the configuration, or change only its
     opt-outs, and so do readers that only report the installation.
@@ -598,7 +598,7 @@ def install_observer(
         ),
         gate=gate if enforce is not False else None,
     )
-    # A project install refuses a saved login inside the project, where the agent
+    # A project install refuses a saved sign-in inside the project, where the agent
     # could replace it. The personal install covers no single project.
     if auth_profile is not None:
         if project is not None:

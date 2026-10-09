@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Hashable
+from copy import deepcopy
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
@@ -110,7 +111,18 @@ class _UniqueKeySafeLoader(yaml.SafeLoader):
 
 
 def load_settings_yaml(yaml_text: str) -> object:
-    """Safely parse settings YAML while rejecting duplicate mapping keys."""
+    """Safely parse settings YAML while rejecting duplicate mapping keys.
+
+    The same files are parsed again for every profile a diagnostic checks, and parsing is
+    the slow part of reading settings, so each text is parsed once and every caller gets
+    its own deep copy, which it may change freely. A text that fails to parse is not
+    cached, so the error is raised again on the next call.
+    """
+    return deepcopy(_parse_settings_yaml(yaml_text))
+
+
+@lru_cache(maxsize=64)
+def _parse_settings_yaml(yaml_text: str) -> object:
     return yaml.load(yaml_text, Loader=_UniqueKeySafeLoader)
 
 
@@ -375,9 +387,16 @@ def effective_raw(
     ensure_local_imported: Callable[[], None],
     raw_cache: dict[tuple[LocalSettingsScope, SettingsCacheKey], dict[str, Any]],
     load_issues_cache: dict[tuple[LocalSettingsScope, SettingsCacheKey], list[SettingsLoadIssue]],
+    profile_id: str | None = None,
     applied_overlays: list[AppliedOverlay] | None = None,
 ) -> dict[str, Any]:
-    """The builtin, administrator, local and active-profile layers merged into one settings tree.
+    """The merged settings tree for the active profile, or for ``profile_id`` when given.
+
+    Naming a profile builds that profile's tree as if it were active, without
+    changing which one is: settings diagnostics use it to check every profile a
+    machine offers. The tree and its load issues are cached under that profile's
+    key, so the issues for a named profile do not include the one about an
+    unavailable ``active_profile``.
 
     ``local_scope`` picks which machine-local layers apply: none, only the
     global local file, or that file plus the active profile's local entry and
@@ -406,7 +425,10 @@ def effective_raw(
         merge_admin,
     )
     metadata_root = merge_local(baseline_admin, local)
-    active_profile_id = resolve_active_profile_id(metadata_root, local_path, issues)
+    if profile_id is not None:
+        active_profile_id = profile_id
+    else:
+        active_profile_id = resolve_active_profile_id(metadata_root, local_path, issues)
 
     cache_key = (local_scope, settings_cache_key(admin_path, local_path, active_profile_id))
     cached = raw_cache.get(cache_key)

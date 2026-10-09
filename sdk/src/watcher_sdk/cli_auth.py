@@ -31,7 +31,7 @@ def printable(text: str) -> str:
 
 
 def show_authorization(server: str, prompt: DeviceLoginPrompt) -> None:
-    """Show device-login instructions that end by naming the server receiving the login.
+    """Show device sign-in instructions that end by naming the server receiving the sign-in.
 
     A hostile server can relay another server's genuine approval page and code,
     and the approval page cannot tell the user who asked. Naming the destination
@@ -55,7 +55,9 @@ def choose_profile(candidates: list[IntegrationAuth]) -> IntegrationAuth:
     if len(candidates) == 1:
         return candidates[0]
     if not sys.stdin.isatty():
-        raise CommandError("Several saved logins match. Run in a terminal to choose one, or select an explicit source.")
+        raise CommandError(
+            "Several saved sign-ins match. Run in a terminal to choose one, or select an explicit source."
+        )
     for index, candidate in enumerate(candidates, 1):
         typer.echo(f"{index}. {candidate.base_url} ({candidate.kind}, {candidate.state_dir})")
 
@@ -69,7 +71,7 @@ def choose_profile(candidates: list[IntegrationAuth]) -> IntegrationAuth:
             raise typer.BadParameter(message)
         return selected
 
-    selected: int = typer.prompt("Use login", value_proc=parse_selection)
+    selected: int = typer.prompt("Use sign-in", value_proc=parse_selection)
     return candidates[selected - 1]
 
 
@@ -85,14 +87,14 @@ def resolve_profile(
 ) -> IntegrationAuth:
     """Select credentials once during setup; preserve a compatible existing choice.
 
-    Integrations authenticate only with a user's own login: an SDK login or a
-    saved Watcher login. An existing API-key choice from an earlier version is
-    never reused or rebuilt into a login; its server is the destination only when
+    Integrations authenticate only with a user's own sign-in: an SDK sign-in or a
+    saved Watcher sign-in. An existing API-key choice from an earlier version is
+    never reused or rebuilt into a sign-in; its server is the destination only when
     ``target`` names none, and is checked then like any other. Explicit sources
     require a destination, either supplied or already installed. An explicit
     destination change never carries the previous credential across. Discovery
     occurs only without a saved choice. Only interactive setup starts browser
-    login; unattended installations must sign in in advance. A browser login's
+    sign-in; unattended installations must sign in in advance. A browser sign-in's
     store is checked to lie outside ``project``, when one is given, before
     anything is saved.
     """
@@ -117,10 +119,10 @@ def resolve_profile(
     if not sys.stdin.isatty():
         if fresh_login:
             raise CommandError(
-                "Browser login needs an interactive terminal. Run watcher-sdk auth login --cloud or --url URL "
+                "Browser sign-in needs an interactive terminal. Run watcher-sdk auth login --cloud or --url URL "
                 "first, then repeat setup without --login."
             )
-        raise CommandError("No selected login is available. Run watcher-sdk auth login --cloud or --url URL first.")
+        raise CommandError("No selected sign-in is available. Run watcher-sdk auth login --cloud or --url URL first.")
     if selected_url is None:
         selected_url = str(_api_url(typer.prompt("Watcher server URL", default=CLOUD_URL)))
     if project is not None:

@@ -67,7 +67,7 @@ def sync_detailed(
 ) -> Response[DeviceTokenResponse | HTTPValidationError]:
     """Auth Device Token
 
-     Poll the outcome of a device-authorization login.
+     Poll the outcome of a device-authorization sign-in.
 
     While the user hasn't finished approving, answers 400 with
     ``detail.code`` ``authorization_pending`` (keep polling) or ``slow_down``
@@ -106,7 +106,7 @@ def sync(
 ) -> DeviceTokenResponse | HTTPValidationError | None:
     """Auth Device Token
 
-     Poll the outcome of a device-authorization login.
+     Poll the outcome of a device-authorization sign-in.
 
     While the user hasn't finished approving, answers 400 with
     ``detail.code`` ``authorization_pending`` (keep polling) or ``slow_down``
@@ -140,7 +140,7 @@ async def asyncio_detailed(
 ) -> Response[DeviceTokenResponse | HTTPValidationError]:
     """Auth Device Token
 
-     Poll the outcome of a device-authorization login.
+     Poll the outcome of a device-authorization sign-in.
 
     While the user hasn't finished approving, answers 400 with
     ``detail.code`` ``authorization_pending`` (keep polling) or ``slow_down``
@@ -177,7 +177,7 @@ async def asyncio(
 ) -> DeviceTokenResponse | HTTPValidationError | None:
     """Auth Device Token
 
-     Poll the outcome of a device-authorization login.
+     Poll the outcome of a device-authorization sign-in.
 
     While the user hasn't finished approving, answers 400 with
     ``detail.code`` ``authorization_pending`` (keep polling) or ``slow_down``

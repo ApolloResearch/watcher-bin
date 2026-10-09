@@ -56,11 +56,11 @@ def sync_detailed(
 ) -> Response[AuthLogoutV1AuthLogoutPostResponseAuthLogoutV1AuthLogoutPost]:
     """Auth Logout
 
-     Log out the user — revokes the WorkOS session and clears the refresh cookie.
+     Sign out the user — revokes the WorkOS session and clears the refresh cookie.
 
     Reads the ``sid`` (session ID) from the JWT in the Authorization header
     and calls WorkOS to revoke the session server-side. This ensures the user
-    must fully re-authenticate on next login (no auto-complete from a cached
+    must fully re-authenticate on next sign-in (no auto-complete from a cached
     WorkOS session).
 
     Raises:
@@ -86,11 +86,11 @@ def sync(
 ) -> AuthLogoutV1AuthLogoutPostResponseAuthLogoutV1AuthLogoutPost | None:
     """Auth Logout
 
-     Log out the user — revokes the WorkOS session and clears the refresh cookie.
+     Sign out the user — revokes the WorkOS session and clears the refresh cookie.
 
     Reads the ``sid`` (session ID) from the JWT in the Authorization header
     and calls WorkOS to revoke the session server-side. This ensures the user
-    must fully re-authenticate on next login (no auto-complete from a cached
+    must fully re-authenticate on next sign-in (no auto-complete from a cached
     WorkOS session).
 
     Raises:
@@ -112,11 +112,11 @@ async def asyncio_detailed(
 ) -> Response[AuthLogoutV1AuthLogoutPostResponseAuthLogoutV1AuthLogoutPost]:
     """Auth Logout
 
-     Log out the user — revokes the WorkOS session and clears the refresh cookie.
+     Sign out the user — revokes the WorkOS session and clears the refresh cookie.
 
     Reads the ``sid`` (session ID) from the JWT in the Authorization header
     and calls WorkOS to revoke the session server-side. This ensures the user
-    must fully re-authenticate on next login (no auto-complete from a cached
+    must fully re-authenticate on next sign-in (no auto-complete from a cached
     WorkOS session).
 
     Raises:
@@ -140,11 +140,11 @@ async def asyncio(
 ) -> AuthLogoutV1AuthLogoutPostResponseAuthLogoutV1AuthLogoutPost | None:
     """Auth Logout
 
-     Log out the user — revokes the WorkOS session and clears the refresh cookie.
+     Sign out the user — revokes the WorkOS session and clears the refresh cookie.
 
     Reads the ``sid`` (session ID) from the JWT in the Authorization header
     and calls WorkOS to revoke the session server-side. This ensures the user
-    must fully re-authenticate on next login (no auto-complete from a cached
+    must fully re-authenticate on next sign-in (no auto-complete from a cached
     WorkOS session).
 
     Raises:

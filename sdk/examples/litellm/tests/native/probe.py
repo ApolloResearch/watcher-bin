@@ -4,8 +4,8 @@ Run inside a network-disabled fixture container with only loopback services.
 --protocol supplies local Watcher replies; --case uses the real Watcher relay.
 Neither mode connects to a model provider outside the local namespace.
 Client requests supply x-watcher-session-id, the callback's explicit grouping
-contract. Tool execution follows the delivered response body: a refused call
-arrives as an ordinary text response with every tool call removed.
+contract. Refused proposals stay out of executable fields; provider alternatives
+and ordinary text notices are delivered in the same client response.
 """
 
 import argparse
@@ -58,6 +58,13 @@ def stream_events(response: httpx.Response) -> list[dict[str, Any]]:
     return events
 
 
+def preserves_client_request(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
+    """Allow appended native recovery/audit messages while keeping client input and options exact."""
+    return {key: value for key, value in actual.items() if key != "messages"} == {
+        key: value for key, value in expected.items() if key != "messages"
+    } and actual["messages"][: len(expected["messages"])] == expected["messages"]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence", type=Path, required=True)
@@ -85,14 +92,14 @@ def main() -> None:
     class Fixture(BaseHTTPRequestHandler):
         """Provide a local model and, only for protocol tests, scripted hook replies."""
 
-        server: ThreadingHTTPServer
-
         def log_message(self, format: str, *_args: Any) -> None:
             pass
 
         def do_POST(self):
             request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            if self.server.server_port == WATCHER_PORT:
+            server = self.server
+            assert isinstance(server, ThreadingHTTPServer)
+            if server.server_port == WATCHER_PORT:
                 if self.path == "/v1/auth/check-permissions":
                     payload = {"granted": True, "missing": []}
                 else:
@@ -210,8 +217,9 @@ def main() -> None:
         server = ThreadingHTTPServer(("127.0.0.1", port), Fixture)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         servers.append(server)
+    inherited = {key: value for key, value in os.environ.items() if key in {"PATH", "HOME", "TMPDIR", "LANG"}}
     env = dict(
-        os.environ,
+        inherited,
         WATCHER_API_URL=f"http://127.0.0.1:{WATCHER_PORT}" if args.protocol else os.environ["WATCHER_URL"],
         WATCHER_API_KEY="fixture-key",
         LITELLM_MODE="PRODUCTION",
@@ -259,7 +267,9 @@ def main() -> None:
             "tools": [{"type": "function", "function": {"name": "Write", "parameters": {"type": "object"}}}],
         }
 
-        def post_client(target, *, headers, json, timeout=30):
+        def post_client(
+            target: str, *, headers: dict[str, str], json: dict[str, Any], timeout: float = 30
+        ) -> httpx.Response:
             """Retain exactly what the ordinary client supplied before proxy mutation."""
             payload = deepcopy(json)
             if target == url:
@@ -286,7 +296,8 @@ def main() -> None:
                 message = response.json()["choices"][0]["message"]
                 assert bool(message.get("tool_calls")) is released, response.text
                 if not released:
-                    assert "Watcher withheld the proposed tool call" in message["content"]
+                    assert "Watcher did not approve" in message["content"]
+                    assert case["final_text"] in message["content"]
                 results.append({"case": marker, "status": response.status_code, "body": response.json()})
             body["messages"][0]["content"] = "identical prompt"
             ids = [str(uuid4()), str(uuid4())]
@@ -304,14 +315,13 @@ def main() -> None:
             results.append({"case": "explicit-session-identities", "ids": ids})
             body["messages"][0]["content"] = "no session header"
             before = len(watcher_requests)
+            provider_before = len(provider_requests)
             response = post_client(url, headers={"Authorization": "Bearer sk-fixture-client"}, json=body, timeout=30)
-            assert response.status_code == 200, response.text
-            assert response.json()["choices"][0]["message"]["tool_calls"][0]["id"] == case["call_id"]
+            assert response.status_code == 400, response.text
             assert "x-watcher-session-id" not in client_request_headers[-1]
-            assert len(watcher_requests) == before + 1
-            assert watcher_requests[-1]["request_body"] == client_requests[-1]
-            assert "external_ids" not in watcher_requests[-1]
-            results.append({"case": "no-session-header", "status": response.status_code})
+            assert len(watcher_requests) == before
+            assert len(provider_requests) == provider_before
+            results.append({"case": "missing-identity-rejected", "status": response.status_code})
             for marker in ("allow", "deny", "escalate", "observe deny", "paused"):
                 body["messages"][0]["content"] = marker
                 response = post_client(url, headers=headers, json={**body, "stream": True}, timeout=30)
@@ -325,12 +335,13 @@ def main() -> None:
                 ]
                 assert bool(calls) is released, response.text
                 if released:
-                    assert {call["id"] for call in calls} == {case["call_id"]}
+                    assert {call["id"] for call in calls if call.get("id")} == {case["call_id"]}
                     assert any(
                         choice["finish_reason"] == "tool_calls" for event in events for choice in event["choices"]
                     )
                 else:
-                    assert "Watcher withheld the proposed tool call" in response.text
+                    assert "Watcher did not approve" in response.text
+                    assert case["final_text"] in response.text
                 results.append({"case": marker + "-stream", "status": response.status_code, "body": response.text})
             body["messages"][0]["content"] = "allow usage"
             usage_body = {**body, "stream": True, "stream_options": {"include_usage": True}}
@@ -343,8 +354,20 @@ def main() -> None:
             ]
             expected_usage = {"prompt_tokens": 5, "completion_tokens": 10, "total_tokens": 15}
             assert events and "usage" in events[-1], response.text
+            deadline = time.monotonic() + 5
+            usage_records = []
+            while not usage_records and time.monotonic() < deadline:
+                usage_records = [
+                    request
+                    for request in watcher_requests
+                    if request["request_body"]["messages"][0]["content"] == "allow usage"
+                    and not request["response_body"]["choices"][0]["message"].get("tool_calls")
+                ]
+                if not usage_records:
+                    time.sleep(0.01)
+            assert usage_records, "The final stream usage was not recorded"
             for key, value in expected_usage.items():
-                assert events[-1]["usage"][key] == watcher_requests[-1]["response_body"]["usage"][key] == value
+                assert events[-1]["usage"][key] == usage_records[-1]["response_body"]["usage"][key] == value
             results.append({"case": "stream-final-usage", "status": response.status_code, "body": response.text})
             body["messages"][0]["content"] = "malformed exchange"
             response = post_client(url, headers=headers, json=body, timeout=30)
@@ -368,7 +391,8 @@ def main() -> None:
             assert not thread.is_alive() and responses[0].status_code == 200
             held_message = responses[0].json()["choices"][0]["message"]
             assert not held_message.get("tool_calls")
-            assert "Watcher withheld the proposed tool call" in held_message["content"]
+            assert "Watcher did not approve" in held_message["content"]
+            assert case["final_text"] in held_message["content"]
             results.append({"case": "pending-response-withheld", "status": responses[0].status_code})
             for submitted in watcher_requests:
                 actual = submitted["request_body"]
@@ -385,7 +409,24 @@ def main() -> None:
                     if sent.get("stream") and "stream_options" not in sent:
                         expected.update(stream_options={"include_usage": True}, _litellm_strip_stream_usage=True)
                     candidates.append(expected)
-                assert actual in candidates, actual
+                matches = [expected for expected in candidates if preserves_client_request(actual, expected)]
+                assert matches, actual
+                for message in actual["messages"][len(matches[0]["messages"]) :]:
+                    assert message["role"] in {"assistant", "tool"}, message
+                    if message["role"] == "tool":
+                        assert message["tool_call_id"] == case["call_id"]
+                        assert "Watcher" in message["content"]
+                    for call in message.get("tool_calls") or []:
+                        assert call["id"] == case["call_id"]
+                        assert call["function"]["name"] == "Write"
+                        arguments = json.loads(call["function"]["arguments"])
+                        assert arguments == {
+                            "file_path": "sentinel.txt",
+                            "content": case["token"],
+                            "enabled": True,
+                            "ratio": 1.0,
+                        }
+                        assert arguments["enabled"] is True and type(arguments["ratio"]) is float
             results.append({"case": "client-request-keys-and-alias", "checked": len(watcher_requests)})
             servers[-1].shutdown()
             servers[-1].server_close()
@@ -479,8 +520,9 @@ def main() -> None:
                 )
                 assert final_body["choices"][0]["message"]["content"] == case["final_text"], final.text
             else:
-                assert "Watcher withheld the proposed tool call" in message["content"]
-            expected_final = case["final_text"] if permitted else "Proposed tool call " + case["token"]
+                assert "Watcher did not approve" in message["content"]
+                assert case["final_text"] in message["content"]
+            expected_final = case["final_text"] if permitted else message["content"]
             (root / "expected-final.txt").write_text(expected_final)
             (root / "response.json").write_text(
                 json.dumps(initial_response, indent=2) if streamed and permitted else response.text

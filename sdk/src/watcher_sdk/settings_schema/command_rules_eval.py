@@ -32,9 +32,9 @@ import posixpath
 import re
 import shlex
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import regex as regex_module
 from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, ValidationError
@@ -555,6 +555,33 @@ class _CompiledRule(BaseModel):
     compiled: SkipValidation[_CompiledPattern]
 
 
+def _compile_rule_pattern(pattern: str) -> _CompiledPattern | str:
+    """A rule pattern compiled with the evaluator's engine and flags, or why it cannot be.
+
+    Returns the error text instead of raising so evaluation and settings diagnostics
+    (:func:`rule_pattern_error`) take the same decision from one place.
+    """
+    if len(pattern) > MAX_RULE_PATTERN_LENGTH:
+        return f"regex is longer than {MAX_RULE_PATTERN_LENGTH} characters"
+    try:
+        compiled: _CompiledPattern = regex_module.compile(pattern, regex_module.IGNORECASE)
+    except (regex_module.error, RecursionError, ValueError, OverflowError) as error:
+        return f"regex does not compile: {error}"
+    return compiled
+
+
+def rule_pattern_error(pattern: str) -> str | None:
+    """Why an active rule's ``pattern`` would suppress allow rules at evaluation, or ``None``.
+
+    An over-long pattern, or one the ``regex`` engine cannot compile under the
+    evaluator's flags, makes :func:`evaluate_command_rules` drop every allow rule
+    for the calls that rule applies to. Settings diagnostics call this to name the
+    rule responsible; it is the same check evaluation runs.
+    """
+    compiled = _compile_rule_pattern(pattern)
+    return compiled if isinstance(compiled, str) else None
+
+
 def _valid_rules(rules: Sequence[EvaluableCommandRule], tool_names: set[str], deadline: float) -> list[_CompiledRule]:
     """Keep applicable restrictions, suppressing allows if any active rule is invalid."""
     valid: list[_CompiledRule] = []
@@ -563,12 +590,11 @@ def _valid_rules(rules: Sequence[EvaluableCommandRule], tool_names: set[str], de
         _remaining_time(deadline)
         if rule.action == RuleAction.OFF or not any(fnmatch.fnmatchcase(name, rule.tool_name) for name in tool_names):
             continue
-        if rule.action not in ACTION_SEVERITY or len(rule.pattern) > MAX_RULE_PATTERN_LENGTH:
+        if rule.action not in ACTION_SEVERITY:
             has_invalid_rule = True
             continue
-        try:
-            compiled = regex_module.compile(rule.pattern, regex_module.IGNORECASE)
-        except (regex_module.error, RecursionError, ValueError, OverflowError):
+        compiled = _compile_rule_pattern(rule.pattern)
+        if isinstance(compiled, str):
             has_invalid_rule = True
             continue
         valid.append(_CompiledRule(rule=rule, compiled=compiled))
@@ -862,6 +888,17 @@ def _threshold_int(value: Any) -> int | None:
         return None
 
 
+def threshold_out_of_range(value: object) -> bool:
+    """Whether a raw threshold reads as a number outside ``THRESHOLD_ALWAYS`` to ``THRESHOLD_DISABLED``.
+
+    The value is read the way threshold resolution reads it (`_threshold_int`),
+    so a quoted ``"99"`` counts as 99. A value that does not read as a number is
+    not out of range: schema validation is what reports that one.
+    """
+    threshold = _threshold_int(value)
+    return threshold is not None and not THRESHOLD_ALWAYS <= threshold <= THRESHOLD_DISABLED
+
+
 def _pair_from_entry(entry: Any) -> ToolThresholdPair | None:
     """A threshold entry's (flag, deny) pair, unwrapped; ``None`` when malformed."""
     if not isinstance(entry, dict):
@@ -1013,30 +1050,116 @@ def command_rules_have_invalid_entries(tree: dict[str, Any]) -> bool:
     )
 
 
-def _tree_command_rule(tree: dict[str, Any], raw_rule: dict[str, Any]) -> TreeCommandRule | None:
-    rule_id = raw_rule.get("id")
-    if not isinstance(rule_id, str):
-        return None
-    tool_name = unwrap(raw_rule.get("tool_name"))
-    pattern = unwrap(raw_rule.get("regex"))
-    label = unwrap(raw_rule.get("name"))
-    category = unwrap(raw_rule.get("category"))
-    priority = unwrap(raw_rule.get("priority"))
+class RuleFieldProblem(BaseModel):
+    """One field that stops a raw rule entry from projecting into an evaluable rule.
+
+    ``missing`` covers an absent key and an explicit null. ``wrong_type`` is a value
+    of the wrong type, including a priority that is a string, a float or a boolean
+    and an unquoted YAML ``off`` (read as ``false``). ``unknown_value`` is a decision
+    string outside the known set.
+    """
+
+    field: str
+    kind: Literal["missing", "wrong_type", "unknown_value"]
+
+
+class RuleProjectionProblem(BaseModel):
+    """Every field that stops a raw rule entry from projecting, in projection order."""
+
+    fields: list[RuleFieldProblem]
+
+    @property
+    def message(self) -> str:
+        """The problem as a short phrase, such as ``missing regex and category``."""
+        phrases: list[str] = []
+        missing = [problem.field for problem in self.fields if problem.kind == "missing"]
+        if missing:
+            phrases.append(f"missing {_join_words(missing)}")
+        for problem in self.fields:
+            if problem.kind == "wrong_type":
+                phrases.append(f"{problem.field} is not {_FIELD_TYPE_WORDS[problem.field]}")
+            elif problem.kind == "unknown_value":
+                phrases.append(f"{problem.field} is not one of {', '.join(sorted(DECISION_TO_ACTION))}")
+        return "; ".join(phrases)
+
+
+# The fields an enabled rule needs, in the order projection reads them, with the
+# type each must unwrap to. ``id`` is read raw: the id-keyed merge does not unwrap it.
+_REQUIRED_TEXT_FIELDS = ("tool_name", "regex", "name", "category")
+_FIELD_TYPE_WORDS = {
+    "id": "text",
+    "tool_name": "text",
+    "regex": "text",
+    "name": "text",
+    "category": "text",
+    "priority": "a whole number",
+    "decision": "text",
+}
+
+
+def _join_words(words: list[str]) -> str:
+    if len(words) == 1:
+        return words[0]
+    return f"{', '.join(words[:-1])} and {words[-1]}"
+
+
+def rule_projection_problem(raw_rule: Mapping[str, Any]) -> RuleProjectionProblem | None:
+    """Why a raw ``command_rules`` entry cannot become an evaluable rule, or ``None``.
+
+    The single definition of a complete rule, shared by :func:`command_rules_from_tree`,
+    :func:`command_rules_have_invalid_entries` and the client's settings diagnostics,
+    so a rule that diagnostics call fine always evaluates and one they flag never does.
+    An enabled rule needs a string ``id``, string ``tool_name``, ``regex``, ``name``
+    and ``category``, an integer ``priority`` that is not a boolean, and a known
+    ``decision`` (``triage`` when absent). Each field may carry the optional
+    ``{value, permission}`` wrapper. A rule whose decision is ``off`` needs only its
+    ``id``, because a disabled rule is never matched.
+
+    Args:
+        raw_rule: One entry of a merged tree's ``command_rules.rules`` list.
+
+    Returns:
+        Every failing field, or ``None`` when the entry projects.
+    """
+    problems: list[RuleFieldProblem] = []
+    if "id" not in raw_rule or raw_rule["id"] is None:
+        problems.append(RuleFieldProblem(field="id", kind="missing"))
+    elif not isinstance(raw_rule["id"], str):
+        problems.append(RuleFieldProblem(field="id", kind="wrong_type"))
     decision = unwrap(raw_rule.get("decision", "triage"))
-    if not isinstance(tool_name, str) or not isinstance(pattern, str) or not isinstance(label, str):
+    if decision == "off":
+        return RuleProjectionProblem(fields=problems) if problems else None
+    for field in _REQUIRED_TEXT_FIELDS:
+        value = unwrap(raw_rule.get(field))
+        if value is None:
+            problems.append(RuleFieldProblem(field=field, kind="missing"))
+        elif not isinstance(value, str):
+            problems.append(RuleFieldProblem(field=field, kind="wrong_type"))
+    priority = unwrap(raw_rule.get("priority"))
+    if priority is None:
+        problems.append(RuleFieldProblem(field="priority", kind="missing"))
+    elif not isinstance(priority, int) or isinstance(priority, bool):
+        problems.append(RuleFieldProblem(field="priority", kind="wrong_type"))
+    if not isinstance(decision, str):
+        problems.append(RuleFieldProblem(field="decision", kind="wrong_type"))
+    elif decision not in DECISION_TO_ACTION:
+        problems.append(RuleFieldProblem(field="decision", kind="unknown_value"))
+    return RuleProjectionProblem(fields=problems) if problems else None
+
+
+def _tree_command_rule(tree: dict[str, Any], raw_rule: dict[str, Any]) -> TreeCommandRule | None:
+    if rule_projection_problem(raw_rule) is not None:
         return None
-    if not isinstance(category, str):
+    decision = unwrap(raw_rule.get("decision", "triage"))
+    if decision == "off":
         return None
-    if not isinstance(priority, int) or isinstance(priority, bool):
-        return None
-    if not isinstance(decision, str) or decision == "off" or decision not in DECISION_TO_ACTION:
-        return None
+    tool_name = unwrap(raw_rule["tool_name"])
     action = terminal_rule_action_for_tool(tree, tool_name) or DECISION_TO_ACTION[decision]
     return TreeCommandRule(
-        id=rule_id,
+        id=raw_rule["id"],
         tool_name=tool_name,
-        pattern=pattern,
+        pattern=unwrap(raw_rule["regex"]),
         action=action,
-        priority=priority,
-        label=label,
+        priority=unwrap(raw_rule["priority"]),
+        label=unwrap(raw_rule["name"]),
     )

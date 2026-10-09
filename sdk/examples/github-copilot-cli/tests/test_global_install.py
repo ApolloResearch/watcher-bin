@@ -58,7 +58,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def credential(tmp_path: Path) -> Path:
-    """A saved Watcher login store for ``URL``."""
+    """A saved Watcher sign-in store for ``URL``."""
     state = tmp_path / "watcher"
     save_watcher_login(state, URL, "PRIVATE_TEST_CREDENTIAL")
     return state
@@ -85,7 +85,7 @@ def repository(path: Path) -> Path:
 
 
 def setup_arguments(credential: Path, config_dir: Path) -> list[str]:
-    """Setup's arguments for the personal install, signed in with the saved login in ``credential``."""
+    """Setup's arguments for the personal install, signed in with the saved sign-in in ``credential``."""
     return [
         "setup",
         "--watcher-url",
@@ -1088,7 +1088,7 @@ ServerField = Literal["watcher_url", "auth_profile"]
 
 
 def rewrite_servers(path: Path, fields: tuple[ServerField, ...], server: str) -> None:
-    """Point only ``fields`` of the configuration at ``path``, its server, its login's or both, at ``server``.
+    """Point only ``fields`` of the configuration at ``path``, its server, its sign-in's or both, at ``server``.
 
     The hook commands stored in it keep naming the server setup wrote.
     """
@@ -1129,7 +1129,7 @@ def test_setup_opt_outs_and_removal_repair_a_configuration_with_its_server_or_lo
     assert not names_another_server(load_configuration(path))
     rewrite_servers(path, fields, server)
     # The hooks refuse it, since it no longer names the server their commands name,
-    # or since its login is plain HTTP to another machine.
+    # or since its sign-in is plain HTTP to another machine.
     with pytest.raises(ValueError, match="different|HTTPS"):
         load_configuration(path)
     assert names_another_server(load_configuration(path, allow_server_mismatch=True))
@@ -1188,7 +1188,7 @@ def test_a_server_that_is_not_a_url_never_matches_the_login(
 ) -> None:
     profile_setup(credential, config_dir, tmp_path)
     path = personal_config(config_dir)
-    # Hooks from an earlier version name no server, so only the login can show the rewrite.
+    # Hooks from an earlier version name no server, so only the sign-in can show the rewrite.
     document = json.loads(path.read_text())
     document["watcher_url"] = "not a URL"
     for command in ("hook", "gate"):
@@ -1254,7 +1254,7 @@ def test_a_project_install_honors_the_opt_out_when_only_the_personal_server_chan
     assert opted.exit_code == 0, opted.output
     path = personal_config(config_dir)
     rewrite_servers(path, ("watcher_url",), server)
-    # The login still names the server setup wrote, so the full configuration no
+    # The sign-in still names the server setup wrote, so the full configuration no
     # longer validates. The opt-out lookup reads only the scope and opt-outs.
     rewritten = load_configuration(path, allow_server_mismatch=True)
     assert rewritten.auth_profile is not None and rewritten.auth_profile.base_url == URL

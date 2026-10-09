@@ -238,7 +238,8 @@ def test_a_stored_api_key_configuration_asks_for_a_login(tmp_path: Path) -> None
     result = CliRunner().invoke(integration.app, ["enforce", "--config", str(config)], input='{"toolName":"bash"}')
     answer = json.loads(result.stdout)
     assert (
-        answer["permissionDecision"] == "deny" and "run setup again with a login" in answer["permissionDecisionReason"]
+        answer["permissionDecision"] == "deny"
+        and "run setup again with a sign-in" in answer["permissionDecisionReason"]
     )
     assert "PRIVATE_KEY" not in result.stdout + result.stderr
 

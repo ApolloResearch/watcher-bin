@@ -729,7 +729,7 @@ class AsyncWatcherClient:
 
     @_sdk_method(postprocess=lambda r: AuthLogoutResult(status=str(r["status"])))
     async def auth_logout(self) -> AuthLogoutResult:
-        """Log out — revokes the WorkOS session (using JWT ``sid``) and clears the refresh cookie.
+        """Sign out — revokes the WorkOS session (using JWT ``sid``) and clears the refresh cookie.
 
         The client must have been created with ``access_token=...`` (Bearer) so the server can
         read the session id from the JWT.
@@ -741,13 +741,13 @@ class AsyncWatcherClient:
         """Return the deployment's public auth configuration (no auth required).
 
         Lets clients discover the auth mode and, in WorkOS mode, the client id
-        to start a login with, from nothing but the server URL.
+        to start a sign-in with, from nothing but the server URL.
         """
         return await _auth_client_config_api.asyncio_detailed(client=self._generated_client)  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
 
     @_sdk_method
     async def auth_device_authorize(self) -> DeviceAuthorizationResponse:
-        """Start a device-authorization login (RFC 8628) for a headless client (no auth required).
+        """Start a device-authorization sign-in (RFC 8628) for a headless client (no auth required).
 
         Show the user ``verification_uri_complete`` (or ``verification_uri`` +
         ``user_code``), then poll :meth:`auth_device_token` with the returned
@@ -757,7 +757,7 @@ class AsyncWatcherClient:
 
     @_sdk_method
     async def auth_device_token(self, device_code: str) -> DeviceTokenResponse:
-        """Poll the outcome of a device-authorization login (no auth required).
+        """Poll the outcome of a device-authorization sign-in (no auth required).
 
         While the user hasn't approved yet, raises :class:`WatcherAPIError`
         with ``code`` ``authorization_pending`` (keep polling) or

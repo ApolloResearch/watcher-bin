@@ -1,4 +1,4 @@
-"""Complete interactive device login and own its credentials independently of Watcher Live."""
+"""Complete interactive device sign-in and own its credentials independently of Watcher Live."""
 
 import asyncio
 from collections.abc import Callable
@@ -36,11 +36,11 @@ async def login(
     *,
     state_dir: Path | None = None,
 ) -> IntegrationAuth:
-    """Sign in through WorkOS and atomically save an SDK-owned login.
+    """Sign in through WorkOS and atomically save an SDK-owned sign-in.
 
     Explicit interactive setup calls this function and presents the supplied URL
     and user code. Hook processes must only use the returned credential reference.
-    An existing login is preserved on cancellation, timeout or server failure.
+    An existing sign-in is preserved on cancellation, timeout or server failure.
     This never writes Watcher's own credential store. An omitted ``state_dir``
     uses WATCHER_SDK_HOME, then XDG_CONFIG_HOME/watcher-sdk, then ~/.config/watcher-sdk.
     Unsupported SSO and rejected authentication raise WatcherAuthenticationError;
@@ -52,10 +52,10 @@ async def login(
     folder and any missing parents are created with mode 0700, and an existing
     credential folder is set to 0700; one owned by another account raises
     UnsafeLoginStoreError, a PermissionError, and one that is a symbolic link or a
-    file raises OSError, both before any login is saved. A link, even one whose
+    file raises OSError, both before any sign-in is saved. A link, even one whose
     target is missing, raises LinkedCredentialFolderError, an OSError saying that
     the credential folder must not be a symbolic link. Requests and discovery
-    still read a login saved in a linked folder; only ``login`` refuses it.
+    still read a sign-in saved in a linked folder; only ``login`` refuses it.
     """
     url = str(_login_api_url(base_url))
     async with AsyncWatcherClient(url, timeout=30, max_retries=0) as client:
@@ -73,11 +73,11 @@ async def login(
             or "#" in grant.verification_uri_complete
             or len(str(destination)) > _MAX_LOGIN_URL_LENGTH
         ):
-            raise ValueError("The server returned an invalid login URL")
+            raise ValueError("The server returned an invalid sign-in URL")
         if not 1 <= len(grant.user_code) <= _MAX_USER_CODE_LENGTH:
             raise ValueError("The server returned an invalid approval code")
         if grant.interval < 1 or not 1 <= grant.expires_in <= 3600:
-            raise ValueError("The server returned an invalid login deadline")
+            raise ValueError("The server returned an invalid sign-in deadline")
         on_authorization(DeviceLoginPrompt(url=str(destination), user_code=grant.user_code))
         interval = grant.interval
         async with asyncio.timeout(grant.expires_in):
@@ -107,16 +107,16 @@ async def login(
 
 
 async def logout(base_url: str, *, state_dir: Path | None = None) -> bool:
-    """Revoke the SDK-owned login's server session, then remove the local login.
+    """Revoke the SDK-owned sign-in's server session, then remove the local sign-in.
 
     Returns True when a credential was present, False when already absent.
     Revocation is best-effort: when the server cannot be reached, rejects the
-    login or fails, the local login is still removed and the server session
+    sign-in or fails, the local sign-in is still removed and the server session
     expires on its own. Watcher Live's saved credentials are never touched, but
-    the server ends the whole sign-in session behind the SDK login, so the browser
-    that approved it, and a Watcher Live login made through that browser, may be
+    the server ends the whole sign-in session behind the SDK sign-in, so the browser
+    that approved it, and a Watcher Live sign-in made through that browser, may be
     signed out too. An omitted ``state_dir`` uses the same defaults as ``login``. Existing
-    integration references remain installed and will report that login is needed.
+    integration references remain installed and will report that sign-in is needed.
     """
     auth = SDKLoginAuth(base_url, state_dir=state_dir)
     if not auth.credential_file.exists():
@@ -130,26 +130,26 @@ async def logout(base_url: str, *, state_dir: Path | None = None) -> bool:
 
 
 async def _revoke_session(auth: SDKLoginAuth) -> None:
-    """Ask the server to end the saved login's session, ignoring any failure.
+    """Ask the server to end the saved sign-in's session, ignoring any failure.
 
     The server finds the session to end from the access token, and skips
-    revocation when that token has expired, which a login saved hours ago
+    revocation when that token has expired, which a sign-in saved hours ago
     usually has. Reading the profile first gives the auth flow a 401 to
-    answer with a refresh, so the logout request carries a current token.
-    A rejected refresh deletes the login itself; logout then has nothing left to remove.
-    The logout request is sent even when the profile read fails, because the
+    answer with a refresh, so the sign-out request carries a current token.
+    A rejected refresh deletes the sign-in itself; sign-out then has nothing left to remove.
+    The sign-out request is sent even when the profile read fails, because the
     profile needs the server's database and revocation does not: during a
     database outage, or while a slow database makes the profile time out, a
     still-valid access token can end its session anyway. A refresh that gave up
     waiting for the credential lock also still sends it. The request is skipped
     only when the profile read never connected, through a refused connection, a
     failed name lookup or a connect timeout, since it would then only wait through
-    the same failure before the local login is removed. It keeps its own
+    the same failure before the local sign-in is removed. It keeps its own
     10-second limit.
     """
     # Revocation is a courtesy to the server. Whatever goes wrong with it, a
-    # refused login, an unreachable server, a malformed answer or a fault in this
-    # request path, must not stop logout from removing the local login.
+    # refused sign-in, an unreachable server, a malformed answer or a fault in this
+    # request path, must not stop sign-out from removing the local sign-in.
     # Cancellation is not an Exception, so it still propagates.
     with suppress(Exception):
         async with AsyncWatcherClient(

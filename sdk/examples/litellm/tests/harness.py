@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 import uvicorn
 import yaml
+from starlette.types import ASGIApp
 
 
 def free_port() -> int:
@@ -22,7 +23,7 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
-def serve_in_thread(app: object) -> str:
+def serve_in_thread(app: ASGIApp) -> str:
     """Run an ASGI app on a free loopback port for the rest of the test session."""
     port = free_port()
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
@@ -33,24 +34,34 @@ def serve_in_thread(app: object) -> str:
 
 
 @contextmanager
-def litellm_proxy(model_list: list[dict[str, Any]], env: dict[str, str], workdir: Path) -> Iterator[str]:
+def litellm_proxy(
+    model_list: list[dict[str, Any]],
+    env: dict[str, str],
+    workdir: Path,
+    *,
+    callback: str = "watcher_litellm.callback.watcher_callback",
+) -> Iterator[str]:
     """Run ``litellm --config`` with the Watcher callback and yield its base URL.
 
-    Only ``PATH``, ``HOME``, ``TMPDIR`` and ``LANG`` are inherited, plus ``env``,
-    so a developer's database or LiteLLM settings cannot leak in. The log is
-    ``workdir/proxy.log``.
+    Only basic process variables and coverage instrumentation are inherited,
+    plus ``env``, so a developer's database or LiteLLM settings cannot leak in.
+    The log is ``workdir/proxy.log``.
     """
     config = workdir / "config.yaml"
     config.write_text(
         yaml.safe_dump(
             {
                 "model_list": model_list,
-                "litellm_settings": {"callbacks": "watcher_litellm.callback.watcher_callback", "telemetry": False},
+                "litellm_settings": {"callbacks": callback, "telemetry": False},
                 "general_settings": {"disable_spend_logs": True},
             }
         )
     )
-    inherited = {key: value for key, value in os.environ.items() if key in ("PATH", "HOME", "TMPDIR", "LANG")}
+    inherited = {
+        key: value
+        for key, value in os.environ.items()
+        if key in {"PATH", "HOME", "TMPDIR", "LANG", "COVERAGE_PROCESS_CONFIG", "COVERAGE_CORE"}
+    }
     # In its default DEV mode the CLI loads the nearest .env file, which inside
     # this checkout belongs to the Watcher server and names its database.
     full_env = {**inherited, "LITELLM_MODE": "PRODUCTION", "LITELLM_LOG": "ERROR", **env}

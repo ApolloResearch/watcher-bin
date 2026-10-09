@@ -20,6 +20,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from incremental_servers import has_tool_feedback
 
 
 @dataclass
@@ -198,6 +199,17 @@ def provider_app(state: ProviderState) -> FastAPI:
         body = await request.json()
         state.requests.append({"path": request.url.path, "body": body})
         response = build(state, body)
+        if has_tool_feedback(request.url.path.removeprefix("/v1/"), body):
+            # Regenerated operations get new identities even when the model
+            # ignores feedback and proposes exactly the same operation again.
+            suffix = f"_replan_{len(state.requests) - 1}"
+            for _, _, path in _tool_calls(request.url.path, response):
+                call = response
+                for part in path:
+                    call = call[part]
+                call["id"] += suffix
+                if "call_id" in call:
+                    call["call_id"] += suffix
         if body.get("stream"):
             events = list(stream(response))
             if stream is _messages_stream and state.stream_faults:

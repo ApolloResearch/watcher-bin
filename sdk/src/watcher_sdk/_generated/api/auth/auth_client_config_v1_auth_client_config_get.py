@@ -54,7 +54,7 @@ def sync_detailed(
 
     Unauthenticated by design: clients (analyzer SPA, watcher CLI/hooks)
     call this to discover the auth mode and, in WorkOS mode, the client id
-    to start a login with, so the value is configured once server-side
+    to start a sign-in with, so the value is configured once server-side
     instead of being baked into each client.
 
     Raises:
@@ -84,7 +84,7 @@ def sync(
 
     Unauthenticated by design: clients (analyzer SPA, watcher CLI/hooks)
     call this to discover the auth mode and, in WorkOS mode, the client id
-    to start a login with, so the value is configured once server-side
+    to start a sign-in with, so the value is configured once server-side
     instead of being baked into each client.
 
     Raises:
@@ -110,7 +110,7 @@ async def asyncio_detailed(
 
     Unauthenticated by design: clients (analyzer SPA, watcher CLI/hooks)
     call this to discover the auth mode and, in WorkOS mode, the client id
-    to start a login with, so the value is configured once server-side
+    to start a sign-in with, so the value is configured once server-side
     instead of being baked into each client.
 
     Raises:
@@ -138,7 +138,7 @@ async def asyncio(
 
     Unauthenticated by design: clients (analyzer SPA, watcher CLI/hooks)
     call this to discover the auth mode and, in WorkOS mode, the client id
-    to start a login with, so the value is configured once server-side
+    to start a sign-in with, so the value is configured once server-side
     instead of being baked into each client.
 
     Raises:

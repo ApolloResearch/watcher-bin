@@ -164,10 +164,10 @@ class Conversation:
             completion = self.openai.chat.completions.create(**chat_kwargs)
         message = completion.choices[0].message
         self.history.append(message.model_dump(exclude_none=True, exclude={"parsed"}))
-        calls = [
-            {"id": call.id, "name": call.function.name, "input": json.loads(call.function.arguments)}
-            for call in message.tool_calls or []
-        ]
+        calls = []
+        for call in message.tool_calls or []:
+            assert call.type == "function", "The live fixture only declares function tools"
+            calls.append({"id": call.id, "name": call.function.name, "input": json.loads(call.function.arguments)})
         return message.content or "", calls
 
     def recorded(self, min_messages: int = 0) -> tuple[dict[str, Any], list[dict[str, Any]]]:

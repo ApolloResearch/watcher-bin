@@ -38,7 +38,7 @@ URL = "http://localhost:8765/api"
 
 @pytest.fixture
 def credential(tmp_path: Path) -> Path:
-    """A saved Watcher login store for ``URL``, outside the project."""
+    """A saved Watcher sign-in store for ``URL``, outside the project."""
     state = tmp_path / "watcher"
     save_watcher_login(state, URL, "PRIVATE_TEST_CREDENTIAL")
     return state
@@ -315,7 +315,7 @@ def test_hooks_refuse_a_configuration_redirected_to_another_server(
     config_dir = tmp_path / "configuration"
     assert CliRunner().invoke(app, [*setup_arguments(project, credential, config_dir), "--enforce"]).exit_code == 0
     path = configuration_path(project, config_dir)
-    # Rewrite only the private configuration, consistently, with a login store
+    # Rewrite only the private configuration, consistently, with a sign-in store
     # for the stub; the project hook file stays exactly as setup wrote it.
     stub_login = tmp_path / "stub-login"
     save_watcher_login(stub_login, STUB)
@@ -702,7 +702,7 @@ def test_an_earlier_api_key_installation_on_a_plain_http_server_can_be_replaced_
         hook_file.write_text(json.dumps(hooks))
 
     install_legacy()
-    with pytest.raises(ValueError, match="run setup again with a login"):
+    with pytest.raises(ValueError, match="run setup again with a sign-in"):
         load_configuration(path)
 
     replaced = CliRunner().invoke(app, setup_arguments(project, credential, config_dir))
@@ -727,7 +727,7 @@ def test_an_earlier_api_key_installation_can_be_replaced_with_a_login_or_removed
     key.write_text("PRIVATE_TEST_CREDENTIAL")
     legacy.update(watcher_auth=False, watcher_state_dir=None, api_key_file=str(key))
     path.write_text(json.dumps(legacy))
-    with pytest.raises(ValueError, match="run setup again with a login"):
+    with pytest.raises(ValueError, match="run setup again with a sign-in"):
         load_configuration(path)
 
     replaced = CliRunner().invoke(app, setup_arguments(project, credential, config_dir))

@@ -19,6 +19,7 @@ from anthropic.lib.streaming._messages import accumulate_event
 from anthropic.types import RawMessageStreamEvent
 from fastapi import HTTPException
 from litellm.proxy._types import UserAPIKeyAuth
+from litellm.types.utils import Delta, StreamingChoices
 from openai._streaming import SSEDecoder
 from openai.lib.streaming.chat import ChatCompletionStreamState
 from openai.types.chat import ChatCompletionChunk
@@ -136,8 +137,29 @@ class TestRequestHandling:
     async def test_pre_call_passes_other_requests(self) -> None:
         data = _proxy_data("/v1/embeddings", {"n": 5})
         assert await WatcherCallback().async_pre_call_hook(USER, None, data, "embedding") is data
-        data = _proxy_data("/v1/responses", {"input": "hi"})
+        data = _proxy_data("/v1/responses", {"input": "hi"}, {"x-watcher-session-id": "conversation"})
         assert await WatcherCallback().async_pre_call_hook(USER, None, data, "responses") is data
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"metadata": {"user_id": '{"session_id":"12345678-1234-1234-1234-123456789abc"}'}},
+            {"metadata": {"user_id": "user_device_account_account_session_12345678-1234-1234-1234-123456789abc"}},
+            {"client_metadata": {"thread_id": "12345678-1234-1234-1234-123456789abc"}},
+        ],
+    )
+    async def test_pre_call_accepts_native_identity_without_an_extra_header(self, body: dict[str, Any]) -> None:
+        data = _proxy_data("/v1/messages", body)
+        assert await WatcherCallback().async_pre_call_hook(USER, None, data, "messages") is data
+
+    @pytest.mark.parametrize(
+        "body",
+        [{}, {"metadata": {"user_id": "not a native identity"}}, {"client_metadata": {"thread_id": "invalid"}}],
+    )
+    async def test_pre_call_requires_a_stable_conversation_identity(self, body: dict[str, Any]) -> None:
+        with pytest.raises(HTTPException, match="x-watcher-session-id") as refused:
+            await WatcherCallback().async_pre_call_hook(USER, None, _proxy_data("/v1/messages", body), "messages")
+        assert refused.value.status_code == 400
 
 
 class TestWithholding:
@@ -411,8 +433,10 @@ class TestHooks:
         (body,) = sent
         assert body.external_ids == {"other": "litellm:s-1"}
 
-    async def test_success_hook_returns_typed_replacement(self) -> None:
+    async def test_success_hook_returns_typed_replacement(self, text_only_replan: None) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
+            if not client_calls("chat_completions", json.loads(request.content)["response_body"]):
+                return httpx.Response(200, json=[])
             return httpx.Response(
                 200,
                 json=_payload(("call_0", ["choices", 0, "message", "tool_calls", 0], _outcome("deny", "call_0"))),
@@ -420,14 +444,16 @@ class TestHooks:
 
         response = litellm.ModelResponse(**_chat_response("rm"))
         replaced = await WatcherCallback(_stub_client(handler)).async_post_call_success_hook(
-            _proxy_data("/v1/chat/completions", {"model": "m"}), USER, response
+            _proxy_data("/v1/chat/completions", {"model": "m", "messages": []}), USER, response
         )
 
         assert isinstance(replaced, litellm.ModelResponse)
-        assert replaced.to_dict()["choices"][0]["message"].get("tool_calls") is None
+        assert replaced.model_dump(mode="json")["choices"][0]["message"].get("tool_calls") is None
 
-    async def test_success_hook_returns_dict_replacement_for_dict_response(self) -> None:
+    async def test_success_hook_returns_dict_replacement_for_dict_response(self, text_only_replan: None) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
+            if not client_calls("messages", json.loads(request.content)["response_body"]):
+                return httpx.Response(200, json=[])
             return httpx.Response(200, json=_payload(("t1", ["content", 0], _outcome("deny", "t1"))))
 
         response = {
@@ -436,7 +462,7 @@ class TestHooks:
             "stop_reason": "tool_use",
         }
         replaced = await WatcherCallback(_stub_client(handler)).async_post_call_success_hook(
-            _proxy_data("/v1/messages", {"model": "m"}), USER, response
+            _proxy_data("/v1/messages", {"model": "m", "messages": []}), USER, response
         )
 
         assert replaced["content"][0]["type"] == "text"
@@ -532,21 +558,27 @@ class TestHooks:
         assert out != chunks
         assert assemble("messages", out) == assemble("messages", chunks)
 
-    async def test_stream_with_denied_tool_is_reencoded_without_it(self) -> None:
+    async def test_stream_with_denied_tool_releases_only_a_notice_and_text_alternative(
+        self, text_only_replan: None
+    ) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
+            if not client_calls("messages", json.loads(request.content)["response_body"]):
+                return httpx.Response(200, json=[])
             return httpx.Response(200, json=_payload(("t", ["content", 2], _outcome("deny", "t"))))
 
         callback = WatcherCallback(_stub_client(handler))
         out = [
             c
             async for c in callback.async_post_call_streaming_iterator_hook(
-                USER, _aiter(_messages_stream_bytes()), _proxy_data("/v1/messages", {})
+                USER, _aiter(_messages_stream_bytes()), _proxy_data("/v1/messages", {"messages": []})
             )
         ]
 
-        blocks = assemble("messages", out)["content"]
-        assert "tool_use" not in [block["type"] for block in blocks]
-        assert blocks[-1]["text"].startswith("Watcher withheld")
+        events = _events(out)
+        assert events[-1] == {"type": "message_stop"}
+        assert not any(event.get("content_block", {}).get("type") == "tool_use" for event in events)
+        assert "Watcher did not approve" in b"".join(out).decode()
+        assert assemble("messages", out)["content"][-1] == {"type": "text", "text": "A permitted alternative."}
 
     async def test_responses_stream_is_never_replayed(self) -> None:
         """Events carrying a call absent from the completed body must not reach the client."""
@@ -683,36 +715,29 @@ class TestHooks:
             "content_block_stop",
         ]
 
-    async def test_pings_keep_the_stream_alive_while_watcher_decides(self) -> None:
+    async def test_comments_keep_the_stream_alive_while_watcher_decides(self) -> None:
         async def handler(request: httpx.Request) -> httpx.Response:
             await asyncio.sleep(0.5)
             return httpx.Response(200, json=_payload(("t", ["content", 2], _outcome("allow", "t"))))
 
         callback = WatcherCallback(_stub_client(handler), ping_seconds=0.1)
-        events = _events(
-            [
-                c
-                async for c in callback.async_post_call_streaming_iterator_hook(
-                    USER, _aiter(_messages_stream_bytes()), _proxy_data("/v1/messages", {})
-                )
-            ]
-        )
-        assert [event["type"] for event in events].count("ping") >= 3
+        chunks = [
+            c
+            async for c in callback.async_post_call_streaming_iterator_hook(
+                USER, _aiter(_messages_stream_bytes()), _proxy_data("/v1/messages", {})
+            )
+        ]
+        assert sum(chunk.startswith(b":") for chunk in chunks) >= 3
 
     @pytest.mark.parametrize(
         ("path", "chunks", "status"),
         [
-            (
-                "/v1/chat/completions",
-                [litellm.ModelResponseStream(id="c", model="m", choices=[{"index": 0, "delta": {"content": "hi"}}])],
-                502,
-            ),
             ("/v1/responses", [{"type": "response.completed"}], 422),
-            ("/v1/chat/completions", [b"a", b"b", b"c"], 413),
+            ("/v1/chat/completions", [b"a", b"b", b"c"], 422),
         ],
-        ids=["chat-unfinished", "responses-malformed", "too-long"],
+        ids=["responses-malformed", "chat-unexpected-chunk"],
     )
-    async def test_buffered_stream_failures_are_http_errors(self, path: str, chunks: list[Any], status: int) -> None:
+    async def test_malformed_first_events_are_http_errors(self, path: str, chunks: list[Any], status: int) -> None:
         callback = WatcherCallback(_stub_client(lambda request: pytest.fail("not evaluated")), max_stream_chunks=2)
         with pytest.raises(HTTPException) as refused:
             _ = [
@@ -722,6 +747,36 @@ class TestHooks:
                 )
             ]
         assert refused.value.status_code == status
+
+    async def test_chat_truncation_preserves_early_text_and_emits_a_stream_error(self) -> None:
+        callback = WatcherCallback(_stub_client(lambda request: pytest.fail("not evaluated")))
+        chunk = litellm.ModelResponseStream(
+            id="c", model="m", choices=[StreamingChoices(index=0, delta=Delta(content="hi"))]
+        )
+        out = [
+            event
+            async for event in callback.async_post_call_streaming_iterator_hook(
+                USER, _aiter([chunk]), _proxy_data("/v1/chat/completions", {})
+            )
+        ]
+        events = _events(out)
+        assert events[0]["choices"][0]["delta"]["content"] == "hi"
+        assert events[-1]["error"]["message"] == "Model response stream was incomplete"
+
+    async def test_chat_chunk_limit_after_start_is_a_stream_error(self) -> None:
+        callback = WatcherCallback(_stub_client(lambda request: pytest.fail("not evaluated")), max_stream_chunks=1)
+        chunk = litellm.ModelResponseStream(
+            id="c", model="m", choices=[StreamingChoices(index=0, delta=Delta(content="hi"))]
+        )
+        out = [
+            event
+            async for event in callback.async_post_call_streaming_iterator_hook(
+                USER, _aiter([chunk, chunk]), _proxy_data("/v1/chat/completions", {})
+            )
+        ]
+        events = _events(out)
+        assert events[0]["choices"][0]["delta"]["content"] == "hi"
+        assert events[-1]["error"]["message"] == "Model response is too long to evaluate"
 
     async def test_unknown_messages_events_are_not_forwarded(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -741,24 +796,23 @@ class TestHooks:
         assert "future_event" not in [event["type"] for event in _events(out)]
         assert assemble("messages", out) == assemble("messages", _messages_stream_bytes())
 
-    async def test_pings_keep_the_stream_alive_while_tool_calls_are_generated(self) -> None:
+    async def test_comments_keep_the_stream_alive_while_tool_calls_are_generated(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json=_payload(("t", ["content", 2], _outcome("allow", "t"))))
 
         callback = WatcherCallback(_stub_client(handler), ping_seconds=0.05)
-        events = _events(
-            [
-                c
-                async for c in callback.async_post_call_streaming_iterator_hook(
-                    USER, _slow_aiter(_messages_stream_bytes(), 0.02), _proxy_data("/v1/messages", {})
-                )
-            ]
-        )
+        chunks = [
+            c
+            async for c in callback.async_post_call_streaming_iterator_hook(
+                USER, _slow_aiter(_messages_stream_bytes(), 0.02), _proxy_data("/v1/messages", {})
+            )
+        ]
         call_start = next(
-            i for i, event in enumerate(events) if event.get("content_block", {}).get("type") == "tool_use"
+            i
+            for i, chunk in enumerate(chunks)
+            if not chunk.startswith(b":") and _events([chunk])[0].get("content_block", {}).get("type") == "tool_use"
         )
-
-        assert "ping" in [event["type"] for event in events[:call_start]][1:]
+        assert any(chunk.startswith(b":") for chunk in chunks[:call_start])
 
 
 def _events(chunks: list[bytes]) -> list[dict[str, Any]]:
@@ -777,7 +831,7 @@ async def _slow_aiter(items: list[Any], delay: float) -> AsyncIterator[Any]:
 
 
 def _messages_stream_bytes(with_tool: bool = True) -> list[bytes]:
-    response = {
+    response: dict[str, Any] = {
         "id": "msg",
         "type": "message",
         "role": "assistant",
@@ -932,7 +986,9 @@ class TestStreams:
         assert terminal == b"event: response.incomplete"
 
     def test_chat_needs_a_finish_reason(self) -> None:
-        chunk = litellm.ModelResponseStream(id="c", model="m", choices=[{"index": 0, "delta": {"content": "hi"}}])
+        chunk = litellm.ModelResponseStream(
+            id="c", model="m", choices=[StreamingChoices(index=0, delta=Delta(content="hi"))]
+        )
 
         with pytest.raises(IncompleteStream):
             assemble("chat_completions", [chunk])
@@ -940,10 +996,10 @@ class TestStreams:
     def test_chat_assembled_by_litellm(self) -> None:
         chunks = [
             litellm.ModelResponseStream(
-                id="c", model="m", choices=[{"index": 0, "delta": {"role": "assistant", "content": "hi"}}]
+                id="c", model="m", choices=[StreamingChoices(index=0, delta=Delta(role="assistant", content="hi"))]
             ),
             litellm.ModelResponseStream(
-                id="c", model="m", choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                id="c", model="m", choices=[StreamingChoices(index=0, delta=Delta(), finish_reason="stop")]
             ),
         ]
 
@@ -952,7 +1008,7 @@ class TestStreams:
     def test_chat_builder_failure_is_unsupported(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(litellm, "stream_chunk_builder", lambda chunks: None)
         chunk = litellm.ModelResponseStream(
-            id="c", model="m", choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}]
+            id="c", model="m", choices=[StreamingChoices(index=0, delta=Delta(), finish_reason="stop")]
         )
 
         with pytest.raises(UnsupportedStream):
@@ -979,11 +1035,13 @@ class TestStreams:
         }
         chunks = [
             litellm.ModelResponseStream(
-                id="c", model="m", choices=[{"index": 0, "delta": {"role": "assistant", "refusal": "I can"}}]
+                id="c", model="m", choices=[StreamingChoices(index=0, delta=Delta(role="assistant", refusal="I can"))]
             ),
-            litellm.ModelResponseStream(id="c", model="m", choices=[{"index": 0, "delta": {"refusal": "not help."}}]),
             litellm.ModelResponseStream(
-                id="c", model="m", choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                id="c", model="m", choices=[StreamingChoices(index=0, delta=Delta(refusal="not help."))]
+            ),
+            litellm.ModelResponseStream(
+                id="c", model="m", choices=[StreamingChoices(index=0, delta=Delta(), finish_reason="stop")]
             ),
         ]
         assembled = assemble("chat_completions", chunks)
@@ -1076,7 +1134,7 @@ class TestStreams:
             ],
         }
         adapter: TypeAdapter[Any] = TypeAdapter(ResponseStreamEvent)
-        state = ResponseStreamState(input_tools=[], text_format=openai.NOT_GIVEN)
+        state = ResponseStreamState(input_tools=[], text_format=openai.omit)
         snapshots = []
         for chunk in encode("responses", response):
             for event in state.handle_event(adapter.validate_json(chunk.decode().split("data: ", 1)[1])):

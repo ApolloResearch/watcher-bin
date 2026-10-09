@@ -12,7 +12,7 @@
           "auth"
         ],
         "summary": "Auth Client Config",
-        "description": "Return the deployment's public auth configuration.\n\nUnauthenticated by design: clients (analyzer SPA, watcher CLI/hooks)\ncall this to discover the auth mode and, in WorkOS mode, the client id\nto start a login with, so the value is configured once server-side\ninstead of being baked into each client.",
+        "description": "Return the deployment's public auth configuration.\n\nUnauthenticated by design: clients (analyzer SPA, watcher CLI/hooks)\ncall this to discover the auth mode and, in WorkOS mode, the client id\nto start a sign-in with, so the value is configured once server-side\ninstead of being baked into each client.",
         "operationId": "auth_client_config_v1_auth_client_config_get",
         "responses": {
           "200": {
@@ -118,7 +118,7 @@
           "auth"
         ],
         "summary": "Auth Device Authorize",
-        "description": "Start a device-authorization login (RFC 8628) for a headless client.\n\nUnauthenticated by design \u2014 it produces credentials. Proxies WorkOS's\ndevice-authorization endpoint so clients need nothing but this server's\nURL; the WorkOS client id stays server-side configuration.",
+        "description": "Start a device-authorization sign-in (RFC 8628) for a headless client.\n\nUnauthenticated by design \u2014 it produces credentials. Proxies WorkOS's\ndevice-authorization endpoint so clients need nothing but this server's\nURL; the WorkOS client id stays server-side configuration.",
         "operationId": "auth_device_authorize_v1_auth_device_authorize_post",
         "responses": {
           "200": {
@@ -140,7 +140,7 @@
           "auth"
         ],
         "summary": "Auth Device Token",
-        "description": "Poll the outcome of a device-authorization login.\n\nWhile the user hasn't finished approving, answers 400 with\n``detail.code`` ``authorization_pending`` (keep polling) or ``slow_down``\n(poll less often); a dead attempt answers 400 with ``access_denied`` or\n``expired_token``. On success this runs the same org resolution as\n``/callback`` and returns both tokens in the body \u2014 the caller is a CLI\nwith its own credential store, so there is no cookie to hide the refresh\ntoken in.",
+        "description": "Poll the outcome of a device-authorization sign-in.\n\nWhile the user hasn't finished approving, answers 400 with\n``detail.code`` ``authorization_pending`` (keep polling) or ``slow_down``\n(poll less often); a dead attempt answers 400 with ``access_denied`` or\n``expired_token``. On success this runs the same org resolution as\n``/callback`` and returns both tokens in the body \u2014 the caller is a CLI\nwith its own credential store, so there is no cookie to hide the refresh\ntoken in.",
         "operationId": "auth_device_token_v1_auth_device_token_post",
         "requestBody": {
           "content": {
@@ -224,7 +224,7 @@
           "auth"
         ],
         "summary": "Auth Logout",
-        "description": "Log out the user \u2014 revokes the WorkOS session and clears the refresh cookie.\n\nReads the ``sid`` (session ID) from the JWT in the Authorization header\nand calls WorkOS to revoke the session server-side. This ensures the user\nmust fully re-authenticate on next login (no auto-complete from a cached\nWorkOS session).",
+        "description": "Sign out the user \u2014 revokes the WorkOS session and clears the refresh cookie.\n\nReads the ``sid`` (session ID) from the JWT in the Authorization header\nand calls WorkOS to revoke the session server-side. This ensures the user\nmust fully re-authenticate on next sign-in (no auto-complete from a cached\nWorkOS session).",
         "operationId": "auth_logout_v1_auth_logout_post",
         "responses": {
           "200": {
@@ -3234,7 +3234,7 @@
           "id"
         ],
         "title": "AuthUser",
-        "description": "The signed-in user's identity as login endpoints report it.\n\n``id`` is the WorkOS user id; ``user_id`` is Watcher's own user id, present\nonce the login has created or matched the Watcher user (it can be absent\nonly when WorkOS reported no email to match by)."
+        "description": "The signed-in user's identity as sign-in endpoints report it.\n\n``id`` is the WorkOS user id; ``user_id`` is Watcher's own user id, present\nonce the sign-in has created or matched the Watcher user (it can be absent\nonly when WorkOS reported no email to match by)."
       },
       "AvailableSessionDetailResponse": {
         "properties": {
@@ -6116,7 +6116,7 @@
           "user"
         ],
         "title": "DeviceTokenResponse",
-        "description": "Response from POST /v1/auth/device/token once the user approved the login.\n\nUnlike ``TokenResponse``, the refresh token travels in the JSON body: the\ncaller is a CLI with its own on-disk credential store, not a browser, so\nthere is no cookie jar to hide it in."
+        "description": "Response from POST /v1/auth/device/token once the user approved the sign-in.\n\nUnlike ``TokenResponse``, the refresh token travels in the JSON body: the\ncaller is a CLI with its own on-disk credential store, not a browser, so\nthere is no cookie jar to hide it in."
       },
       "DocumentCitation": {
         "properties": {
@@ -12386,7 +12386,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "JWT access token from WorkOS AuthKit login"
+        "description": "JWT access token from WorkOS AuthKit sign-in"
       },
       "ApiKeyAuth": {
         "type": "apiKey",

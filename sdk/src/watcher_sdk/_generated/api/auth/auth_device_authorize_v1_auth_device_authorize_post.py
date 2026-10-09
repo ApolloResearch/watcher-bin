@@ -50,7 +50,7 @@ def sync_detailed(
 ) -> Response[DeviceAuthorizationResponse]:
     """Auth Device Authorize
 
-     Start a device-authorization login (RFC 8628) for a headless client.
+     Start a device-authorization sign-in (RFC 8628) for a headless client.
 
     Unauthenticated by design — it produces credentials. Proxies WorkOS's
     device-authorization endpoint so clients need nothing but this server's
@@ -79,7 +79,7 @@ def sync(
 ) -> DeviceAuthorizationResponse | None:
     """Auth Device Authorize
 
-     Start a device-authorization login (RFC 8628) for a headless client.
+     Start a device-authorization sign-in (RFC 8628) for a headless client.
 
     Unauthenticated by design — it produces credentials. Proxies WorkOS's
     device-authorization endpoint so clients need nothing but this server's
@@ -104,7 +104,7 @@ async def asyncio_detailed(
 ) -> Response[DeviceAuthorizationResponse]:
     """Auth Device Authorize
 
-     Start a device-authorization login (RFC 8628) for a headless client.
+     Start a device-authorization sign-in (RFC 8628) for a headless client.
 
     Unauthenticated by design — it produces credentials. Proxies WorkOS's
     device-authorization endpoint so clients need nothing but this server's
@@ -131,7 +131,7 @@ async def asyncio(
 ) -> DeviceAuthorizationResponse | None:
     """Auth Device Authorize
 
-     Start a device-authorization login (RFC 8628) for a headless client.
+     Start a device-authorization sign-in (RFC 8628) for a headless client.
 
     Unauthenticated by design — it produces credentials. Proxies WorkOS's
     device-authorization endpoint so clients need nothing but this server's

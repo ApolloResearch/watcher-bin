@@ -32,7 +32,7 @@ if [[ -z "$TARGET" ]]; then
     exit 1
 fi
 # The server's reply selects the release to install, so plain HTTP is accepted only
-# for a server on this machine, the same rule the SDK applies to logins. This runs
+# for a server on this machine, the same rule the SDK applies to sign-ins. This runs
 # before anything is downloaded or written.
 refuse_server() { echo 'The Watcher server URL must use HTTPS unless the server runs on this machine.' >&2; exit 1; }
 SERVER=$(printf '%s' "$TARGET" | tr '[:upper:]' '[:lower:]')

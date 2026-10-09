@@ -13,10 +13,10 @@ T = TypeVar("T", bound="AuthUser")
 
 @_attrs_define
 class AuthUser:
-    """The signed-in user's identity as login endpoints report it.
+    """The signed-in user's identity as sign-in endpoints report it.
 
     ``id`` is the WorkOS user id; ``user_id`` is Watcher's own user id, present
-    once the login has created or matched the Watcher user (it can be absent
+    once the sign-in has created or matched the Watcher user (it can be absent
     only when WorkOS reported no email to match by).
 
         Attributes:

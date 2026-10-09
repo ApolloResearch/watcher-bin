@@ -9,11 +9,13 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from watcher_sdk.settings_schema.command_rules_eval import THRESHOLD_ALWAYS, THRESHOLD_DISABLED, threshold_out_of_range
 from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
     NO_DIFF,
     delete_path,
     get_path,
     get_path_or_none,
+    has_non_permission_entries,
     set_path,
     unwrap,
     unwrap_composite_wrappers,
@@ -24,6 +26,8 @@ from watcher_sdk.settings_schema.watcher_settings_yaml_schema import SettingsLoa
 # at least one not-yet-handled node, and the tree has finitely many nodes, so repair always
 # terminates; this constant is just a safety net against an unexpected non-converging case.
 _MAX_REPAIR_PASSES = 100
+
+_THRESHOLD_FIELDS = ("flag_threshold", "deny_threshold")
 
 
 def sanitize_overlay(
@@ -36,6 +40,8 @@ def sanitize_overlay(
 ) -> dict[str, Any]:
     if not overlay:
         return {}
+    if source == "local":
+        overlay = _without_out_of_range_thresholds(overlay, source_path, issues)
     rule_error = command_rule_overlay_error(overlay)
     first_issue = len(issues)
     sanitized = _sanitize_overlay_value(base, overlay, source, source_path, issues, merge, ())
@@ -45,6 +51,46 @@ def sanitize_overlay(
     ):
         add_settings_load_issue(issues, source, source_path, ("command_rules", "rules"), rule_error)
     return sanitized if isinstance(sanitized, dict) else {}
+
+
+def _without_out_of_range_thresholds(
+    overlay: dict[str, Any], source_path: Path, issues: list[SettingsLoadIssue]
+) -> dict[str, Any]:
+    """``overlay`` without the thresholds outside 0 to 11 that a machine's own file sets, each reported.
+
+    Only local files get this check. The schema accepts any integer, so an
+    administrator's stored document still validates wherever it is merged,
+    including the per-request ``settings_overrides`` merge on the server, and an
+    out-of-range value there keeps the meaning it always had: 11 and above never
+    act, 0 and below always do. A tool entry left with nothing but a permission is
+    dropped whole, so it does not then fail validation for its missing thresholds.
+    """
+    tool_thresholds = overlay.get("tool_thresholds")
+    if not isinstance(tool_thresholds, dict):
+        return overlay
+    kept_thresholds = dict(tool_thresholds)
+    for tool_name, entry in tool_thresholds.items():
+        if not isinstance(entry, dict):
+            continue
+        out_of_range = [
+            field for field in _THRESHOLD_FIELDS if field in entry and threshold_out_of_range(unwrap(entry[field]))
+        ]
+        if not out_of_range:
+            continue
+        for field in out_of_range:
+            add_settings_load_issue(
+                issues,
+                "local",
+                source_path,
+                ("tool_thresholds", str(tool_name), field),
+                f"{field} must be between {THRESHOLD_ALWAYS} and {THRESHOLD_DISABLED}",
+            )
+        kept_entry = {key: value for key, value in entry.items() if key not in out_of_range}
+        if has_non_permission_entries(kept_entry):
+            kept_thresholds[tool_name] = kept_entry
+        else:
+            del kept_thresholds[tool_name]
+    return {**overlay, "tool_thresholds": kept_thresholds}
 
 
 def command_rule_overlay_error(data: dict[str, Any]) -> str | None:

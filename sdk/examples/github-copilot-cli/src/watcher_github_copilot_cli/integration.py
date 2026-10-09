@@ -580,7 +580,7 @@ class WatcherSettings(BaseModel):
             return async_client_from_watcher(
                 self.watcher_url, state_dir=self.watcher_state_dir, timeout=10, max_retries=0
             )
-        raise ValueError("The configuration names no Watcher login")
+        raise ValueError("The configuration names no Watcher sign-in")
 
 
 async def _assess_turn(client: AsyncWatcherClient, turn: CompletedTurn, session: ConvertedSession) -> None:
@@ -596,9 +596,9 @@ async def _assess_turn(client: AsyncWatcherClient, turn: CompletedTurn, session:
 
 
 def watcher_settings(config: Path | None, watcher_url: str | None = None) -> WatcherSettings:
-    """Read the destination, login and gate timeout from the configuration setup wrote.
+    """Read the destination, sign-in and gate timeout from the configuration setup wrote.
 
-    Hooks authenticate only with the user's login named in ``--config``; there is no
+    Hooks authenticate only with the user's sign-in named in ``--config``; there is no
     environment-variable fallback. A missing ``config`` raises ``ValueError``, and a
     configuration from an earlier version that names an API key raises
     ``UnsupportedCredentialError``.

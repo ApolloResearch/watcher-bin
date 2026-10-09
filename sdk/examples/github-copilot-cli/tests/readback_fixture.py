@@ -57,7 +57,7 @@ def serve_readback(handler: Handler) -> Callable[[httpx.Request], Coroutine[None
 
 
 def save_watcher_login(state_dir: Path, watcher_url: str, token: str = "fixture-login") -> Path:
-    """Write a saved Watcher login for ``watcher_url`` under ``state_dir``, where the Watcher app keeps it."""
+    """Write a saved Watcher sign-in for ``watcher_url`` under ``state_dir``, where the Watcher app keeps it."""
     from watcher_sdk.local_auth import WatcherLoginAuth
 
     path = WatcherLoginAuth(watcher_url, state_dir=state_dir).credential_file
@@ -70,9 +70,9 @@ def save_watcher_login(state_dir: Path, watcher_url: str, token: str = "fixture-
 def login_configuration(
     path: Path, project: Path, watcher_url: str, *, gate_timeout: int | None = None, token: str = "fixture-login"
 ) -> Path:
-    """Write a hook configuration at ``path`` that authenticates with a saved Watcher login beside it.
+    """Write a hook configuration at ``path`` that authenticates with a saved Watcher sign-in beside it.
 
-    The login store is ``path``'s sibling ``watcher`` directory. With
+    The sign-in store is ``path``'s sibling ``watcher`` directory. With
     ``gate_timeout`` the configuration also records an installed gate's timeout.
     """
     state_dir = path.parent / "watcher"

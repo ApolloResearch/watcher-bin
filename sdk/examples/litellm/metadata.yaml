@@ -2,14 +2,14 @@
 schema_version: 2
 slug: litellm
 name: LiteLLM proxy
-summary: Proxy callback that holds each model response until Watcher has judged its
-  tool calls. Watcher parses the raw provider exchange; the callback withholds refused
-  calls before the client can run them.
+summary: Proxy callback that streams content until a tool call needs evaluation,
+  then releases each permitted call in order. Denials and escalations can prompt
+  two evaluated alternatives; refused calls never become client-executable events.
 category: gateway
 direction: to-watcher
 upstream_url: https://github.com/BerriAI/litellm
 support_status: experimental
-updated_at: '2026-10-01'
+updated_at: '2026-10-06'
 capabilities:
   observe:
     implemented: true
@@ -29,9 +29,13 @@ capabilities:
     context: conversation
     recording: optional
     failure_behavior: fail-closed
-    failure_details: A Watcher timeout, outage or error withholds the whole response
-      with an HTTP error. Grading failures inside Watcher follow the server's on_grading_failure
-      policy, which can allow.
+    failure_details: Each normal evaluation has a 300-second deadline, excluding
+      earlier provider generation. A denial or escalation withholds the call and
+      can trigger two alternatives. Recovery shares that evaluation's deadline,
+      including remaining provider generation and further evaluations. Exhausting
+      three proposals returns explanatory text; transport, protocol and timeout
+      failures end delivery with an error. Earlier released calls cannot be retracted.
+      Grading failures inside Watcher follow on_grading_failure, which can allow.
 manifests:
 - pyproject.toml
 verification:
@@ -79,30 +83,58 @@ limitations:
   mode: both
   cause: integration-scope
   kind: constraint
-  description: Only requests with x-watcher-session-id get a litellm-prefixed conversation
-    ID and the Gateway source. Without the header, Watcher groups requests by a native
-    session ID, as Claude Code and Codex normally send, or else by shared conversation
-    history, and the Analyzer shows the session as Hooks API. Qwen Code and Mistral
-    Vibe cannot send the header.
+  description: Requests must supply x-watcher-session-id or valid native Claude
+    session UUID or Codex thread UUID metadata. Without either, the callback returns
+    HTTP 400 before provider generation. Both forms produce a litellm-prefixed
+    alias and the Gateway source. Clients unable to supply one need an adapter.
 - id: whole-response-withheld
   mode: enforce
   cause: integration-scope
   kind: constraint
-  description: When any tool call in a response is refused, every tool call in that
-    response is withheld and replaced by an explanation.
-- id: buffered-streaming
+  description: For non-streaming responses, one refused tool call withholds every
+    tool call in that proposal. The callback can generate two alternatives and
+    returns only an accepted proposal's calls with ordinary denial notices.
+- id: chat-tool-completion
   mode: both
   cause: integration-scope
   kind: constraint
-  description: Streamed Chat Completions and Responses replies are buffered until
-    Watcher decides; clients see no output before then. Streamed Messages replies
-    hold only their tool calls and their end until Watcher decides.
+  description: Chat Completions has no per-call completion marker, so tool calls
+    wait for finish_reason before evaluation. Text before the first tool streams
+    immediately. Messages and Responses evaluate each completed call as it arrives.
+- id: streaming-partial-outcome
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Recovery or a stream error can follow an earlier approved call.
+    Client execution results are unknown to the gateway; clients must preserve
+    earlier effects and avoid repeating them automatically.
+- id: recovery-limits
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: At most two alternatives follow the original proposal. Denied or
+    previously released operations with the same tool name and arguments are
+    blocked during recovery even under a fresh call ID. Different arguments with
+    equivalent effects are not deduplicated.
+- id: recovery-usage
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Client-visible usage describes the first provider attempt, not
+    total usage or cost across recovery generations.
+- id: incremental-recording
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Incremental evaluations and recovery may create partial proposal
+    branches in the same session alongside the delivered history. Recording is
+    not a single canonical transcript of client execution.
 - id: full-history
   mode: both
   cause: integration-scope
   kind: constraint
-  description: Each request must carry the whole conversation. More than one choice
-    and provider-stored Responses history are refused before the provider runs.
+  description: Each request must carry the whole conversation. Choice counts other
+    than one and provider-stored Responses history are refused before the provider runs.
 - id: responses-stream-named-tool-choice
   mode: both
   cause: upstream

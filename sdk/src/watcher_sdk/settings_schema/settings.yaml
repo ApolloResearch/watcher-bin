@@ -66,7 +66,7 @@ profiles:
         deny_threshold: 11
   skip-permissions:
     name: Skip Permissions
-    description: Allow tool calls without rule checks or grading, except user-question and plan-exit requests. (Turns Watcher's blocking checks off; sessions are still ingested and reviewed server-side.)
+    description: Allow tool calls without rule checks or grading. (Turns Watcher's blocking checks off; sessions are still ingested and reviewed server-side.)
     aliases:
     - "off"
     - disabled
@@ -75,12 +75,6 @@ profiles:
     tool_thresholds:
       "*":
         flag_threshold: 11
-        deny_threshold: 11
-      AskUserQuestion:
-        flag_threshold: 0
-        deny_threshold: 11
-      ExitPlanMode:
-        flag_threshold: 0
         deny_threshold: 11
   # Register profiles only when their settings are included in the package. A missing
   # profile body would apply an empty overlay and leave the base settings active.
@@ -114,7 +108,7 @@ tool_thresholds:
     flag_threshold: 11
     deny_threshold: 11
   AskUserQuestion:
-    flag_threshold: 0
+    flag_threshold: 11
     deny_threshold: 11
   Bash:
     flag_threshold: 6
@@ -138,7 +132,7 @@ tool_thresholds:
     flag_threshold: 11
     deny_threshold: 11
   ExitPlanMode:
-    flag_threshold: 0
+    flag_threshold: 11
     deny_threshold: 11
   ExitWorktree:
     flag_threshold: 11

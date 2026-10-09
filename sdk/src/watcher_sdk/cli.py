@@ -27,7 +27,7 @@ from watcher_sdk.login import login, logout
 app = typer.Typer(no_args_is_help=True, invoke_without_command=True, pretty_exceptions_enable=False)
 auth_app = typer.Typer(no_args_is_help=True, invoke_without_command=True, pretty_exceptions_enable=False)
 integrations_app = typer.Typer(no_args_is_help=True, invoke_without_command=True, pretty_exceptions_enable=False)
-app.add_typer(auth_app, name="auth", help="Manage SDK-owned browser logins.")
+app.add_typer(auth_app, name="auth", help="Manage SDK-owned browser sign-ins.")
 app.add_typer(integrations_app, name="integrations", help="Manage integrations for every session or one project.")
 
 ProjectOption = Annotated[
@@ -71,7 +71,7 @@ def command_errors[**P](function: Callable[P, None]) -> Callable[P, None]:
                 "again, or check the API key's permissions. No alternative credential was selected."
             )
         except (httpx.HTTPError, WatcherError, TimeoutError):
-            message = "The Watcher request failed. Check the server URL, connection and login, then retry."
+            message = "The Watcher request failed. Check the server URL, connection and sign-in, then retry."
         except ImportError:
             message = "The Copilot package is unavailable. Install it using the SDK release installer."
         except (OSError, ValueError, KeyError) as error:
@@ -106,7 +106,7 @@ def login_command(
     url: Annotated[str | None, typer.Option(help="Self-hosted Watcher server URL.")] = None,
     state_dir: Annotated[Path | None, typer.Option(help="Private SDK credential directory.")] = None,
 ) -> None:
-    """Sign in through the browser and store an SDK-owned login."""
+    """Sign in through the browser and save SDK-owned credentials."""
     target = server_url(cloud, url) or CLOUD_URL
     profile = asyncio.run(login(target, partial(show_authorization, target), state_dir=state_dir))
     typer.echo(f"Signed in to {profile.base_url}. SDK credentials: {profile.state_dir}")
@@ -119,10 +119,10 @@ def auth_status_command(
     url: str | None = None,
     state_dir: Path | None = None,
 ) -> None:
-    """List saved SDK and Watcher logins, and verify each selected server."""
+    """List saved SDK and Watcher sign-ins, and verify each selected server."""
     candidates = discover_logins(server_url(cloud, url), state_dir=state_dir)
     if not candidates:
-        typer.echo("No saved login found. Run watcher-sdk auth login --cloud or --url URL.")
+        typer.echo("No saved sign-in found. Run watcher-sdk auth login --cloud or --url URL.")
         return
     has_failure = False
     for profile in candidates:
@@ -133,7 +133,7 @@ def auth_status_command(
             typer.echo("Server access: authentication or permission check failed.", err=True)
             has_failure = True
         except (httpx.HTTPError, WatcherError, TimeoutError, OSError, ValueError, KeyError):
-            typer.echo("Server access: request failed. Check the server URL, connection and login.", err=True)
+            typer.echo("Server access: request failed. Check the server URL, connection and sign-in.", err=True)
             has_failure = True
         else:
             typer.echo("Server access: verified")
@@ -144,18 +144,20 @@ def auth_status_command(
 @auth_app.command("logout")
 @command_errors
 def logout_command(cloud: bool = False, url: str | None = None, state_dir: Path | None = None) -> None:
-    """End the SDK login's server session and remove it; a browser or app sharing that session may sign out too."""
+    """End the SDK sign-in's server session and remove it; a browser or app sharing that session may sign out too."""
     target = server_url(cloud, url)
     if target is None:
         candidates = [profile for profile in discover_logins(state_dir=state_dir) if profile.kind == "sdk_login"]
         if not candidates:
-            typer.echo("No SDK login found. Watcher app logins are unchanged.")
+            typer.echo("No SDK sign-in found. Watcher app sign-ins are unchanged.")
             return
         selected = choose_profile(candidates)
         target, state_dir = selected.base_url, selected.state_dir
     removed = asyncio.run(logout(target, state_dir=state_dir))
     typer.echo(
-        "SDK login removed. The Watcher app's saved login file was left in place." if removed else "No SDK login found."
+        "SDK sign-in removed. The Watcher app's saved sign-in file was left in place."
+        if removed
+        else "No SDK sign-in found."
     )
 
 
@@ -174,8 +176,10 @@ def install_command(
     ] = None,
     cloud: Annotated[bool, typer.Option(help="Use Watcher Cloud.")] = False,
     url: Annotated[str | None, typer.Option("--url", "--watcher-url", help="Self-hosted server URL.")] = None,
-    watcher_auth: Annotated[bool, typer.Option(help="Use the local Watcher app's saved login.")] = False,
-    fresh_login: Annotated[bool, typer.Option("--login", help="Create or replace an SDK-owned browser login.")] = False,
+    watcher_auth: Annotated[bool, typer.Option(help="Use the local Watcher app's saved sign-in.")] = False,
+    fresh_login: Annotated[
+        bool, typer.Option("--login", help="Create or replace an SDK-owned browser sign-in.")
+    ] = False,
     state_dir: Annotated[Path | None, typer.Option(help="Private SDK credential directory.")] = None,
     watcher_state_dir: Annotated[Path | None, typer.Option(help="Watcher app credential directory.")] = None,
     config_dir: ConfigDirOption = None,
@@ -238,7 +242,7 @@ def logs_command(
 @integrations_app.command("remove")
 @command_errors
 def remove_command(integration: str, project: ProjectOption = None, config_dir: ConfigDirOption = None) -> None:
-    """Remove the owned hooks, retaining unrelated hooks and saved logins; personal removal deletes opt-outs."""
+    """Remove the owned hooks, retaining unrelated hooks and saved sign-ins; personal removal deletes opt-outs."""
     from watcher_sdk.cli_copilot import remove
 
     require_copilot(integration)

@@ -23,7 +23,7 @@ from watcher_sdk.local_auth import (
 
 CLOUD_URL = "https://app.apolloresearch.ai/api"
 # Validation context key for a reader that only reports, replaces or deletes a
-# saved reference. Set to true, it lets ``IntegrationAuth`` read a login whose URL
+# saved reference. Set to true, it lets ``IntegrationAuth`` read a sign-in whose URL
 # is plain HTTP to another machine instead of refusing it (see ``IntegrationAuth``).
 ALLOW_INSECURE_LOGIN_URL = "allow_insecure_login_url"
 
@@ -39,18 +39,18 @@ def watcher_state_directory() -> Path:
 
 
 class SDKLoginAuth(WatcherLoginAuth):
-    """Refresh an SDK-owned login using the same protocol as Watcher's saved login.
+    """Refresh an SDK-owned sign-in using the same protocol as Watcher's saved sign-in.
 
     Credentials are keyed by the full API URL under the supplied private SDK
     state directory. This store is independent of the local Watcher application.
-    Reads, refresh, login and logout coordinate through the credential's lock.
+    Reads, refresh, sign-in and sign-out coordinate through the credential's lock.
     Without ``state_dir``, ``sdk_state_directory()`` selects the store.
     ``transport`` routes token refreshes as it does for WatcherLoginAuth.
 
     The credential file and its folder must belong to the current user and be
     writable by no one else. ``login`` creates them that way, and every read
     refuses anything else with WatcherAuthenticationError, because another
-    account that can write them could swap in its own login.
+    account that can write them could swap in its own sign-in.
     """
 
     _login_instruction = "Call watcher_sdk.login()"
@@ -76,13 +76,13 @@ class IntegrationAuth(BaseModel):
     setup discovers or changes identities; the request path never falls back.
     State directories and API-key paths are resolved when the model is created.
 
-    Login kinds accept only ``state_dir``; omitted directories use the selected
+    Sign-in kinds accept only ``state_dir``; omitted directories use the selected
     store's defaults. ``api_key_file`` requires only ``key_file`` and
     ``api_key_env`` requires only ``key_env``. Other source fields must be absent.
     Invalid combinations raise ValueError. Missing or invalid referenced credentials
     raise WatcherAuthenticationError when validated or used.
 
-    A login URL that is plain HTTP to another machine raises InsecureLoginURLError,
+    A sign-in URL that is plain HTTP to another machine raises InsecureLoginURLError,
     a ValueError, unless the validation context sets ``ALLOW_INSECURE_LOGIN_URL``.
     Such a profile can still be reported, replaced or deleted, but never signs in
     or sends anything: ``login_auth``, ``validate_local`` and ``create_client``
@@ -111,7 +111,7 @@ class IntegrationAuth(BaseModel):
             self.state_dir = self.state_dir.expanduser().resolve()
         else:
             if self.state_dir is not None:
-                raise ValueError("API keys do not use a login store")
+                raise ValueError("API keys do not use a sign-in store")
             if self.kind == "api_key_file":
                 if self.key_file is None or self.key_env is not None:
                     raise ValueError("An API-key file is required")
@@ -125,12 +125,12 @@ class IntegrationAuth(BaseModel):
         return self
 
     def login_auth(self) -> WatcherLoginAuth:
-        """Return this saved-login transport; API-key profiles must use ``create_client``."""
+        """Return this saved sign-in transport; API-key profiles must use ``create_client``."""
         if self.kind == "sdk_login":
             return SDKLoginAuth(self.base_url, state_dir=self.state_dir)
         if self.kind == "watcher_login":
             return WatcherLoginAuth(self.base_url, state_dir=self.state_dir)
-        raise ValueError("This credential source is not a saved login")
+        raise ValueError("This credential source is not a saved sign-in")
 
     def validate_local(self) -> None:
         """Check local availability without networking; invalid credentials raise WatcherAuthenticationError."""
@@ -178,13 +178,13 @@ def discover_logins(
     state_dir: Path | None = None,
     watcher_state_dir: Path | None = None,
 ) -> list[IntegrationAuth]:
-    """List saved login references for explicit setup, without networking or refreshing.
+    """List saved sign-in references for explicit setup, without networking or refreshing.
 
     The caller selects among multiple results. Without ``base_url``, unreadable or
-    invalid logins are skipped so healthy stores remain discoverable. With
+    invalid sign-ins are skipped so healthy stores remain discoverable. With
     ``base_url``, invalid matching credentials fail visibly rather than enabling
     an identity fallback. Watcher header/helper auth
-    is outside this API's scope and is never treated as a saved WorkOS login.
+    is outside this API's scope and is never treated as a saved WorkOS sign-in.
     SDK discovery defaults to ``sdk_state_directory()``; Watcher discovery uses
     APOLLO_MONITOR_HOME or ~/.apollo_monitor. Matching unreadable or invalid
     credentials raise WatcherAuthenticationError; absent stores return no entries.
@@ -216,7 +216,7 @@ def discover_logins(
             except (OSError, ValueError, httpx.InvalidURL, WatcherAuthenticationError):
                 if base_url is not None:
                     raise WatcherAuthenticationError(
-                        401, "invalid_saved_login", "A saved login cannot be read; select or repair its store"
+                        401, "invalid_saved_login", "A saved sign-in cannot be read; select or repair its store"
                     ) from None
     return candidates
 
@@ -224,11 +224,11 @@ def discover_logins(
 async def verify_integration_auth(profile: IntegrationAuth) -> None:
     """Check ingestion and session read access without uploading a synthetic session.
 
-    User logins read their own sessions and need no broad read permission. Service
+    User sign-ins read their own sessions and need no broad read permission. Service
     API keys require ``sessions:findings:read:any``. Success proves access, not delivery.
     Missing credentials or permissions raise WatcherAuthenticationError; other
     server failures, including a 2xx response whose body does not have the expected
-    shape (empty, ``null``, or a proxy's login page), raise WatcherAPIError.
+    shape (empty, ``null``, or a proxy's sign-in page), raise WatcherAPIError.
     Connection failures raise WatcherConnectionError or WatcherTimeoutError.
     """
     async with profile.create_client() as client:

@@ -37,16 +37,16 @@ class CopilotInstallation(BaseModel):
     ``project`` is ``None`` for the personal install. ``hook_server`` is the
     server the hook commands name, or ``None`` for hooks from earlier versions,
     which name none. ``redirected`` is true when that server, or the server the
-    login belongs to (``auth.base_url``), differs from the one in the private
+    sign-in belongs to (``auth.base_url``), differs from the one in the private
     configuration: the hooks then refuse to run, because something rewrote the
     configuration after setup.
 
     ``auth`` is the credential the installation uses. Nothing is ever sent for a
-    redirected configuration, so its login may be plain HTTP to another machine,
+    redirected configuration, so its sign-in may be plain HTTP to another machine,
     which can never sign in (see ``ALLOW_INSECURE_LOGIN_URL``). A redirected
     configuration from the Copilot package's own setup has no ``auth`` at all: its
-    hooks use Watcher's saved login for the configuration's server, which is
-    whatever rewrote it, so that login is chosen only once install or update names
+    hooks use Watcher's saved sign-in for the configuration's server, which is
+    whatever rewrote it, so that sign-in is chosen only once install or update names
     a server.
     """
 
@@ -95,11 +95,11 @@ def installation(
     """Read the personal install, or ``project``'s, without network access; ``None`` when there is none.
 
     An earlier API-key installation stays readable here so status can name it and
-    install can replace it with a login; its hooks refuse to run. By default a
+    install can replace it with a sign-in; its hooks refuse to run. By default a
     configuration that names more than one server, through its hook commands or
-    its login (see ``names_another_server``), is refused with ``CommandError``, as
+    its sign-in (see ``names_another_server``), is refused with ``CommandError``, as
     the hooks refuse it, so it never chooses the server a command uses or where
-    its login goes. ``allow_server_mismatch`` reads it anyway: install and
+    its sign-in goes. ``allow_server_mismatch`` reads it anyway: install and
     update set it only when the user names the server, and status and doctor set
     it to report the mismatch.
     """
@@ -123,7 +123,7 @@ def installation(
     if config.auth_profile is not None:
         auth = config.auth_profile
     elif config.watcher_auth:
-        # Watcher's saved login is chosen by server, and a redirected configuration's
+        # Watcher's saved sign-in is chosen by server, and a redirected configuration's
         # server is whatever rewrote it (see ``CopilotInstallation``).
         auth = (
             None
@@ -135,7 +135,7 @@ def installation(
     else:
         auth = IntegrationAuth(base_url=config.watcher_url, kind="api_key_env", key_env=config.api_key_env)
     # Pydantic runs IntegrationAuth's own checks again when ``auth`` goes into this
-    # model, so a redirected configuration's login needs the same leniency here as
+    # model, so a redirected configuration's sign-in needs the same leniency here as
     # when the configuration was read.
     return CopilotInstallation.model_validate(
         {
@@ -345,7 +345,7 @@ def status(project: Path | None, config_dir: Path | None, *, verify: bool) -> No
             f"{project_option(current.project)} to update them.",
             err=True,
         )
-    # Without ``auth``, the configuration uses Watcher's saved login for its own server (see ``CopilotInstallation``).
+    # Without ``auth``, the configuration uses Watcher's saved sign-in for its own server (see ``CopilotInstallation``).
     login = current.auth.base_url if current.auth is not None else config.watcher_url
     kind = current.auth.kind if current.auth is not None else "watcher_login"
     if current.redirected:
@@ -353,7 +353,7 @@ def status(project: Path | None, config_dir: Path | None, *, verify: bool) -> No
         # so they lose characters that could rewrite the terminal.
         typer.echo(
             f"Server: the hooks name {printable(current.hook_server or 'no server')}, the private configuration "
-            f"names {printable(config.watcher_url)}, and its login belongs to {printable(login)}."
+            f"names {printable(config.watcher_url)}, and its sign-in belongs to {printable(login)}."
         )
         typer.echo(redirected_message(current.project))
     else:
@@ -440,11 +440,11 @@ def logs(project: Path | None, config_dir: Path | None, limit: int) -> None:
 
 
 def remove(project: Path | None, config_dir: Path | None) -> None:
-    """Remove the personal hooks, with their opt-outs, or ``project``'s; keep saved logins and unrelated hooks."""
+    """Remove the personal hooks, with their opt-outs, or ``project``'s; keep saved sign-ins and unrelated hooks."""
     from watcher_github_copilot_cli.configuration import remove_observer
 
     removed = remove_observer(project, config_dir)
-    typer.echo("Copilot hooks removed. Saved logins are retained." if removed else "No Copilot hooks found.")
+    typer.echo("Copilot hooks removed. Saved sign-ins are retained." if removed else "No Copilot hooks found.")
 
 
 def opt_out(project: Path, config_dir: Path | None, *, opted_out: bool) -> None:

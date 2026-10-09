@@ -1,56 +1,68 @@
-"""A LiteLLM proxy guardrail that holds each response until Watcher has judged its tool calls.
+"""A LiteLLM proxy guardrail that withholds tool calls until Watcher allows them.
 
 Load ``watcher_callback`` through LiteLLM's ``callbacks`` setting. For every
-Chat Completions, Responses or Anthropic Messages call, the callback sends the
-client's raw request body and the complete provider response to Watcher's
-pre-tool-use hook in its raw format. Watcher converts the pair, applies the
-organization's policy to each new client tool call, records the conversation,
-and returns one decision per call with that call's location in the response.
+Chat Completions, Responses or Anthropic Messages call, Watcher's raw-format
+pre-tool-use hook converts provider-shaped exchanges, applies the organization's
+policy and records its decisions. Streaming calls are evaluated individually at
+their first reliable completion boundary; ``incremental`` builds those exchanges
+and preserves prior approved content as history without grading it again.
 
-A response is released only when every client tool call in it has an allow
-(or observe-mode deferred) decision. Otherwise the callback removes every
-client tool call and appends an explanation, so the client receives a normal
-text reply. Chat Completions and Responses streams are buffered until the
-decision and then re-encoded from the evaluated body. Messages streams are
-forwarded as their events arrive, re-encoded from the parsed events, but every
-tool call and the end of the message are held until the decision. Nothing is
-replayed, so the client can only execute what Watcher saw. A Watcher failure
-withholds the response with an HTTP error, or with a stream error event once a
-Messages stream has started.
+Streams forward non-tool content immediately and hold each tool plus subsequent
+events until it has an allow (or observe-mode deferred) decision. All output is
+re-encoded from validated events. Denials and escalations become ordinary text
+notices plus gateway-generated alternatives, with at most three proposals per
+client request. Alternatives stream through the same gates. Already released
+calls retain their approval; internal recovery receipts state that their real
+execution results are unknown. Repeated denied or released calls cannot escape
+the prior decision merely by changing their IDs. Non-streamed proposals remain
+atomic until an entire allowed alternative can be returned.
+
+Each evaluation has a 300-second default deadline. After a refusal, its remaining
+budget also bounds draining that proposal, replacement generation and evaluation.
+SSE comments keep every API alive without inventing model content; final text-only
+recording never holds delivery. Transport failures remain explicit stream errors.
 
 Configure ``WATCHER_API_URL`` and ``WATCHER_API_KEY`` on the proxy process.
 Clients can send ``x-watcher-session-id`` to group their requests into one
 Watcher session, recorded under ``SESSION_PREFIX``; requests that carry a native
-session ID, as Claude Code's and Codex's normally do, group by it. Without
-either, Watcher groups requests by their shared conversation history.
+session ID, as Claude Code's and Codex's normally do, group by it. Requests without
+either are refused before generation because partial replies cannot reliably
+identify a conversation by shared history.
 """
 
 import asyncio
+import json
 import logging
 import os
-import time
-from collections.abc import AsyncGenerator, Callable
-from contextlib import asynccontextmanager
-from typing import Any
+import re
+from collections import deque
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import aclosing, asynccontextmanager
+from typing import Any, TypeVar, cast
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
 from openai._streaming import SSEDecoder
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
+from watcher_litellm.delivery import StreamDelivery, compose_nonstream
+from watcher_litellm.incremental import PROVIDER_ITEMS, IncrementalStream, PendingEvent
+from watcher_litellm.replan import (
+    ToolCall,
+    ToolDenial,
+    build_replan_request,
+    client_tool_details,
+    complete_replan,
+    denial_notice,
+)
 from watcher_litellm.streams import (
     API,
-    MESSAGES_EVENT_TYPES,
     IncompleteStream,
-    MessageAssembler,
     UnsupportedStream,
     as_dict,
-    assemble,
-    encode,
-    encode_messages_event,
-    encode_messages_from,
 )
 from watcher_sdk import AsyncWatcherClient, WatcherAPIError, WatcherError
 from watcher_sdk._generated.models import HookCallError, PreToolUseHookResponse
@@ -70,7 +82,41 @@ _RELEASED = {"allow", "deferred"}
 # send back the stored ID it looked up without it gaining a second prefix.
 SESSION_PREFIX = "litellm:"
 _NOTICE = "Watcher withheld the proposed tool call{plural} ({names}). No tool was run.\n\n{reasons}"
-_PING = encode_messages_event({"type": "ping"})
+_MAX_PROPOSALS = 3
+_T = TypeVar("_T")
+
+
+class _Recovery(BaseModel):
+    """State shared by one client request and its bounded replacement generations.
+
+    Once a call is refused, its evaluation's deadline also bounds draining that
+    proposal, generating alternatives, and evaluating them. The operation map
+    prevents a fresh call ID from retrying a denied or already released action.
+    """
+
+    deadline: float | None = None
+    forbidden: dict[str, ToolDenial] = Field(default_factory=dict)
+    released: list[ToolCall] = Field(default_factory=list)
+
+
+class _Attempt(BaseModel):
+    """A provider attempt's parser and decisions, filled by the streaming driver."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    stream: IncrementalStream
+    denials: list[ToolDenial] = Field(default_factory=list)
+    released: list[ToolCall] = Field(default_factory=list)
+
+
+def _operation_key(call: ToolCall) -> str:
+    """Compare operations independently of provider IDs, preserving JSON scalar types."""
+    return json.dumps([call.tool_name, call.tool_input], ensure_ascii=False, sort_keys=True, allow_nan=False)
+
+
+def _request_with_body(data: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    """Give Watcher a private incremental history without changing the provider request."""
+    return {**data, "proxy_server_request": {**data["proxy_server_request"], "body": body}}
 
 
 def route(data: dict[str, Any]) -> API | None:
@@ -89,6 +135,43 @@ def client_body(api: API, body: dict[str, Any]) -> dict[str, Any]:
     """
     added = {"litellm_call_id", "litellm_metadata"} | ({"metadata"} if api == "chat_completions" else set())
     return {key: value for key, value in body.items() if key not in added}
+
+
+def session_identity(data: dict[str, Any]) -> str | None:
+    """Use a client-supplied conversation identity, never infer it from a partial reply.
+
+    A native Claude/Codex UUID becomes a stable gateway alias as well as retaining
+    the backend's native identity. Generic clients supply ``x-watcher-session-id``.
+    Content-derived IDs would merge independent conversations sharing an opening.
+    """
+    original = data["proxy_server_request"]
+    headers = {key.lower(): value for key, value in (original.get("headers") or {}).items()}
+    explicit = headers.get("x-watcher-session-id")
+    if explicit:
+        return explicit if explicit.startswith(SESSION_PREFIX) else SESSION_PREFIX + explicit
+    body = original["body"]
+    client_metadata = body.get("client_metadata")
+    candidate = client_metadata.get("thread_id") if isinstance(client_metadata, dict) else None
+    harness = "codex"
+    if candidate is None:
+        metadata = body.get("metadata")
+        user_id = metadata.get("user_id") if isinstance(metadata, dict) else None
+        if isinstance(user_id, str):
+            harness = "claude"
+            try:
+                identity = json.loads(user_id)
+            except ValueError:
+                match = re.search(r"_session_([0-9a-fA-F-]{36})$", user_id)
+                candidate = match[1] if match is not None else None
+            else:
+                candidate = identity.get("session_id") if isinstance(identity, dict) else None
+    if not isinstance(candidate, str):
+        return None
+    try:
+        native_id = UUID(candidate)
+    except ValueError:
+        return None
+    return f"{SESSION_PREFIX}{harness}:{native_id}"
 
 
 def _unsupported_request(api: API, body: dict[str, Any]) -> str | None:
@@ -116,15 +199,7 @@ def _client_status(watcher_status: int) -> int:
 
 # Responses output items the provider runs itself. Every other ``*_call`` item
 # is executed by the client and must have a released Watcher decision.
-_PROVIDER_ITEMS = {
-    "web_search_call",
-    "file_search_call",
-    "code_interpreter_call",
-    "image_generation_call",
-    "mcp_call",
-    "mcp_list_tools",
-    "mcp_approval_request",
-}
+_PROVIDER_ITEMS = PROVIDER_ITEMS
 
 
 def client_calls(api: API, response: dict[str, Any]) -> list[tuple[list[str | int], str]]:
@@ -248,22 +323,28 @@ class WatcherCallback(CustomLogger):
     callback enters and closes it. By default the client is built from
     ``WATCHER_API_URL`` and ``WATCHER_API_KEY`` when the first exchange is
     evaluated, so importing the module reads no credentials. ``timeout_seconds``
-    bounds each Watcher request, including any LLM grading it runs.
+    bounds the complete Watcher exchange, including connection setup and reading
+    its reply. A refused call's remaining budget also bounds its recovery chain;
+    initial provider generation is excluded. ``ping_seconds`` controls idle SSE
+    comments for streams; both durations must be positive.
     """
 
     def __init__(
         self,
         client_factory: Callable[[], AsyncWatcherClient] | None = None,
         *,
-        timeout_seconds: float = 240,
+        timeout_seconds: float = 300,
         max_stream_chunks: int = 100_000,
         ping_seconds: float = 10,
     ) -> None:
         super().__init__()
+        if timeout_seconds <= 0 or ping_seconds <= 0 or max_stream_chunks <= 0:
+            raise ValueError("Timeout, ping interval and stream chunk limit must be positive")
         self.client_factory = client_factory
         self.timeout_seconds = timeout_seconds
         self.max_stream_chunks = max_stream_chunks
         self.ping_seconds = ping_seconds
+        self._recordings: set[asyncio.Task[None]] = set()
 
     @asynccontextmanager
     async def _client(self) -> AsyncGenerator[AsyncWatcherClient]:
@@ -282,20 +363,31 @@ class WatcherCallback(CustomLogger):
         api = route(data)
         if api is not None and (problem := _unsupported_request(api, data["proxy_server_request"]["body"])):
             raise HTTPException(400, problem)
+        if api is not None and session_identity(data) is None:
+            raise HTTPException(
+                400,
+                "Watcher requires x-watcher-session-id or native Claude/Codex session metadata "
+                "to keep incremental decisions in one conversation",
+            )
         return data
 
     async def _decide(
         self, api: API, data: dict[str, Any], response: dict[str, Any], user: UserAPIKeyAuth
-    ) -> dict[str, Any] | None:
-        """Ask Watcher about one exchange; return a replacement response, or None to release it."""
+    ) -> list[ToolDenial]:
+        """Bound the entire Watcher exchange, including setup and reading, by one deadline."""
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                return await self._request_decision(api, data, response, user)
+        except TimeoutError:
+            raise HTTPException(504, "Watcher evaluation timed out; the pending tool call was withheld") from None
+
+    async def _request_decision(
+        self, api: API, data: dict[str, Any], response: dict[str, Any], user: UserAPIKeyAuth
+    ) -> list[ToolDenial]:
+        """Return matched policy refusals; missing, ambiguous or failed decisions are errors."""
         original = data["proxy_server_request"]
         headers = {key.lower(): value for key, value in (original.get("headers") or {}).items()}
-        # Without the header there is no conversation ID to send, so Watcher
-        # matches the exchange to the session it continues by shared history.
-        # That session reports the Hooks API source rather than Gateway.
-        session_id = headers.get("x-watcher-session-id")
-        if session_id and not session_id.startswith(SESSION_PREFIX):
-            session_id = SESSION_PREFIX + session_id
+        session_id = session_identity(data)
         try:
             async with self._client() as client:
                 outputs = await client.pre_tool_use_hook(
@@ -326,136 +418,386 @@ class WatcherCallback(CustomLogger):
             len(outputs),
             replacement is not None,
         )
-        return replacement
+        if replacement is None:
+            return []
+        calls = client_tool_details(api, response)
+        call_ids = {call.tool_use_id for call in calls}
+        if (
+            len(outputs) != len(call_ids)
+            or {output.tool_use_id for output in outputs} != call_ids
+            or any(isinstance(output, HookCallError) for output in outputs)
+        ):
+            raise HTTPException(503, "Watcher could not evaluate every proposed tool call")
+        by_id = {call.tool_use_id: call for call in calls}
+        denials: list[ToolDenial] = []
+        for output in outputs:
+            if isinstance(output, HookCallError):
+                raise HTTPException(503, "Watcher could not evaluate this tool call")
+            if output.decision in _RELEASED:
+                continue
+            if output.decision not in {"deny", "escalate"}:
+                raise HTTPException(503, "Watcher returned an unsupported decision")
+            explanation = output.verdict.explanation
+            denials.append(
+                ToolDenial(
+                    **by_id[cast(str, output.tool_use_id)].model_dump(),
+                    reason=explanation if isinstance(explanation, str) and explanation else "Approval is required.",
+                    is_escalation=output.decision == "escalate",
+                )
+            )
+        return denials
 
     async def async_post_call_success_hook(
         self, data: dict[str, Any], user_api_key_dict: UserAPIKeyAuth, response: Any
     ) -> Any:
-        """Release the response unchanged, or return it with its tool calls withheld."""
+        """Release an allowed response, or resample refused proposals up to twice.
+
+        No buffered call has reached the client, so a refused proposal's siblings
+        receive cancellation results. The returned single response contains only
+        an approved alternative's executable calls and ordinary denial notices.
+        """
         api = route(data)
         if api is None:
             return response
-        replacement = await self._decide(api, data, as_dict(response), user_api_key_dict)
-        if replacement is None:
+        try:
+            return await self._recover_nonstream(api, data, user_api_key_dict, response)
+        except HTTPException:
+            raise
+        except (ValueError, UnsupportedStream):
+            raise HTTPException(422, "Model response is not supported for gateway recovery") from None
+        except Exception:
+            raise HTTPException(502, "Model response could not be completed during gateway recovery") from None
+
+    async def _recover_nonstream(self, api: API, data: dict[str, Any], user: UserAPIKeyAuth, response: Any) -> Any:
+        """Evaluate complete proposals and compose only an approved alternative's calls.
+
+        The public hook maps malformed exchanges and provider failures to safe
+        HTTP errors; cancellation remains owned by the requesting proxy task.
+        """
+        original = as_dict(response)
+        started = asyncio.get_running_loop().time()
+        denials = await self._decide(api, data, original, user)
+        if not denials:
             return response
+        request = client_body(api, data["proxy_server_request"]["body"])
+        candidate = original
+        recovery = _Recovery(deadline=started + self.timeout_seconds)
+        notices: list[str] = []
+        replacement: dict[str, Any] | None = None
+        for attempt in range(_MAX_PROPOSALS):
+            refused = {denial.tool_use_id for denial in denials}
+            cancelled = [call for call in client_tool_details(api, candidate) if call.tool_use_id not in refused]
+            notices.append(denial_notice(denials, cancelled=cancelled))
+            self._remember_denials(recovery, denials)
+            if attempt == _MAX_PROPOSALS - 1:
+                notices.append("Watcher stopped after three blocked proposals.")
+                break
+            request = build_replan_request(api, request, candidate, denials, released_ids=set())
+            candidate = await self._until(complete_replan(api, request, data), recovery.deadline)
+            denials = await self._until(
+                self._assess_replacement(api, _request_with_body(data, request), candidate, user, recovery),
+                recovery.deadline,
+            )
+            if not denials:
+                replacement = candidate
+                break
+        delivered = compose_nonstream(api, original, replacement, "\n\n".join(notices))
+        self._start_recording(api, data, delivered, user)
         if isinstance(response, BaseModel):
-            return type(response).model_validate(replacement)
-        return replacement
+            return type(response).model_validate(delivered)
+        return delivered
 
     async def async_post_call_streaming_iterator_hook(
         self, user_api_key_dict: UserAPIKeyAuth, response: Any, request_data: dict[str, Any]
     ) -> AsyncGenerator[Any, None]:
-        """Gate the stream on Watcher's decision, forwarding Messages events as they arrive."""
+        """Forward content until a tool, then release each evaluated call in provider order.
+
+        The upstream reader and each evaluation are owned tasks: keepalives do
+        not cancel either operation. Closing this iterator cancels and joins the
+        local task and closes upstream; it cannot undo already persisted backend
+        work. Once output starts, failures are protocol errors rather than HTTP
+        status changes. Previously approved calls cannot be retracted.
+        """
         api = route(request_data)
         if api is None:
             async for chunk in response:
                 yield chunk
             return
-        if api == "messages":
-            async for event in self._messages_stream(request_data, response, user_api_key_dict):
-                yield event
-            return
-        chunks: list[Any] = []
-        async for chunk in response:
-            chunks.append(chunk)
-            if len(chunks) > self.max_stream_chunks:
-                raise HTTPException(413, "Model response is too long to evaluate")
-        try:
-            assembled = assemble(api, chunks)
-        except IncompleteStream:
-            # A truncated stream or a provider error event: a client retry
-            # regenerates the response and may succeed.
-            raise HTTPException(502, "Model response stream was incomplete") from None
-        except UnsupportedStream:
-            # A shape this example cannot interpret comes back the same way on
-            # retry, so the client is told not to retry.
-            raise HTTPException(422, "Model response stream is not supported") from None
-        replacement = await self._decide(api, request_data, assembled, user_api_key_dict)
-        # The original chunks are never replayed: a client's stream parser can
-        # read calls from them that this assembly did not see (for example a
-        # Responses event absent from the completed body), so only the
-        # evaluated body is streamed.
-        for event in encode(api, replacement if replacement is not None else assembled):
-            yield event
-
-    async def _messages_stream(
-        self, data: dict[str, Any], response: Any, user: UserAPIKeyAuth
-    ) -> AsyncGenerator[bytes]:
         has_started = False
+        delivery = StreamDelivery(api)
+        stream = self._gated_stream(api, request_data, response, user_api_key_dict, delivery)
         try:
-            async for event in self._gated_messages_stream(data, response, user):
-                has_started = True
-                yield event
-        except HTTPException as error:
+            async with aclosing(stream):
+                async for event in stream:
+                    has_started = True
+                    yield event
+        except Exception as error:
+            if isinstance(error, HTTPException):
+                status, detail = error.status_code, error.detail
+            elif isinstance(error, (UnsupportedStream, ValueError)):
+                status, detail = 422, "Model response stream is not supported"
+            else:
+                status, detail = 502, "Model response stream was incomplete"
             if not has_started:
-                raise
-            error_type = "overloaded_error" if error.status_code >= 500 else "invalid_request_error"
-            yield encode_messages_event({"type": "error", "error": {"type": error_type, "message": error.detail}})
+                raise HTTPException(status, detail) from None
+            code = "watcher_timeout" if status == 504 else "watcher_denied" if status == 403 else "stream_error"
+            yield delivery.error(code, detail, status)
 
-    async def _stream_chunks(self, response: Any) -> AsyncGenerator[bytes]:
+    async def _provider_events(self, api: API, response: Any) -> AsyncGenerator[Any]:
+        """Decode complete Messages SSE frames and bound raw input for every format."""
+        async with aclosing(self._stream_chunks(api, response)) as chunks:
+            if api == "messages":
+                async for event in SSEDecoder().aiter_bytes(chunks):
+                    if event.data:
+                        try:
+                            yield json.loads(event.data)
+                        except ValueError as exc:
+                            raise UnsupportedStream("Malformed Messages SSE data") from exc
+            else:
+                async for chunk in chunks:
+                    yield chunk
+
+    async def _stream_chunks(self, api: API, response: Any) -> AsyncGenerator[Any]:
+        """Bound provider input and close external LiteLLM iterators when they support it."""
         count = 0
-        async for chunk in response:
-            count += 1
-            if count > self.max_stream_chunks:
-                raise HTTPException(413, "Model response is too long to evaluate")
-            if not isinstance(chunk, bytes):
-                raise UnsupportedStream("Unexpected Messages stream chunk")
-            yield chunk
-
-    async def _gated_messages_stream(
-        self, data: dict[str, Any], response: Any, user: UserAPIKeyAuth
-    ) -> AsyncGenerator[bytes]:
-        assembler = MessageAssembler()
-        held: list[bytes] = []
-        is_holding = False
-        forwarded_blocks = 0
-        last_sent = time.monotonic()
         try:
-            async for sse in SSEDecoder().aiter_bytes(self._stream_chunks(response)):
-                event = assembler.add(sse.data)
-                kind = event["type"]
-                if kind not in MESSAGES_EVENT_TYPES or (kind == "ping" and assembler.message is None):
-                    continue
-
-                is_call = kind == "content_block_start" and event["content_block"]["type"] == "tool_use"
-                if is_call or kind in ("message_delta", "message_stop"):
-                    is_holding = True
-                if kind == "ping" or not is_holding:
-                    if kind == "content_block_start":
-                        forwarded_blocks += 1
-                    last_sent = time.monotonic()
-                    yield encode_messages_event(event)
-                    continue
-
-                held.append(encode_messages_event(event))
-                if time.monotonic() - last_sent >= self.ping_seconds:
-                    last_sent = time.monotonic()
-                    yield _PING
-
-            message = assembler.result()
-        except IncompleteStream:
-            # A truncated stream or a provider error event: a client retry
-            # regenerates the response and may succeed.
-            raise HTTPException(502, "Model response stream was incomplete") from None
-        except UnsupportedStream:
-            # A shape this example cannot interpret comes back the same way on
-            # retry, so the client is told not to retry.
-            raise HTTPException(422, "Model response stream is not supported") from None
-
-        decision = asyncio.create_task(self._decide("messages", data, message, user))
-        try:
-            while True:
-                done, _ = await asyncio.wait({decision}, timeout=self.ping_seconds)
-                if done:
-                    break
-                yield _PING
+            async for chunk in response:
+                count += 1
+                if count > self.max_stream_chunks:
+                    raise HTTPException(413, "Model response is too long to evaluate")
+                if api == "messages" and not isinstance(chunk, bytes):
+                    raise UnsupportedStream("Unexpected Messages stream chunk")
+                yield chunk
         finally:
-            decision.cancel()
+            close = getattr(response, "aclose", None)
+            if close is not None:
+                await close()
 
-        replacement = decision.result()
-        released = held if replacement is None else list(encode_messages_from(replacement, forwarded_blocks))
-        for event in released:
-            yield event
+    async def _wait(self, task: asyncio.Task[Any], api: API) -> AsyncGenerator[bytes]:
+        """Send SSE comments without resetting deadlines or exposing premature protocol events.
+
+        Comments are valid before the first event in every API. An Anthropic
+        ``ping`` before ``message_start`` breaks the official streaming helper.
+        """
+        try:
+            while not task.done():
+                done, _ = await asyncio.wait({task}, timeout=self.ping_seconds)
+                if not done:
+                    yield b": watcher keepalive\n\n"
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def _until(self, operation: Awaitable[_T], deadline: float | None) -> _T:
+        """Use the remaining recovery budget without restarting it for reads or generations."""
+        try:
+            async with asyncio.timeout_at(deadline):
+                return await operation
+        except TimeoutError:
+            raise HTTPException(504, "Watcher evaluation timed out; the pending tool call was withheld") from None
+
+    @staticmethod
+    def _remember_denials(recovery: _Recovery, denials: list[ToolDenial]) -> None:
+        for denial in denials:
+            recovery.forbidden[_operation_key(denial)] = denial
+
+    async def _assess_replacement(
+        self,
+        api: API,
+        data: dict[str, Any],
+        response: dict[str, Any],
+        user: UserAPIKeyAuth,
+        recovery: _Recovery,
+    ) -> list[ToolDenial]:
+        """Apply existing operation decisions before grading genuinely new alternatives.
+
+        Renaming a denied operation's call ID does not give it another chance at
+        a stochastic policy decision. Repeating an already released operation
+        could execute its side effects twice, even if the second verdict allows.
+        Refresh released operations before each recovery evaluation: multiple
+        calls can arrive within the same streamed alternative.
+        """
+        if recovery.deadline is not None:
+            for call in recovery.released:
+                recovery.forbidden[_operation_key(call)] = ToolDenial(
+                    **call.model_dump(),
+                    reason=(
+                        "This operation was already approved and sent to the client. Its result is not yet available; "
+                        "it must not be executed again during this recovery."
+                    ),
+                    is_escalation=False,
+                )
+        repeated = [
+            ToolDenial(
+                **call.model_dump(),
+                reason=recovery.forbidden[_operation_key(call)].reason,
+                is_escalation=recovery.forbidden[_operation_key(call)].is_escalation,
+            )
+            for call in client_tool_details(api, response)
+            if _operation_key(call) in recovery.forbidden
+        ]
+        return repeated if repeated else await self._decide(api, data, response, user)
+
+    async def _record_stream_tail(
+        self, api: API, data: dict[str, Any], response: dict[str, Any], user: UserAPIKeyAuth
+    ) -> None:
+        """Record text after all executable content was evaluated, without delaying delivery."""
+        try:
+            await self._decide(api, data, response, user)
+        except HTTPException:
+            logger.warning("Watcher could not record a %s stream tail", api)
+
+    def _start_recording(self, api: API, data: dict[str, Any], delivered: dict[str, Any], user: UserAPIKeyAuth) -> None:
+        """Record the actual client-visible history without selecting approved calls again."""
+        state = IncrementalStream(api)
+        state.body = delivered
+        for path, _ in client_calls(api, delivered):
+            if api == "chat_completions":
+                index = 0 if path[-1] == "function_call" else int(path[4])
+            else:
+                index = int(path[1])
+            state.allowed.add(index)
+        if api == "chat_completions":
+            state.chat_legacy = delivered["choices"][0]["message"].get("function_call")
+        tail = state.evaluation(client_body(api, data["proxy_server_request"]["body"]), None)
+        recording = asyncio.create_task(
+            self._record_stream_tail(api, _request_with_body(data, tail.request), tail.response, user)
+        )
+        self._recordings.add(recording)
+        recording.add_done_callback(self._recordings.discard)
+
+    async def _stream_attempt(
+        self,
+        api: API,
+        original_data: dict[str, Any],
+        attempt_data: dict[str, Any],
+        response: Any,
+        user: UserAPIKeyAuth,
+        delivery: StreamDelivery,
+        attempt: _Attempt,
+        recovery: _Recovery,
+    ) -> AsyncGenerator[bytes]:
+        """Gate one provider generation, draining a refused attempt without leaking its tools.
+
+        On refusal, close previously emitted interleaved items and approved calls
+        using their remaining validated frames. Later content is withheld. The
+        complete proposal remains available for a truthful provider continuation.
+        """
+        state = attempt.stream
+        held: deque[PendingEvent] = deque()
+        finished = False
+        async with aclosing(self._provider_events(api, response)) as events:
+            while True:
+                read = asyncio.create_task(self._until(anext(events), recovery.deadline))
+                async with aclosing(self._wait(read, api)) as waiting:
+                    async for ping in waiting:
+                        yield ping
+                try:
+                    value = read.result()
+                except StopAsyncIteration:
+                    break
+                held.extend(state.add(value))
+                if attempt.denials:
+                    while held:
+                        frame = held.popleft()
+                        if delivery.retains(frame):
+                            for event in delivery.emit(frame, state):
+                                yield event
+                    continue
+                while True:
+                    while held and held[0].requires <= state.allowed:
+                        for event in delivery.emit(held.popleft(), state):
+                            yield event
+                    index = state.ready()
+                    if index is None:
+                        break
+                    evaluation = state.evaluation(client_body(api, attempt_data["proxy_server_request"]["body"]), index)
+                    request = _request_with_body(attempt_data, evaluation.request)
+                    deadline = recovery.deadline or (asyncio.get_running_loop().time() + self.timeout_seconds)
+                    decision = asyncio.create_task(
+                        self._until(
+                            self._assess_replacement(api, request, evaluation.response, user, recovery), deadline
+                        )
+                    )
+                    async with aclosing(self._wait(decision, api)) as waiting:
+                        async for ping in waiting:
+                            yield ping
+                    attempt.denials = decision.result()
+                    if attempt.denials:
+                        recovery.deadline = deadline
+                        while held:
+                            frame = held.popleft()
+                            if delivery.retains(frame):
+                                for event in delivery.emit(frame, state):
+                                    yield event
+                        break
+                    calls = client_tool_details(api, evaluation.response)
+                    attempt.released.extend(calls)
+                    recovery.released.extend(calls)
+                    state.allowed.add(index)
+                if state.terminal and not attempt.denials and not finished:
+                    delivery.checkpoint(state)
+                    final = delivery.finish(state)
+                    if api != "chat_completions":
+                        self._start_recording(api, original_data, delivery.response, user)
+                    for event in final:
+                        yield event
+                    finished = True
+            if attempt.denials:
+                if not state.terminal or set(state.calls) != state.complete:
+                    raise IncompleteStream("Refused provider proposal was truncated")
+            else:
+                state.finish()
+            delivery.checkpoint(state)
+            if finished and api == "chat_completions":
+                self._start_recording(api, original_data, delivery.response, user)
+
+    async def _gated_stream(
+        self, api: API, data: dict[str, Any], response: Any, user: UserAPIKeyAuth, delivery: StreamDelivery
+    ) -> AsyncGenerator[bytes]:
+        """Stream an original proposal and at most two evaluated replacements as one response."""
+        recovery = _Recovery()
+        request = client_body(api, data["proxy_server_request"]["body"])
+        for number in range(_MAX_PROPOSALS):
+            delivery.begin_attempt()
+            attempt = _Attempt(stream=IncrementalStream(api))
+            iterator = self._stream_attempt(
+                api, data, _request_with_body(data, request), response, user, delivery, attempt, recovery
+            )
+            async with aclosing(iterator):
+                async for event in iterator:
+                    yield event
+            if not attempt.denials:
+                return
+            released_ids = {call.tool_use_id for call in attempt.released}
+            refused_ids = {denial.tool_use_id for denial in attempt.denials}
+            cancelled = [
+                call
+                for call in client_tool_details(api, attempt.stream.body)
+                if call.tool_use_id not in released_ids | refused_ids
+            ]
+            self._remember_denials(recovery, attempt.denials)
+            for event in delivery.notice(denial_notice(attempt.denials, cancelled=cancelled)):
+                yield event
+            if number == _MAX_PROPOSALS - 1:
+                for event in delivery.notice("Watcher stopped after three blocked proposals."):
+                    yield event
+                final = delivery.finish(attempt.stream)
+                self._start_recording(api, data, delivery.response, user)
+                for event in final:
+                    yield event
+                return
+            request = build_replan_request(
+                api, request, attempt.stream.body, attempt.denials, released_ids=released_ids
+            )
+            generation = asyncio.create_task(
+                self._until(complete_replan(api, request, data, stream=True), recovery.deadline)
+            )
+            async with aclosing(self._wait(generation, api)) as waiting:
+                async for ping in waiting:
+                    yield ping
+            response = generation.result()
 
 
 watcher_callback = WatcherCallback()

@@ -15,7 +15,7 @@ T = TypeVar("T", bound="DeviceTokenResponse")
 
 @_attrs_define
 class DeviceTokenResponse:
-    """Response from POST /v1/auth/device/token once the user approved the login.
+    """Response from POST /v1/auth/device/token once the user approved the sign-in.
 
     Unlike ``TokenResponse``, the refresh token travels in the JSON body: the
     caller is a CLI with its own on-disk credential store, not a browser, so
@@ -24,10 +24,10 @@ class DeviceTokenResponse:
         Attributes:
             access_token (str):
             refresh_token (str):
-            user (AuthUser): The signed-in user's identity as login endpoints report it.
+            user (AuthUser): The signed-in user's identity as sign-in endpoints report it.
 
                 ``id`` is the WorkOS user id; ``user_id`` is Watcher's own user id, present
-                once the login has created or matched the Watcher user (it can be absent
+                once the sign-in has created or matched the Watcher user (it can be absent
                 only when WorkOS reported no email to match by).
     """
 

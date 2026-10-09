@@ -28,6 +28,11 @@ addopts = "--import-mode=importlib"
 testpaths = ["tests"]
 markers = ["live: needs a running Watcher server and real providers or agent CLIs"]
 
+[tool.coverage.run]
+# The HTTP suites load the real callback in a separate LiteLLM process.
+patch = ["subprocess"]
+sigterm = true
+
 [project.scripts]
 watcher-litellm-config = "watcher_litellm.config:main"
 

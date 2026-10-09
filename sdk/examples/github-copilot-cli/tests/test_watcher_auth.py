@@ -1,4 +1,4 @@
-"""Check optional Watcher Live authentication without using the developer's login."""
+"""Check optional Watcher Live authentication without using the developer's sign-in."""
 
 import asyncio
 import io
@@ -122,7 +122,7 @@ def test_setup_refuses_api_key_profiles(
         key_file=key if kind == "api_key_file" else None,
         key_env="COPILOT_TEST_KEY" if kind == "api_key_env" else None,
     )
-    with pytest.raises(ValueError, match="run setup again with a login"):
+    with pytest.raises(ValueError, match="run setup again with a sign-in"):
         install_observer(project, URL, tmp_path / "config", auth_profile=profile)
     assert not (project / HOOK_FILE).exists()
 

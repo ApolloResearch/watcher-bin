@@ -5,6 +5,7 @@ checked by the same parsers real applications use. Each case runs for Chat
 Completions, Responses and Anthropic Messages, streamed and not.
 """
 
+import time
 from typing import Any, cast
 
 import anthropic
@@ -20,13 +21,82 @@ from servers import ProviderState, WatcherState
 pytestmark = pytest.mark.usefixtures("reset_states")
 
 APIS = ["chat_completions", "responses", "messages"]
+SESSION_HEADERS = {"x-watcher-session-id": "fixture-session"}
 TOOLS: list[ChatCompletionFunctionToolParam] = [
     {"type": "function", "function": {"name": name, "parameters": {"type": "object"}}} for name in ("read_file", "rm")
 ]
 
 
+def _await_requests(state: WatcherState, count: int) -> None:
+    """Require asynchronous tail recording before a test resets the shared HTTP peer."""
+    deadline = time.monotonic() + 5
+    while len(state.requests) < count and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert len(state.requests) == count
+
+
+def _failed_stream_calls(proxy_url: str, api: str, message: str, *, default_retries: bool) -> list[str]:
+    """Read official SDK events through a terminal error and return already delivered IDs.
+
+    Responses exposes an ``error`` event instead of raising an API exception;
+    consuming that event gives the diagnostic which ``get_final_response``
+    otherwise replaces with a generic missing-completed-response exception.
+    """
+    options: dict[str, Any] = {} if default_retries else {"max_retries": 0}
+    user_message: Any = [{"role": "user", "content": "Clean up."}]
+    if api == "messages":
+        client: Any = anthropic.Anthropic(
+            base_url=proxy_url, api_key="sk-proxy", default_headers=SESSION_HEADERS, **options
+        )
+        stream = client.messages.create(model="claude-test", max_tokens=100, messages=user_message, stream=True)
+    else:
+        client = openai.OpenAI(
+            base_url=f"{proxy_url}/v1", api_key="sk-proxy", default_headers=SESSION_HEADERS, **options
+        )
+        stream = (
+            client.responses.create(model="gpt-test", input="Clean up.", stream=True)
+            if api == "responses"
+            else client.chat.completions.create(model="gpt-test", messages=user_message, stream=True)
+        )
+    events: list[dict[str, Any]] = []
+    failure: str | None = None
+    try:
+        with stream:
+            for event in stream:
+                events.append(event.model_dump())
+    except (openai.APIError, anthropic.APIError) as error:
+        failure = str(error)
+    finally:
+        client.close()
+    if api == "responses":
+        assert events[-1]["type"] == "error"
+        failure = events[-1]["message"]
+    assert failure is not None
+    assert message in failure
+    if api == "messages":
+        return [
+            event["content_block"]["id"]
+            for event in events
+            if event["type"] == "content_block_start" and event["content_block"]["type"] == "tool_use"
+        ]
+    if api == "responses":
+        return [
+            event["item"]["call_id"]
+            for event in events
+            if event["type"] == "response.output_item.added" and event["item"]["type"] == "function_call"
+        ]
+    return [
+        call["id"]
+        for event in events
+        for choice in event["choices"]
+        for call in choice["delta"].get("tool_calls") or []
+        if call.get("id")
+    ]
+
+
 def _call(proxy_url: str, api: str, stream: bool, **headers: str) -> tuple[str, list[tuple[str, str]]]:
     """Send one request through the proxy; return the reply text and its (tool name, call id) pairs."""
+    headers = {**SESSION_HEADERS, **headers}
     if api == "messages":
         client = anthropic.Anthropic(base_url=proxy_url, api_key="sk-proxy", default_headers=headers, max_retries=0)
         kwargs: dict[str, Any] = {
@@ -78,7 +148,11 @@ def _call(proxy_url: str, api: str, stream: bool, **headers: str) -> tuple[str, 
     else:
         completion = client.chat.completions.create(**chat_kwargs)
     message = completion.choices[0].message
-    return message.content or "", [(call.function.name, call.id) for call in message.tool_calls or []]
+    chat_calls: list[tuple[str, str]] = []
+    for call in message.tool_calls or []:
+        assert call.type == "function", "The fixture only declares function tools"
+        chat_calls.append((call.function.name, call.id))
+    return message.content or "", chat_calls
 
 
 @pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])
@@ -94,12 +168,14 @@ class TestProxy:
         assert [name for name, _ in calls] == ["read_file", "read_file"]
         assert len({call_id for _, call_id in calls}) == 2
         assert "withheld" not in text
-        (sent,) = watcher_state.requests
-        assert not {key for key in sent["request_body"] if key.startswith("litellm")}
-        assert sent["request_body"]["model"] in ("gpt-test", "claude-test")
-        assert ("input" if api == "responses" else "messages") in sent["request_body"]
+        _await_requests(watcher_state, 3 if stream else 1)
+        for sent in watcher_state.requests:
+            assert "litellm_call_id" not in sent["request_body"]
+            assert "litellm_metadata" not in sent["request_body"]
+            assert sent["request_body"]["model"] in ("gpt-test", "claude-test")
+            assert ("input" if api == "responses" else "messages") in sent["request_body"]
 
-    def test_any_denied_call_withholds_every_call_in_the_response(
+    def test_denial_withholds_unreleased_calls(
         self, proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, api: str, stream: bool
     ) -> None:
         provider_state.tools = ["read_file", "rm"]
@@ -107,9 +183,12 @@ class TestProxy:
 
         text, calls = _call(proxy_url, api, stream)
 
-        assert calls == []
-        assert "Watcher withheld the proposed tool calls" in text
+        expected = [("read_file", "toolu_0" if api == "messages" else "call_0")] if stream else []
+        assert calls == expected
+        assert "Watcher did not approve" in text
         assert "rm is not allowed here." in text
+        assert len(provider_state.requests) == 3
+        _await_requests(watcher_state, 3 if stream else 2)
 
     def test_text_replies_are_recorded_and_released(
         self, proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, api: str, stream: bool
@@ -117,7 +196,7 @@ class TestProxy:
         text, calls = _call(proxy_url, api, stream)
 
         assert (text.strip(), calls) == ("Hello from the provider.", [])
-        assert len(watcher_state.requests) == 1
+        _await_requests(watcher_state, 1)
 
     def test_observe_mode_releases_denied_calls(
         self, proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, api: str, stream: bool
@@ -129,6 +208,7 @@ class TestProxy:
         _, calls = _call(proxy_url, api, stream)
 
         assert [name for name, _ in calls] == ["rm"]
+        _await_requests(watcher_state, 2 if stream else 1)
 
     def test_a_call_watcher_could_not_evaluate_is_withheld(
         self, proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, api: str, stream: bool
@@ -136,10 +216,14 @@ class TestProxy:
         provider_state.tools = ["read_file"]
         watcher_state.call_error = True
 
-        text, calls = _call(proxy_url, api, stream)
-
-        assert calls == []
-        assert "Watcher could not evaluate this call." in text
+        if stream:
+            assert _failed_stream_calls(proxy_url, api, "Watcher could not evaluate", default_retries=False) == []
+            assert len(provider_state.requests) == 1
+            return
+        with pytest.raises((openai.APIStatusError, anthropic.APIStatusError)) as failed:
+            _call(proxy_url, api, stream)
+        assert failed.value.status_code == 503
+        assert len(provider_state.requests) == 1
 
     def test_watcher_outage_fails_closed(
         self, proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, api: str, stream: bool
@@ -147,15 +231,21 @@ class TestProxy:
         provider_state.tools = ["read_file"]
         watcher_state.fail_status = 503
 
+        if stream:
+            assert (
+                _failed_stream_calls(proxy_url, api, "Watcher could not evaluate this response", default_retries=False)
+                == []
+            )
+            return
         with pytest.raises((openai.APIError, anthropic.APIError)):
             _call(proxy_url, api, stream)
 
 
 def _default_retry_call(proxy_url: str, api: str, stream: bool) -> list[str]:
     """One request through the proxy with the official client's default retries; return delivered tool names."""
-    messages = [{"role": "user", "content": "Clean up."}]
+    messages: list[anthropic.types.MessageParam] = [{"role": "user", "content": "Clean up."}]
     if api == "messages":
-        client = anthropic.Anthropic(base_url=proxy_url, api_key="sk-proxy")
+        client = anthropic.Anthropic(base_url=proxy_url, api_key="sk-proxy", default_headers=SESSION_HEADERS)
         tools: list[Any] = [{"name": "read_file", "input_schema": {"type": "object"}}]
         if stream:
             with client.messages.stream(model="claude-test", max_tokens=100, messages=messages, tools=tools) as s:
@@ -163,7 +253,7 @@ def _default_retry_call(proxy_url: str, api: str, stream: bool) -> list[str]:
         else:
             message = client.messages.create(model="claude-test", max_tokens=100, messages=messages, tools=tools)
         return [block.name for block in message.content if block.type == "tool_use"]
-    openai_client = openai.OpenAI(base_url=f"{proxy_url}/v1", api_key="sk-proxy")
+    openai_client = openai.OpenAI(base_url=f"{proxy_url}/v1", api_key="sk-proxy", default_headers=SESSION_HEADERS)
     if api == "responses":
         response_kwargs: ResponseCreateParamsBase = {"model": "gpt-test", "input": "Clean up."}
         if stream:
@@ -181,13 +271,17 @@ def _default_retry_call(proxy_url: str, api: str, stream: bool) -> list[str]:
             completion = events.get_final_completion()
     else:
         completion = openai_client.chat.completions.create(**chat_kwargs)
-    return [call.function.name for call in completion.choices[0].message.tool_calls or []]
+    names = []
+    for call in completion.choices[0].message.tool_calls or []:
+        assert call.type == "function", "The fixture only declares function tools"
+        names.append(call.function.name)
+    return names
 
 
 @pytest.mark.parametrize("watcher_status", [401, 403, 413, 422])
 @pytest.mark.parametrize(
     ("api", "stream"),
-    [(api, stream) for api in APIS for stream in (False, True) if (api, stream) != ("messages", True)],
+    [(api, stream) for api in APIS for stream in (False, True)],
 )
 def test_permanent_watcher_errors_are_not_retried_by_clients(
     proxy_url: str,
@@ -201,28 +295,14 @@ def test_permanent_watcher_errors_are_not_retried_by_clients(
     provider_state.tools = ["read_file"]
     watcher_state.fail_status = watcher_status
 
-    with pytest.raises((openai.APIStatusError, anthropic.APIStatusError)) as refused:
-        _default_retry_call(proxy_url, api, stream)
-
-    assert refused.value.status_code == 422
-    assert len(provider_state.requests) == 1
-    assert len(watcher_state.requests) == 1
-
-
-@pytest.mark.parametrize("watcher_status", [401, 403, 413, 422])
-def test_permanent_watcher_errors_end_a_messages_stream_with_an_error_clients_do_not_retry(
-    proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, watcher_status: int
-) -> None:
-    provider_state.tools = ["read_file"]
-    watcher_state.fail_status = watcher_status
-
-    with pytest.raises(anthropic.APIStatusError) as refused:
-        _default_retry_call(proxy_url, "messages", stream=True)
-
-    assert refused.value.body == {
-        "type": "error",
-        "error": {"type": "invalid_request_error", "message": "Watcher could not evaluate this response"},
-    }
+    if stream:
+        assert (
+            _failed_stream_calls(proxy_url, api, "Watcher could not evaluate this response", default_retries=True) == []
+        )
+    else:
+        with pytest.raises((openai.APIStatusError, anthropic.APIStatusError)) as refused:
+            _default_retry_call(proxy_url, api, stream)
+        assert refused.value.status_code == 422
     assert len(provider_state.requests) == 1
     assert len(watcher_state.requests) == 1
 
@@ -232,24 +312,33 @@ def test_permanent_watcher_errors_end_a_messages_stream_with_an_error_clients_do
 def test_incomplete_responses_stream_is_delivered_once(
     proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, reason: str, tool: str, released: bool
 ) -> None:
-    """The client gets the incomplete response as a provider would send it, with calls withheld as usual."""
+    """Allowed calls retain incomplete status; denied alternatives end with a normal notice."""
     provider_state.tools = [tool]
     provider_state.responses_incomplete = reason
     watcher_state.deny = {"rm"}
-    client = openai.OpenAI(base_url=f"{proxy_url}/v1", api_key="sk-proxy")
+    client = openai.OpenAI(base_url=f"{proxy_url}/v1", api_key="sk-proxy", default_headers=SESSION_HEADERS)
 
     events = list(client.responses.create(model="gpt-test", input="Clean up.", stream=True))
 
     final = events[-1]
+    if not released:
+        assert final.type == "response.completed" or final.type == "response.incomplete"
+        assert not any(item.type == "function_call" for item in final.response.output)
+        assert "rm is not allowed here." in final.response.output_text
+        assert len(provider_state.requests) == 3
+        _await_requests(watcher_state, 2)
+        return
     assert final.type == "response.incomplete"
     assert final.response.incomplete_details is not None
     assert final.response.incomplete_details.reason == reason
-    delivered = {getattr(event, "item", None) and event.item.type for event in events} | {
-        item.type for item in final.response.output
-    }
+    delivered = {
+        event.item.type
+        for event in events
+        if event.type == "response.output_item.added" or event.type == "response.output_item.done"
+    } | {item.type for item in final.response.output}
     assert ("function_call" in delivered) is released
     assert len(provider_state.requests) == 1
-    assert len(watcher_state.requests) == 1
+    _await_requests(watcher_state, 2)
 
 
 def test_a_provider_error_before_the_stream_starts_is_retried_and_only_the_complete_one_evaluated(
@@ -263,23 +352,19 @@ def test_a_provider_error_before_the_stream_starts_is_retried_and_only_the_compl
 
     assert delivered == ["read_file"]
     assert len(provider_state.requests) == 2
-    assert len(watcher_state.requests) == 1
+    _await_requests(watcher_state, 2)
 
 
-def test_a_truncated_provider_stream_ends_with_a_retryable_error_and_is_not_evaluated(
+def test_a_truncated_provider_stream_errors_after_releasing_only_evaluated_calls(
     proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState
 ) -> None:
     provider_state.tools = ["read_file"]
     provider_state.stream_faults = ["truncate"]
 
-    with pytest.raises(anthropic.APIStatusError) as failed:
-        _default_retry_call(proxy_url, "messages", stream=True)
-
-    assert failed.value.body == {
-        "type": "error",
-        "error": {"type": "overloaded_error", "message": "Model response stream was incomplete"},
-    }
-    assert len(watcher_state.requests) == 0
+    assert _failed_stream_calls(
+        proxy_url, "messages", "Model response stream was incomplete", default_retries=True
+    ) == ["toolu_0"]
+    assert len(watcher_state.requests) == 1
 
 
 @pytest.mark.parametrize("api", APIS)
@@ -296,20 +381,28 @@ def test_session_header_and_user_agent_reach_watcher(proxy_url: str, watcher_sta
 
 
 @pytest.mark.parametrize("api", APIS)
-def test_requests_without_a_session_header_carry_no_conversation_id(
-    proxy_url: str, watcher_state: WatcherState, api: str
+@pytest.mark.parametrize("stream", [False, True])
+def test_requests_without_identity_are_refused_before_the_provider_runs(
+    proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, api: str, stream: bool
 ) -> None:
-    _call(proxy_url, api, False)
-    _call(proxy_url, api, True)
-
-    assert len(watcher_state.requests) == 2
-    assert all("external_ids" not in sent for sent in watcher_state.requests)
+    path = {"chat_completions": "chat/completions", "messages": "messages", "responses": "responses"}[api]
+    body: dict[str, Any] = {"model": "claude-test" if api == "messages" else "gpt-test", "stream": stream}
+    if api == "responses":
+        body["input"] = "Clean up."
+    else:
+        body["messages"] = [{"role": "user", "content": "Clean up."}]
+    if api == "messages":
+        body["max_tokens"] = 100
+    response = httpx.post(f"{proxy_url}/v1/{path}", headers={"authorization": "Bearer sk-proxy"}, json=body)
+    assert response.status_code == 400
+    assert provider_state.requests == []
+    assert watcher_state.requests == []
 
 
 def test_multiple_choices_are_refused_before_the_provider_runs(proxy_url: str, provider_state: ProviderState) -> None:
     response = httpx.post(
         f"{proxy_url}/v1/chat/completions",
-        headers={"authorization": "Bearer sk-proxy"},
+        headers={"authorization": "Bearer sk-proxy", **SESSION_HEADERS},
         json={"model": "gpt-test", "n": 2, "messages": [{"role": "user", "content": "hi"}]},
     )
 
@@ -320,7 +413,7 @@ def test_multiple_choices_are_refused_before_the_provider_runs(proxy_url: str, p
 def test_server_stored_responses_history_is_refused(proxy_url: str, provider_state: ProviderState) -> None:
     response = httpx.post(
         f"{proxy_url}/v1/responses",
-        headers={"authorization": "Bearer sk-proxy"},
+        headers={"authorization": "Bearer sk-proxy", **SESSION_HEADERS},
         json={"model": "gpt-test", "input": "hi", "previous_response_id": "resp_earlier"},
     )
 
@@ -336,7 +429,7 @@ def test_client_metadata_is_forwarded_except_litellms_chat_slot(proxy_url: str, 
     ):
         httpx.post(
             f"{proxy_url}{path}",
-            headers={"authorization": "Bearer sk-proxy"},
+            headers={"authorization": "Bearer sk-proxy", **SESSION_HEADERS},
             json={**body, "messages": [{"role": "user", "content": "hi"}]},
         ).raise_for_status()
 

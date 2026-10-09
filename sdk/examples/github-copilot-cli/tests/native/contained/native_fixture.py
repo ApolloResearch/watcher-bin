@@ -256,7 +256,7 @@ if SLUG == "github-copilot-cli":
     # The interactive scenario grades two turns retrospectively; the enforce demo only records.
     demo = "hooks.observe.json" if SCENARIO in {"observe", "interactive"} else "hooks.enforce.json"
     configuration = json.loads((Path("demo") / demo).read_text())
-    # Hooks authenticate only with the login their configuration names; the demos
+    # Hooks authenticate only with the sign-in their configuration names; the demos
     # leave a placeholder for the path setup would print.
     hook_config = login_configuration(Path.home() / "watcher-config" / "config.json", ROOT, url)
     for kind, hooks in configuration["hooks"].items():

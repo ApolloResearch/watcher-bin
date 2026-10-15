@@ -7,7 +7,7 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..models.session_content_access_request_status import (
     SessionContentAccessRequestStatus,
@@ -87,7 +87,7 @@ class SessionContentAccessRequestSummary:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         id = UUID(d.pop("id"))
 
@@ -95,7 +95,7 @@ class SessionContentAccessRequestSummary:
 
         status = SessionContentAccessRequestStatus(d.pop("status"))
 
-        raised_at = isoparse(d.pop("raised_at"))
+        raised_at = datetime.datetime.fromisoformat(d.pop("raised_at"))
 
         def _parse_reviewed_at(data: object) -> datetime.datetime | None:
             if data is None:
@@ -103,7 +103,7 @@ class SessionContentAccessRequestSummary:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                reviewed_at_type_0 = isoparse(data)
+                reviewed_at_type_0 = datetime.datetime.fromisoformat(data)
 
                 return reviewed_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
@@ -118,7 +118,7 @@ class SessionContentAccessRequestSummary:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                valid_until_type_0 = isoparse(data)
+                valid_until_type_0 = datetime.datetime.fromisoformat(data)
 
                 return valid_until_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
@@ -133,7 +133,7 @@ class SessionContentAccessRequestSummary:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                revoked_at_type_0 = isoparse(data)
+                revoked_at_type_0 = datetime.datetime.fromisoformat(data)
 
                 return revoked_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):

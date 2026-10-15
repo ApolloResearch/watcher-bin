@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ScrubbedToolCallListItemCoverageState(str, Enum):
+class ScrubbedToolCallListItemCoverageState(StrEnum):
     BYPASSED = "bypassed"
     DECIDED = "decided"
     GRADING_ERROR = "grading_error"

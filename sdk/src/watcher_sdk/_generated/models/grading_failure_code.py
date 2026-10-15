@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class GradingFailureCode(str, Enum):
+class GradingFailureCode(StrEnum):
     ALLOWANCE_EXHAUSTED = "allowance_exhausted"
     AT_CAPACITY = "at_capacity"
     GRADER_FAILED = "grader_failed"

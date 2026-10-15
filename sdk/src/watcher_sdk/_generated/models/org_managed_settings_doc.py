@@ -6,7 +6,7 @@ from typing import Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -29,6 +29,8 @@ class OrgManagedSettingsDoc:
             version (int | Unset):  Default: 0.
             updated_at (datetime.datetime | None | Unset):
             updated_by (None | str | Unset):
+            warnings (list[str] | Unset): Human-readable notices about a document a save just stored; empty when there are
+                none and on reads.
     """
 
     path: str
@@ -36,6 +38,7 @@ class OrgManagedSettingsDoc:
     version: int | Unset = 0
     updated_at: datetime.datetime | None | Unset = UNSET
     updated_by: None | str | Unset = UNSET
+    warnings: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -63,6 +66,10 @@ class OrgManagedSettingsDoc:
         else:
             updated_by = self.updated_by
 
+        warnings: list[str] | Unset = UNSET
+        if not isinstance(self.warnings, Unset):
+            warnings = self.warnings
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -78,11 +85,13 @@ class OrgManagedSettingsDoc:
             field_dict["updated_at"] = updated_at
         if updated_by is not UNSET:
             field_dict["updated_by"] = updated_by
+        if warnings is not UNSET:
+            field_dict["warnings"] = warnings
 
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         path = d.pop("path")
 
@@ -105,7 +114,7 @@ class OrgManagedSettingsDoc:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                updated_at_type_0 = isoparse(data)
+                updated_at_type_0 = datetime.datetime.fromisoformat(data)
 
                 return updated_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
@@ -123,12 +132,15 @@ class OrgManagedSettingsDoc:
 
         updated_by = _parse_updated_by(d.pop("updated_by", UNSET))
 
+        warnings = cast(list[str], d.pop("warnings", UNSET))
+
         org_managed_settings_doc = cls(
             path=path,
             yaml=yaml,
             version=version,
             updated_at=updated_at,
             updated_by=updated_by,
+            warnings=warnings,
         )
 
         org_managed_settings_doc.additional_properties = d

@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class CodexHookRequestMode(str, Enum):
+class CodexHookRequestMode(StrEnum):
     FULL = "full"
     TRIAGE_ONLY = "triage_only"
 

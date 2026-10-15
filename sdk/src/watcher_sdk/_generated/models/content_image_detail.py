@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ContentImageDetail(str, Enum):
+class ContentImageDetail(StrEnum):
     AUTO = "auto"
     HIGH = "high"
     LOW = "low"

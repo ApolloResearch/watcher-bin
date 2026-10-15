@@ -1,0 +1,14 @@
+# Blocking review: merge into the Hermes profile's config.yaml (~/.hermes/config.yaml).
+# Generate the real block with `watcher-hermes hooks --watcher-url ...`; it fills in the
+# interpreter path below. Do not install this file with the placeholder still in it.
+hooks:
+  pre_tool_call:
+    - command: "/path/to/watcher-example-hermes/.venv/bin/python -m watcher_hermes gate --watcher-url https://your-watcher-api.example/api"
+      timeout: 300
+      fail_closed: true
+  on_session_end:
+    - command: "/path/to/watcher-example-hermes/.venv/bin/python -m watcher_hermes record --watcher-url https://your-watcher-api.example/api"
+      timeout: 60
+plugins:
+  # Hermes otherwise abandons a pre_tool_call hook after 30 seconds and refuses the call.
+  hook_callback_timeout: 300

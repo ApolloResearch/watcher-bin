@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ActivatedMonitorsResponseDistribution(str, Enum):
+class ActivatedMonitorsResponseDistribution(StrEnum):
     MDM = "mdm"
     WATCHER = "watcher"
 

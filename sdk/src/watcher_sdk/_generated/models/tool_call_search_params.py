@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
+from typing_extensions import Self
 
 from ..models.tool_call_search_params_sort_by import ToolCallSearchParamsSortBy
 from ..models.tool_call_search_params_sort_order import ToolCallSearchParamsSortOrder
@@ -73,8 +74,10 @@ class ToolCallSearchParams:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.tool_call_search_filters import ToolCallSearchFilters
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.tool_call_search_filters import (
+            ToolCallSearchFilters,
+        )
 
         d = dict(src_dict)
         limit = d.pop("limit", UNSET)

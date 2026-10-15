@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class HumanDecision(str, Enum):
+class HumanDecision(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
 

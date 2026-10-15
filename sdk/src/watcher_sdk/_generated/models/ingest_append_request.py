@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.claude_code_trajectory import ClaudeCodeTrajectory
     from ..models.codex_trajectory import CodexTrajectory
+    from ..models.copilot_trajectory import CopilotTrajectory
 
 
 T = TypeVar("T", bound="IngestAppendRequest")
@@ -28,20 +30,25 @@ class IngestAppendRequest:
 
         Attributes:
             source (str):
-            trajectory (ClaudeCodeTrajectory | CodexTrajectory):
+            trajectory (ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory):
     """
 
     source: str
-    trajectory: ClaudeCodeTrajectory | CodexTrajectory
+    trajectory: ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.claude_code_trajectory import ClaudeCodeTrajectory
+        from ..models.claude_code_trajectory import (
+            ClaudeCodeTrajectory,
+        )
+        from ..models.codex_trajectory import CodexTrajectory
 
         source = self.source
 
         trajectory: dict[str, Any]
-        if isinstance(self.trajectory, ClaudeCodeTrajectory):
+        if isinstance(self.trajectory, ClaudeCodeTrajectory) or isinstance(
+            self.trajectory, CodexTrajectory
+        ):
             trajectory = self.trajectory.to_dict()
         else:
             trajectory = self.trajectory.to_dict()
@@ -58,14 +65,19 @@ class IngestAppendRequest:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.claude_code_trajectory import ClaudeCodeTrajectory
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.claude_code_trajectory import (
+            ClaudeCodeTrajectory,
+        )
         from ..models.codex_trajectory import CodexTrajectory
+        from ..models.copilot_trajectory import CopilotTrajectory
 
         d = dict(src_dict)
         source = d.pop("source")
 
-        def _parse_trajectory(data: object) -> ClaudeCodeTrajectory | CodexTrajectory:
+        def _parse_trajectory(
+            data: object,
+        ) -> ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory:
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
@@ -74,11 +86,19 @@ class IngestAppendRequest:
                 return trajectory_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                trajectory_type_1 = CodexTrajectory.from_dict(data)
+
+                return trajectory_type_1
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
             if not isinstance(data, dict):
                 raise TypeError()
-            trajectory_type_1 = CodexTrajectory.from_dict(data)
+            trajectory_type_2 = CopilotTrajectory.from_dict(data)
 
-            return trajectory_type_1
+            return trajectory_type_2
 
         trajectory = _parse_trajectory(d.pop("trajectory"))
 

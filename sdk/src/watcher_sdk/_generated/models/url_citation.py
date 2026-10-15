@@ -11,6 +11,7 @@ from typing import (
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -41,7 +42,9 @@ class UrlCitation:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.url_citation_internal_type_0 import UrlCitationInternalType0
+        from ..models.url_citation_internal_type_0 import (
+            UrlCitationInternalType0,
+        )
 
         url = self.url
 
@@ -89,8 +92,10 @@ class UrlCitation:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.url_citation_internal_type_0 import UrlCitationInternalType0
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.url_citation_internal_type_0 import (
+            UrlCitationInternalType0,
+        )
 
         d = dict(src_dict)
         url = d.pop("url")

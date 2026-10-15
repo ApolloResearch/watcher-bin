@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class AppliedDecision(str, Enum):
+class AppliedDecision(StrEnum):
     ALLOW = "allow"
     DEFERRED = "deferred"
     DENY = "deny"

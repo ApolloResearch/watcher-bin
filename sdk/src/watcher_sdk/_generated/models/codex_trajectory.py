@@ -12,7 +12,7 @@ from typing import (
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -88,14 +88,14 @@ class CodexTrajectory:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.codex_entry import CodexEntry
         from ..models.codex_trajectory_metadata_type_0 import (
             CodexTrajectoryMetadataType0,
         )
 
         d = dict(src_dict)
-        timestamp = isoparse(d.pop("timestamp"))
+        timestamp = datetime.datetime.fromisoformat(d.pop("timestamp"))
 
         format_ = cast(Literal["codex-jsonl"], d.pop("format"))
         if format_ != "codex-jsonl":

@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionContentAccessRequestStatus(str, Enum):
+class SessionContentAccessRequestStatus(StrEnum):
     APPROVED = "approved"
     DENIED = "denied"
     PENDING = "pending"

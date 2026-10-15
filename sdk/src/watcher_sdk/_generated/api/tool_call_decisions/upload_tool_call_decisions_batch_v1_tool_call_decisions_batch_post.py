@@ -82,6 +82,12 @@ def sync_detailed(
     decisions newly inserted by this call, so re-pushes (e.g. pending ->
     resolved) do not re-notify.
 
+    Any synced decision also asks for a session summary after the response
+    (``request_summary_safely``, which queues one only when due): a
+    decision, new or updated, can link the triage grade of a call graded before
+    the client knew the session's id, which the grading route could not
+    attribute to the session at the time.
+
     Args:
         body (ToolCallDecisionBatchRequest): Batch upload tool-call decisions after transcript
             ingest.
@@ -131,6 +137,12 @@ def sync(
     decisions newly inserted by this call, so re-pushes (e.g. pending ->
     resolved) do not re-notify.
 
+    Any synced decision also asks for a session summary after the response
+    (``request_summary_safely``, which queues one only when due): a
+    decision, new or updated, can link the triage grade of a call graded before
+    the client knew the session's id, which the grading route could not
+    attribute to the session at the time.
+
     Args:
         body (ToolCallDecisionBatchRequest): Batch upload tool-call decisions after transcript
             ingest.
@@ -174,6 +186,12 @@ async def asyncio_detailed(
     Analyzer deep link available. Alerts fire once per decision — only for
     decisions newly inserted by this call, so re-pushes (e.g. pending ->
     resolved) do not re-notify.
+
+    Any synced decision also asks for a session summary after the response
+    (``request_summary_safely``, which queues one only when due): a
+    decision, new or updated, can link the triage grade of a call graded before
+    the client knew the session's id, which the grading route could not
+    attribute to the session at the time.
 
     Args:
         body (ToolCallDecisionBatchRequest): Batch upload tool-call decisions after transcript
@@ -221,6 +239,12 @@ async def asyncio(
     Analyzer deep link available. Alerts fire once per decision — only for
     decisions newly inserted by this call, so re-pushes (e.g. pending ->
     resolved) do not re-notify.
+
+    Any synced decision also asks for a session summary after the response
+    (``request_summary_safely``, which queues one only when due): a
+    decision, new or updated, can link the triage grade of a call graded before
+    the client knew the session's id, which the grading route could not
+    attribute to the session at the time.
 
     Args:
         body (ToolCallDecisionBatchRequest): Batch upload tool-call decisions after transcript

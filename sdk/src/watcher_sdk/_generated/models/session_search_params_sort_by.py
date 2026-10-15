@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionSearchParamsSortBy(str, Enum):
+class SessionSearchParamsSortBy(StrEnum):
     DECISIONS = "decisions"
     ENDED_AT = "ended_at"
     GRADING_STATUS = "grading_status"

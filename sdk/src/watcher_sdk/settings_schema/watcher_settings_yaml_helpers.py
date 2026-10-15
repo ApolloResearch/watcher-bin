@@ -6,8 +6,9 @@ import fnmatch
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
+from watcher_sdk.settings_schema.agent_enablement import locked_agent_override_names, merge_agent_enablement
 from watcher_sdk.settings_schema.settings_values import is_setting_value as _shared_is_setting_value
 from watcher_sdk.settings_schema.settings_values import unwrap_setting_value
 from watcher_sdk.settings_schema.watcher_settings_yaml_schema import (
@@ -61,6 +62,8 @@ def merge_admin(base: Any, overlay: Any) -> Any:
 
 
 def _merge_admin_value(base: Any, overlay: Any, path: tuple[str, ...]) -> Any:
+    if path == ("agents", "enabled"):
+        return merge_agent_enablement(base, overlay, "modifiable", enforce_permissions=False, permission_base=None)
     if is_setting_value(overlay):
         return overlay
     if isinstance(base, dict) and isinstance(overlay, dict):
@@ -88,6 +91,15 @@ def merge_profile_admin(base: Any, overlay: Any, permission_root: dict[str, Any]
 def _merge_profile_admin_value(base: Any, overlay: Any, permission_root: dict[str, Any], path: tuple[str, ...]) -> Any:
     if path_permission(permission_root, path) == "locked":
         return base
+    if path == ("agents", "enabled"):
+        return merge_agent_enablement(
+            base,
+            overlay,
+            path_permission(permission_root, path),
+            enforce_permissions=True,
+            permission_base=get_path_or_none(permission_root, path),
+            preserve_overlay_permissions=True,
+        )
     if is_setting_value(overlay):
         return overlay
     if isinstance(base, dict) and isinstance(overlay, dict):
@@ -110,6 +122,8 @@ def merge_profile_local(base: Any, overlay: Any) -> Any:
 
 
 def _merge_profile_local_value(base: Any, overlay: Any, path: tuple[str, ...]) -> Any:
+    if path == ("agents", "enabled"):
+        return merge_agent_enablement(base, overlay, "modifiable", enforce_permissions=True, permission_base=base)
     permission = node_permission(base)
     if permission == "locked":
         return base
@@ -123,7 +137,7 @@ def _merge_profile_local_value(base: Any, overlay: Any, path: tuple[str, ...]) -
         if path == ("tool_thresholds",):
             return _merge_profile_tool_thresholds(base, overlay, base, path, _merge_profile_local_value)
         return _merge_local_mapping(base, overlay, path, permission, _merge_profile_local_value)
-    return merge_local(base, overlay)
+    return _merge_local_value(base, overlay, path)
 
 
 def _merge_local_mapping(
@@ -139,6 +153,22 @@ def _merge_local_mapping(
             if key == "permission":
                 continue
             value = unwrap_composite_wrappers(value)
+            if path == () and key == "agents" and isinstance(value, dict):
+                prior = result.get(key)
+                prior = prior if isinstance(prior, dict) else {}
+                child_permission = combine_permissions(permission, node_permission(prior))
+                if child_permission != "locked":
+                    result[key] = _merge_local_mapping(prior, value, ("agents",), child_permission, merge_child)
+                continue
+            if path == ("agents",) and key == "enabled":
+                result[key] = merge_agent_enablement(
+                    result.get(key),
+                    value,
+                    permission,
+                    enforce_permissions=True,
+                    permission_base=result.get(key),
+                )
+                continue
             if key == "rules" and isinstance(result.get("rules"), list) and isinstance(value, list):
                 result[key] = merge_rule_lists(
                     result["rules"],
@@ -253,17 +283,23 @@ def merge_local(base: Any, overlay: Any) -> Any:
     a machine's local file; `locked_override_paths` is the reporting
     twin for callers that must be told.
     """
+    return _merge_local_value(base, overlay, ())
+
+
+def _merge_local_value(base: JsonValue, overlay: JsonValue, path: tuple[str, ...]) -> JsonValue:
+    if path == ("agents", "enabled"):
+        return merge_agent_enablement(base, overlay, "modifiable", enforce_permissions=True, permission_base=base)
     permission = node_permission(base)
     if permission == "locked":
         return base
     if is_setting_value(overlay):
         if _is_composite(base):
-            return merge_local(base, unwrap(overlay))
+            return _merge_local_value(base, unwrap(overlay), path)
         if permission == "additions_allowed":
             return base
         return replace_preserving_permission(base, unwrap(overlay))
     if isinstance(base, dict) and isinstance(overlay, dict):
-        return _merge_local_mapping(base, overlay, (), permission, _merge_local_child)
+        return _merge_local_mapping(base, overlay, path, permission, _merge_local_child)
     if isinstance(base, list) and isinstance(overlay, list):
         return list(overlay) if permission == "modifiable" and not _locked_descendants(base, ()) else base
     if permission == "additions_allowed" or _locked_descendants(base, ()):
@@ -325,10 +361,16 @@ def _locked_descendants(node: Any, path: tuple[str, ...]) -> list[str]:
 
 
 def _merge_local_child(base: Any, overlay: Any, path: tuple[str, ...]) -> Any:
-    return merge_local(base, overlay)
+    return _merge_local_value(base, overlay, path)
 
 
-def locked_override_paths(base: Any, overlay: Any, path: tuple[str, ...] = ()) -> list[str]:
+def locked_override_paths(
+    base: Any,
+    overlay: Any,
+    path: tuple[str, ...] = (),
+    *,
+    inherited_permission: Permission = "modifiable",
+) -> list[str]:
     """Dotted paths where `merge_local` would silently keep the base.
 
     `merge_local` prunes a disallowed override without complaint — the right
@@ -341,9 +383,11 @@ def locked_override_paths(base: Any, overlay: Any, path: tuple[str, ...] = ()) -
     the whole overlay. Kept adjacent to the merge so the two evolve together.
     """
     dotted = ".".join(path) if path else "<root>"
-    permission = node_permission(base)
+    permission = combine_permissions(inherited_permission, node_permission(base))
     if permission == "locked":
         return [dotted]
+    if path == ("agents", "enabled"):
+        return [".".join((*path, name)) for name in locked_agent_override_names(base, overlay, permission)]
     if is_setting_value(overlay):
         if _is_composite(base):
             return locked_override_paths(base, unwrap(overlay), path)
@@ -360,6 +404,16 @@ def locked_override_paths(base: Any, overlay: Any, path: tuple[str, ...] = ()) -
             if key == "rules" and isinstance(base.get("rules"), list) and isinstance(value, list):
                 violations.extend(_locked_rule_overrides(base["rules"], value, permission, child_path))
             elif permission == "additions_allowed":
+                if child_path in (("agents",), ("agents", "enabled")):
+                    violations.extend(
+                        locked_override_paths(
+                            base.get(key),
+                            value,
+                            child_path,
+                            inherited_permission=permission,
+                        )
+                    )
+                    continue
                 # New keys are the allowed additions; lists extend in place.
                 if isinstance(base.get(key), list) and isinstance(value, list):
                     continue

@@ -11,6 +11,7 @@ from typing import (
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -73,9 +74,9 @@ class ContentText:
             citations = []
             for citations_type_0_item_data in self.citations:
                 citations_type_0_item: dict[str, Any]
-                if isinstance(citations_type_0_item_data, ContentCitation):
-                    citations_type_0_item = citations_type_0_item_data.to_dict()
-                elif isinstance(citations_type_0_item_data, DocumentCitation):
+                if isinstance(
+                    citations_type_0_item_data, ContentCitation
+                ) or isinstance(citations_type_0_item_data, DocumentCitation):
                     citations_type_0_item = citations_type_0_item_data.to_dict()
                 else:
                     citations_type_0_item = citations_type_0_item_data.to_dict()
@@ -112,7 +113,7 @@ class ContentText:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.content_citation import ContentCitation
         from ..models.document_citation import DocumentCitation
         from ..models.url_citation import UrlCitation

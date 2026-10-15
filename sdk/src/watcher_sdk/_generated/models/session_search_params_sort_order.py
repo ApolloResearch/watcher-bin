@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionSearchParamsSortOrder(str, Enum):
+class SessionSearchParamsSortOrder(StrEnum):
     ASC = "asc"
     DESC = "desc"
 

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..models.session_aggregates_response_severity_threshold import (
     SessionAggregatesResponseSeverityThreshold,
@@ -91,9 +92,13 @@ class SessionAggregatesResponse:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.session_analytics_summary import SessionAnalyticsSummary
-        from ..models.session_analytics_trend_point import SessionAnalyticsTrendPoint
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.session_analytics_summary import (
+            SessionAnalyticsSummary,
+        )
+        from ..models.session_analytics_trend_point import (
+            SessionAnalyticsTrendPoint,
+        )
 
         d = dict(src_dict)
         severity_threshold = SessionAggregatesResponseSeverityThreshold(

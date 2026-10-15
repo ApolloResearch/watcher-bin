@@ -7,6 +7,7 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.claude_code_hook_request import ClaudeCodeHookRequest
 from ...models.codex_hook_request import CodexHookRequest
+from ...models.copilot_hook_request import CopilotHookRequest
 from ...models.hook_append_response import HookAppendResponse
 from ...models.hook_call_error import HookCallError
 from ...models.http_validation_error import HTTPValidationError
@@ -20,6 +21,7 @@ def _get_kwargs(
     *,
     body: ClaudeCodeHookRequest
     | CodexHookRequest
+    | CopilotHookRequest
     | PreToolUseHookRequest
     | RawPreToolUseHookRequest,
 ) -> dict[str, Any]:
@@ -30,11 +32,12 @@ def _get_kwargs(
         "url": "/v1/hooks/pre-tool-use",
     }
 
-    if isinstance(body, PreToolUseHookRequest):
-        _kwargs["json"] = body.to_dict()
-    elif isinstance(body, ClaudeCodeHookRequest):
-        _kwargs["json"] = body.to_dict()
-    elif isinstance(body, CodexHookRequest):
+    if (
+        isinstance(body, PreToolUseHookRequest)
+        or isinstance(body, ClaudeCodeHookRequest)
+        or isinstance(body, CodexHookRequest)
+        or isinstance(body, CopilotHookRequest)
+    ):
         _kwargs["json"] = body.to_dict()
     else:
         _kwargs["json"] = body.to_dict()
@@ -166,6 +169,7 @@ def sync_detailed(
     client: AuthenticatedClient | Client,
     body: ClaudeCodeHookRequest
     | CodexHookRequest
+    | CopilotHookRequest
     | PreToolUseHookRequest
     | RawPreToolUseHookRequest,
 ) -> Response[
@@ -175,7 +179,7 @@ def sync_detailed(
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
 ]:
-    r"""Pre Tool Use Hook
+    """Pre Tool Use Hook
 
      Evaluate one or several pending calls, or accept a transcript with no pending call.
 
@@ -227,7 +231,7 @@ def sync_detailed(
     ingests. Concurrent misses and retries before post-response recording may
     evaluate more than once. Paused mode never evaluates, even when forced.
 
-    With `format=\"raw\"`, send a provider request (`request_body`) and its
+    With `format="raw"`, send a provider request (`request_body`) and its
     complete response (`response_body`) in one supported wire format (OpenAI
     Chat Completions or Responses, Anthropic Messages, Gemini generateContent
     or Bedrock Converse) plus the client-facing endpoint path in `url`, instead
@@ -254,8 +258,8 @@ def sync_detailed(
     executable calls.
 
     Args:
-        body (ClaudeCodeHookRequest | CodexHookRequest | PreToolUseHookRequest |
-            RawPreToolUseHookRequest):
+        body (ClaudeCodeHookRequest | CodexHookRequest | CopilotHookRequest |
+            PreToolUseHookRequest | RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -281,6 +285,7 @@ def sync(
     client: AuthenticatedClient | Client,
     body: ClaudeCodeHookRequest
     | CodexHookRequest
+    | CopilotHookRequest
     | PreToolUseHookRequest
     | RawPreToolUseHookRequest,
 ) -> (
@@ -291,7 +296,7 @@ def sync(
     | PreToolUseHookResponse
     | None
 ):
-    r"""Pre Tool Use Hook
+    """Pre Tool Use Hook
 
      Evaluate one or several pending calls, or accept a transcript with no pending call.
 
@@ -343,7 +348,7 @@ def sync(
     ingests. Concurrent misses and retries before post-response recording may
     evaluate more than once. Paused mode never evaluates, even when forced.
 
-    With `format=\"raw\"`, send a provider request (`request_body`) and its
+    With `format="raw"`, send a provider request (`request_body`) and its
     complete response (`response_body`) in one supported wire format (OpenAI
     Chat Completions or Responses, Anthropic Messages, Gemini generateContent
     or Bedrock Converse) plus the client-facing endpoint path in `url`, instead
@@ -370,8 +375,8 @@ def sync(
     executable calls.
 
     Args:
-        body (ClaudeCodeHookRequest | CodexHookRequest | PreToolUseHookRequest |
-            RawPreToolUseHookRequest):
+        body (ClaudeCodeHookRequest | CodexHookRequest | CopilotHookRequest |
+            PreToolUseHookRequest | RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -392,6 +397,7 @@ async def asyncio_detailed(
     client: AuthenticatedClient | Client,
     body: ClaudeCodeHookRequest
     | CodexHookRequest
+    | CopilotHookRequest
     | PreToolUseHookRequest
     | RawPreToolUseHookRequest,
 ) -> Response[
@@ -401,7 +407,7 @@ async def asyncio_detailed(
     | list[HookCallError | PreToolUseHookResponse]
     | PreToolUseHookResponse
 ]:
-    r"""Pre Tool Use Hook
+    """Pre Tool Use Hook
 
      Evaluate one or several pending calls, or accept a transcript with no pending call.
 
@@ -453,7 +459,7 @@ async def asyncio_detailed(
     ingests. Concurrent misses and retries before post-response recording may
     evaluate more than once. Paused mode never evaluates, even when forced.
 
-    With `format=\"raw\"`, send a provider request (`request_body`) and its
+    With `format="raw"`, send a provider request (`request_body`) and its
     complete response (`response_body`) in one supported wire format (OpenAI
     Chat Completions or Responses, Anthropic Messages, Gemini generateContent
     or Bedrock Converse) plus the client-facing endpoint path in `url`, instead
@@ -480,8 +486,8 @@ async def asyncio_detailed(
     executable calls.
 
     Args:
-        body (ClaudeCodeHookRequest | CodexHookRequest | PreToolUseHookRequest |
-            RawPreToolUseHookRequest):
+        body (ClaudeCodeHookRequest | CodexHookRequest | CopilotHookRequest |
+            PreToolUseHookRequest | RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -505,6 +511,7 @@ async def asyncio(
     client: AuthenticatedClient | Client,
     body: ClaudeCodeHookRequest
     | CodexHookRequest
+    | CopilotHookRequest
     | PreToolUseHookRequest
     | RawPreToolUseHookRequest,
 ) -> (
@@ -515,7 +522,7 @@ async def asyncio(
     | PreToolUseHookResponse
     | None
 ):
-    r"""Pre Tool Use Hook
+    """Pre Tool Use Hook
 
      Evaluate one or several pending calls, or accept a transcript with no pending call.
 
@@ -567,7 +574,7 @@ async def asyncio(
     ingests. Concurrent misses and retries before post-response recording may
     evaluate more than once. Paused mode never evaluates, even when forced.
 
-    With `format=\"raw\"`, send a provider request (`request_body`) and its
+    With `format="raw"`, send a provider request (`request_body`) and its
     complete response (`response_body`) in one supported wire format (OpenAI
     Chat Completions or Responses, Anthropic Messages, Gemini generateContent
     or Bedrock Converse) plus the client-facing endpoint path in `url`, instead
@@ -594,8 +601,8 @@ async def asyncio(
     executable calls.
 
     Args:
-        body (ClaudeCodeHookRequest | CodexHookRequest | PreToolUseHookRequest |
-            RawPreToolUseHookRequest):
+        body (ClaudeCodeHookRequest | CodexHookRequest | CopilotHookRequest |
+            PreToolUseHookRequest | RawPreToolUseHookRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

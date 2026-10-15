@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class TrajectoryView(str, Enum):
+class TrajectoryView(StrEnum):
     EXTENDED = "extended"
     TRUNCATED = "truncated"
 

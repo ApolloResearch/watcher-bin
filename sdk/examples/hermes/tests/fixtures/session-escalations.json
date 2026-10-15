@@ -1,0 +1,155 @@
+{
+ "id": "20261012_124719_94b444",
+ "messages": [
+  {
+   "id": 47,
+   "session_id": "20261012_124719_94b444",
+   "role": "user",
+   "content": "Use the terminal tool to run exactly 'touch /tmp/escalate-marker'. Report the result.",
+   "tool_call_id": null,
+   "tool_calls": null,
+   "tool_name": null,
+   "timestamp": 1791809274.859887,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "c28a5a42b7534f00bef481fc39167036"
+  },
+  {
+   "id": 48,
+   "session_id": "20261012_124719_94b444",
+   "role": "assistant",
+   "content": "",
+   "tool_call_id": null,
+   "tool_calls": [
+    {
+     "id": "call_i5Ve1g8SzsyaUjzXygWf8NqY",
+     "call_id": "call_i5Ve1g8SzsyaUjzXygWf8NqY",
+     "response_item_id": "fc_i5Ve1g8SzsyaUjzXygWf8NqY",
+     "type": "function",
+     "function": {
+      "name": "terminal",
+      "arguments": "{\"command\":\"touch /tmp/escalate-marker\",\"workdir\":\"/tmp\",\"timeout\":30}"
+     }
+    }
+   ],
+   "tool_name": null,
+   "timestamp": 1791809276.7686248,
+   "finish_reason": "tool_calls",
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "0968df61228448c994365172aa4b3c3e"
+  },
+  {
+   "id": 49,
+   "session_id": "20261012_124719_94b444",
+   "role": "tool",
+   "content": "{\"output\": \"\", \"exit_code\": 0, \"error\": null}",
+   "tool_call_id": "call_i5Ve1g8SzsyaUjzXygWf8NqY",
+   "tool_calls": null,
+   "tool_name": "terminal",
+   "timestamp": 1791809301.8497815,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "7f6a84799e1240e0b75e67c55ffab969"
+  },
+  {
+   "id": 50,
+   "session_id": "20261012_124719_94b444",
+   "role": "assistant",
+   "content": "Ran `touch /tmp/escalate-marker` successfully. Exit code 0.",
+   "tool_call_id": null,
+   "tool_calls": null,
+   "tool_name": null,
+   "timestamp": 1791809303.0480845,
+   "finish_reason": "stop",
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "8ac866b3a3d747b7914f5da09484dcb8"
+  },
+  {
+   "id": 51,
+   "session_id": "20261012_124719_94b444",
+   "role": "user",
+   "content": "Now run exactly 'touch /tmp/escalate-marker2' with the terminal tool.",
+   "tool_call_id": null,
+   "tool_calls": null,
+   "tool_name": null,
+   "timestamp": 1791809320.0135434,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "12547b775462477a8b65e9a8d8f3ed21"
+  },
+  {
+   "id": 52,
+   "session_id": "20261012_124719_94b444",
+   "role": "assistant",
+   "content": "",
+   "tool_call_id": null,
+   "tool_calls": [
+    {
+     "id": "call_OW0TGkhruYnEdncNNZEwKhcj",
+     "call_id": "call_OW0TGkhruYnEdncNNZEwKhcj",
+     "response_item_id": "fc_OW0TGkhruYnEdncNNZEwKhcj",
+     "type": "function",
+     "function": {
+      "name": "terminal",
+      "arguments": "{\"command\":\"touch /tmp/escalate-marker2\",\"timeout\":30,\"workdir\":\"/tmp\"}"
+     }
+    }
+   ],
+   "tool_name": null,
+   "timestamp": 1791809321.0280204,
+   "finish_reason": "tool_calls",
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "2f950328e5974c049e14d48096a8a1c1"
+  },
+  {
+   "id": 53,
+   "session_id": "20261012_124719_94b444",
+   "role": "tool",
+   "content": "{\"error\": \"BLOCKED: User denied this potentially dangerous action (matched 'Watcher asks for your approval: Rule: Escalate marker. Escalated by rule: Escalate marker'). Do NOT retry \u2014 the user has explicitly rejected it.\"}",
+   "tool_call_id": "call_OW0TGkhruYnEdncNNZEwKhcj",
+   "tool_calls": null,
+   "tool_name": "terminal",
+   "timestamp": 1791809348.7691927,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "96a5d1af44da49788209a602582a378a"
+  },
+  {
+   "id": 54,
+   "session_id": "20261012_124719_94b444",
+   "role": "assistant",
+   "content": "Blocked by the runtime approval policy. The command was not run.",
+   "tool_call_id": null,
+   "tool_calls": null,
+   "tool_name": null,
+   "timestamp": 1791809349.5810597,
+   "finish_reason": "stop",
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "a44f180dfc6941df9f7240b1309458c5"
+  }
+ ]
+}

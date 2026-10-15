@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class GraderDetailReasoningEffortType0(str, Enum):
+class GraderDetailReasoningEffortType0(StrEnum):
     HIGH = "high"
     LOW = "low"
     MAX = "max"

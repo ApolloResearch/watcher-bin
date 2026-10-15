@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class GetSessionAggregatesEndpointV1SessionsAggregatesGetBucket(str, Enum):
+class GetSessionAggregatesEndpointV1SessionsAggregatesGetBucket(StrEnum):
     DAY = "day"
     WEEK = "week"
 

@@ -11,6 +11,7 @@ from typing import (
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..models.chat_message_tool_source_type_0 import ChatMessageToolSourceType0
 from ..types import UNSET, Unset
@@ -87,19 +88,15 @@ class ChatMessageTool:
             content = []
             for content_type_1_item_data in self.content:
                 content_type_1_item: dict[str, Any]
-                if isinstance(content_type_1_item_data, ContentText):
-                    content_type_1_item = content_type_1_item_data.to_dict()
-                elif isinstance(content_type_1_item_data, ContentReasoning):
-                    content_type_1_item = content_type_1_item_data.to_dict()
-                elif isinstance(content_type_1_item_data, ContentImage):
-                    content_type_1_item = content_type_1_item_data.to_dict()
-                elif isinstance(content_type_1_item_data, ContentAudio):
-                    content_type_1_item = content_type_1_item_data.to_dict()
-                elif isinstance(content_type_1_item_data, ContentVideo):
-                    content_type_1_item = content_type_1_item_data.to_dict()
-                elif isinstance(content_type_1_item_data, ContentData):
-                    content_type_1_item = content_type_1_item_data.to_dict()
-                elif isinstance(content_type_1_item_data, ContentToolUse):
+                if (
+                    isinstance(content_type_1_item_data, ContentText)
+                    or isinstance(content_type_1_item_data, ContentReasoning)
+                    or isinstance(content_type_1_item_data, ContentImage)
+                    or isinstance(content_type_1_item_data, ContentAudio)
+                    or isinstance(content_type_1_item_data, ContentVideo)
+                    or isinstance(content_type_1_item_data, ContentData)
+                    or isinstance(content_type_1_item_data, ContentToolUse)
+                ):
                     content_type_1_item = content_type_1_item_data.to_dict()
                 else:
                     content_type_1_item = content_type_1_item_data.to_dict()
@@ -178,7 +175,7 @@ class ChatMessageTool:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.chat_message_tool_metadata_type_0 import (
             ChatMessageToolMetadataType0,
         )

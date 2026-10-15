@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
@@ -468,13 +468,28 @@ class ProfileCatalogEntry(PermissionedSettingsModel):
         return self
 
 
+# deprecated(0.42.0, 2026-11-30): Keep lists until supported list-only clients and their stored settings have migrated.
+type AgentEnablement = (
+    Annotated[list[AgentName], Field(json_schema_extra={"deprecated": True})] | dict[str, BoolSetting]
+)
+
+
 class AgentsSettings(PermissionedSettingsModel):
     """Which coding agents Watcher integrates with."""
 
-    enabled: list[AgentName] = Field(
-        default_factory=lambda: sorted(ALL_AGENTS),
-        description="Coding agents Watcher monitors (claude_code, codex).",
+    enabled: AgentEnablement = Field(
+        default_factory=dict,
+        description=(
+            "Map agent names to booleans or {value, permission} wrappers. Omitted names default on. "
+            "Deprecated lists enable only their listed agents."
+        ),
     )
+
+    def enabled_agents(self) -> frozenset[AgentName]:
+        """Registered agents enabled by this sparse map or deprecated closed list."""
+        if isinstance(self.enabled, list):
+            return frozenset(self.enabled)
+        return frozenset(name for name in ALL_AGENTS if _setting_value(self.enabled.get(name, True)))
 
 
 class WatcherSettings(StrictSettingsModel):
@@ -553,6 +568,7 @@ class WatcherSettings(StrictSettingsModel):
     agents: AgentsSettings = Field(
         default_factory=AgentsSettings,
         description="Which coding agents Watcher integrates with.",
+        examples=[{"enabled": {"codex": False}}],
     )
 
     def autostart_on_login_enabled(self) -> bool:
@@ -633,6 +649,7 @@ class SettingsLoadIssue(BaseModel):
     file_path: str
     setting_path: str | None = None
     message: str
+    severity: Literal["error", "warning"] = "error"
 
 
 class EffectiveManagedInstructionSection(BaseModel):

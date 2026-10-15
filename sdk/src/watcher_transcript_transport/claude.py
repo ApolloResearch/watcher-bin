@@ -395,11 +395,44 @@ def _drop_abandoned_root_prompts(
     return [root for i, root in enumerate(roots) if i not in abandoned_indices]
 
 
+# Dependency-free for hook startup, like the records in ``upload``.
+class _LiveBranch:  # noqa: B903
+    """The server parser's live branch of a Claude UUID tree, as the client replicates it.
+
+    ``order`` holds the uuids of the live branch's messages in the order the
+    server stores them; ``abandons_branch`` says whether the walk dropped a
+    rewound branch, which the server stores as an extra conversation.
+    """
+
+    __slots__ = ("abandons_branch", "order")
+
+    order: list[str]
+    abandons_branch: bool
+
+    def __init__(self, order: list[str], abandons_branch: bool) -> None:
+        self.order = order
+        self.abandons_branch = abandons_branch
+
+
 def _message_order(entries: list[JsonEntry]) -> list[str] | None:
     """Reproduce the server parser's live-branch message order from a Claude UUID tree.
 
     ``None`` means the raw tree cannot be ordered safely, and callers must use
     full ingestion rather than trusting an independently parsed suffix.
+    """
+    branch = _live_branch(entries)
+    return None if branch is None else branch.order
+
+
+def _live_branch(entries: list[JsonEntry]) -> _LiveBranch | None:
+    """Walk a Claude UUID tree the way the server parser walks its live branch.
+
+    Besides the order (see ``_message_order``) this reports whether any rewound
+    branch was abandoned on the way: at a rewind fork, or between rewound
+    versions of a first prompt. The server parser yields every abandoned
+    branch as its own conversation, so a delta whose own walk abandons one
+    parses to several conversations, which the append endpoint refuses.
+    ``None`` means the tree cannot be ordered safely.
     """
     entry_lookup = {
         entry["uuid"]: entry
@@ -418,7 +451,7 @@ def _message_order(entries: list[JsonEntry]) -> list[str] | None:
         and not entry.get("isSidechain", False)
     ]
     if not message_entries:
-        return []
+        return _LiveBranch([], False)
 
     message_uuids = {entry["uuid"] for entry in message_entries}
     children: dict[str, list[JsonEntry]] = {}
@@ -456,20 +489,23 @@ def _message_order(entries: list[JsonEntry]) -> list[str] | None:
             root_groups[id(entry)] = top_ancestor if parent_uuid is None else None
 
     if not roots:
-        return [entry["uuid"] for entry in _drop_redelivered_queued_commands(message_entries)]
+        return _LiveBranch([entry["uuid"] for entry in _drop_redelivered_queued_commands(message_entries)], False)
 
     roots.sort(key=_entry_walk_key)
     # Ownership resolves against every root (a segment can be owned by an
     # abandoned first-prompt version), so build the map before pruning roots.
     segment_back_links = _segment_back_links(roots, entry_lookup)
     segments_by_owner = _segments_by_owner(segment_back_links, entry_lookup)
-    roots = _drop_abandoned_root_prompts(
+    live_roots = _drop_abandoned_root_prompts(
         roots, [root_groups[id(root)] for root in roots], children, message_uuids, segments_by_owner
     )
+    abandons_branch = len(live_roots) < len(roots)
+    roots = live_roots
     chain: list[JsonEntry] = []
     visited: set[str] = set()
 
     def walk_from(root: JsonEntry) -> None:
+        nonlocal abandons_branch
         queue = [root]
         while queue:
             current = queue.pop(0)
@@ -481,7 +517,9 @@ def _message_order(entries: list[JsonEntry]) -> list[str] | None:
                 chain.append(current)
             next_entries = [child for child in children.get(uuid, []) if child["uuid"] not in visited]
             next_entries.sort(key=_entry_walk_key)
-            queue.extend(_drop_abandoned_rewind_branches(next_entries, children, message_uuids, segments_by_owner))
+            live_entries = _drop_abandoned_rewind_branches(next_entries, children, message_uuids, segments_by_owner)
+            abandons_branch = abandons_branch or len(live_entries) < len(next_entries)
+            queue.extend(live_entries)
 
     deferred: list[JsonEntry] = []
     for root in roots:
@@ -510,14 +548,89 @@ def _message_order(entries: list[JsonEntry]) -> list[str] | None:
                 remaining.append(root)
         deferred = remaining
 
-    return [entry["uuid"] for entry in _drop_redelivered_queued_commands(chain)]
+    return _LiveBranch([entry["uuid"] for entry in _drop_redelivered_queued_commands(chain)], abandons_branch)
+
+
+class _RewindReach:  # noqa: B903
+    """The last cursor whose suffix still holds a rewind, remembered for one transcript snapshot.
+
+    Kept for the most recent ``entries`` list only (compared by identity and
+    length), since a chunk planner asks about many cursors of one snapshot in
+    a row and then moves on.
+    """
+
+    __slots__ = ("entries", "entry_count", "last_cursor")
+
+    entries: list[JsonEntry]
+    entry_count: int
+    last_cursor: int
+
+    def __init__(self, entries: list[JsonEntry], last_cursor: int) -> None:
+        self.entries = entries
+        self.entry_count = len(entries)
+        self.last_cursor = last_cursor
+
+
+_rewind_reach: _RewindReach | None = None
+
+
+def _last_cursor_before_a_rewind(entries: list[JsonEntry]) -> int:
+    """Return the largest cursor whose suffix parses with an abandoned branch, or -1 if none is found.
+
+    A chunk planner probes boundaries one entry at a time, and every boundary
+    before a rewind near the end of a large transcript is unsafe; checking each
+    with three whole-tree walks is quadratic and can outlast the collector's
+    deadline. The cursors whose suffix abandons a branch are, in practice, a
+    prefix of the transcript (a suffix keeps a rewind as long as it starts
+    before the fork), so a binary search finds where that prefix ends in a
+    logarithmic number of suffix walks. Only the refusal side uses the result:
+    any cursor at or before it is refused outright, which at worst refuses a
+    boundary the exact check would have accepted. Every later cursor still
+    gets the exact check, so nothing unsafe is ever accepted.
+    """
+    global _rewind_reach
+    reach = _rewind_reach
+    if reach is not None and reach.entries is entries and reach.entry_count == len(entries):
+        return reach.last_cursor
+
+    def abandons(cursor: int) -> bool:
+        branch = _live_branch(entries[cursor:])
+        return branch is not None and branch.abandons_branch
+
+    last_cursor = -1
+    if entries and abandons(0):
+        # Invariant: the suffix at ``low`` abandons a branch; the one at ``high`` (the empty suffix) does not.
+        low, high = 0, len(entries)
+        while high - low > 1:
+            middle = (low + high) // 2
+            if abandons(middle):
+                low = middle
+            else:
+                high = middle
+        last_cursor = low
+    _rewind_reach = _RewindReach(entries, last_cursor)
+    return last_cursor
 
 
 def delta_needs_full_upload(entries: list[JsonEntry], cursor: int) -> bool:
-    """Return whether parsing a Claude suffix alone would change message order."""
-    prefix_order = _message_order(entries[:cursor])
-    delta_order = _message_order(entries[cursor:])
-    full_order = _message_order(entries)
+    """Return whether the suffix from ``cursor`` cannot be appended to the prefix before it.
+
+    Two cases need a full upload instead. Parsing the suffix alone could change
+    the message order the whole file parses to. Or the suffix itself contains
+    a rewind (a fork, or a rewound first prompt) and parses to more than one
+    conversation, which the append endpoint refuses even when the live branch
+    order would line up. Chunked uploads use this as their boundary guard too,
+    so a rewind always lands in a full-ingest chunk rather than an append.
+    """
+    if cursor <= _last_cursor_before_a_rewind(entries):
+        return True
+    prefix = _live_branch(entries[:cursor])
+    delta = _live_branch(entries[cursor:])
+    full = _live_branch(entries)
     return (
-        prefix_order is None or delta_order is None or full_order is None or full_order != [*prefix_order, *delta_order]
+        prefix is None
+        or delta is None
+        or full is None
+        or delta.abandons_branch
+        or full.order != [*prefix.order, *delta.order]
     )

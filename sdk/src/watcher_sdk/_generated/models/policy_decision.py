@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class PolicyDecision(str, Enum):
+class PolicyDecision(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
     ESCALATE = "escalate"

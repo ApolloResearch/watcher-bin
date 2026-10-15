@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ToolCallSearchParamsSortBy(str, Enum):
+class ToolCallSearchParamsSortBy(StrEnum):
     DECISION = "decision"
     OCCURRED_AT = "occurred_at"
     SEVERITY = "severity"

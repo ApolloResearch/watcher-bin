@@ -7,7 +7,7 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..models.applied_decision import AppliedDecision
 from ..models.bypass_reason import BypassReason
@@ -17,6 +17,9 @@ from ..models.enforcement_mode import EnforcementMode
 from ..models.human_decision import HumanDecision
 from ..models.judged_decision import JudgedDecision
 from ..models.policy_decision import PolicyDecision
+from ..models.tool_call_decision_detail_ingest_kind_type_0 import (
+    ToolCallDecisionDetailIngestKindType0,
+)
 from ..models.tool_status import ToolStatus
 from ..types import UNSET, Unset
 
@@ -76,6 +79,11 @@ class ToolCallDecisionDetail:
             judged_decision (JudgedDecision | None | Unset):
             enforcement_mode (EnforcementMode | None | Unset):
             bypass_reason (BypassReason | None | Unset):
+            ingest_kind (None | ToolCallDecisionDetailIngestKindType0 | Unset): Delivery path of the current evaluation.
+                Null means the path was not recorded; unknown stored values report other. Outcome-only updates preserve this
+                attribution.
+            api_key_id (None | str | Unset): ID of the API key that authenticated the current evaluation.
+            api_key_name (None | str | Unset): API key name at the time of the current evaluation.
             grades (list[ToolCallGradeDetail] | Unset):
     """
 
@@ -106,6 +114,9 @@ class ToolCallDecisionDetail:
     judged_decision: JudgedDecision | None | Unset = UNSET
     enforcement_mode: EnforcementMode | None | Unset = UNSET
     bypass_reason: BypassReason | None | Unset = UNSET
+    ingest_kind: None | ToolCallDecisionDetailIngestKindType0 | Unset = UNSET
+    api_key_id: None | str | Unset = UNSET
+    api_key_name: None | str | Unset = UNSET
     grades: list[ToolCallGradeDetail] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -244,6 +255,26 @@ class ToolCallDecisionDetail:
         else:
             bypass_reason = self.bypass_reason
 
+        ingest_kind: None | str | Unset
+        if isinstance(self.ingest_kind, Unset):
+            ingest_kind = UNSET
+        elif isinstance(self.ingest_kind, ToolCallDecisionDetailIngestKindType0):
+            ingest_kind = self.ingest_kind.value
+        else:
+            ingest_kind = self.ingest_kind
+
+        api_key_id: None | str | Unset
+        if isinstance(self.api_key_id, Unset):
+            api_key_id = UNSET
+        else:
+            api_key_id = self.api_key_id
+
+        api_key_name: None | str | Unset
+        if isinstance(self.api_key_name, Unset):
+            api_key_name = UNSET
+        else:
+            api_key_name = self.api_key_name
+
         grades: list[dict[str, Any]] | Unset = UNSET
         if not isinstance(self.grades, Unset):
             grades = []
@@ -300,13 +331,19 @@ class ToolCallDecisionDetail:
             field_dict["enforcement_mode"] = enforcement_mode
         if bypass_reason is not UNSET:
             field_dict["bypass_reason"] = bypass_reason
+        if ingest_kind is not UNSET:
+            field_dict["ingest_kind"] = ingest_kind
+        if api_key_id is not UNSET:
+            field_dict["api_key_id"] = api_key_id
+        if api_key_name is not UNSET:
+            field_dict["api_key_name"] = api_key_name
         if grades is not UNSET:
             field_dict["grades"] = grades
 
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.tool_call_decision_detail_raw_tool_call import (
             ToolCallDecisionDetailRawToolCall,
         )
@@ -331,11 +368,13 @@ class ToolCallDecisionDetail:
 
         tool_call_decision_id = UUID(d.pop("tool_call_decision_id"))
 
-        tool_call_created_at = isoparse(d.pop("tool_call_created_at"))
+        tool_call_created_at = datetime.datetime.fromisoformat(
+            d.pop("tool_call_created_at")
+        )
 
-        created_at = isoparse(d.pop("created_at"))
+        created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 
-        updated_at = isoparse(d.pop("updated_at"))
+        updated_at = datetime.datetime.fromisoformat(d.pop("updated_at"))
 
         def _parse_latency_ms(data: object) -> float | None | Unset:
             if data is None:
@@ -436,7 +475,7 @@ class ToolCallDecisionDetail:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                human_decided_at_type_0 = isoparse(data)
+                human_decided_at_type_0 = datetime.datetime.fromisoformat(data)
 
                 return human_decided_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
@@ -470,7 +509,7 @@ class ToolCallDecisionDetail:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                decided_at_type_0 = isoparse(data)
+                decided_at_type_0 = datetime.datetime.fromisoformat(data)
 
                 return decided_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
@@ -547,6 +586,43 @@ class ToolCallDecisionDetail:
 
         bypass_reason = _parse_bypass_reason(d.pop("bypass_reason", UNSET))
 
+        def _parse_ingest_kind(
+            data: object,
+        ) -> None | ToolCallDecisionDetailIngestKindType0 | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                ingest_kind_type_0 = ToolCallDecisionDetailIngestKindType0(data)
+
+                return ingest_kind_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | ToolCallDecisionDetailIngestKindType0 | Unset, data)
+
+        ingest_kind = _parse_ingest_kind(d.pop("ingest_kind", UNSET))
+
+        def _parse_api_key_id(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        api_key_id = _parse_api_key_id(d.pop("api_key_id", UNSET))
+
+        def _parse_api_key_name(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        api_key_name = _parse_api_key_name(d.pop("api_key_name", UNSET))
+
         _grades = d.pop("grades", UNSET)
         grades: list[ToolCallGradeDetail] | Unset = UNSET
         if _grades is not UNSET:
@@ -584,6 +660,9 @@ class ToolCallDecisionDetail:
             judged_decision=judged_decision,
             enforcement_mode=enforcement_mode,
             bypass_reason=bypass_reason,
+            ingest_kind=ingest_kind,
+            api_key_id=api_key_id,
+            api_key_name=api_key_name,
             grades=grades,
         )
 

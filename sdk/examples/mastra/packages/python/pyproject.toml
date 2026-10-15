@@ -7,7 +7,7 @@ name = "watcher-mastra-bridge"
 version = "0.1.0"
 description = "Experimental Python SDK bridge for Mastra observation and synchronous monitoring"
 requires-python = ">=3.12"
-dependencies = ["watcher-sdk>=0.1,<1", "typer==0.25.1"]
+dependencies = ["watcher-sdk>=0.1,<1", "typer==0.27.2"]
 
 [project.scripts]
 watcher-mastra-observe = "watcher_mastra_bridge.bridge:cli"

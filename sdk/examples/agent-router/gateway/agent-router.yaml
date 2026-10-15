@@ -1,0 +1,178 @@
+# Agent Router configuration with the Watcher external processor attached.
+#
+# Run locally with `aigw run gateway/agent-router.yaml`; aigw substitutes the
+# ${...} environment variables. On Kubernetes, apply the same resources and
+# point the watcher-processor Backend at the processor's Service.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: aigw-run
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: aigw-run
+  namespace: default
+spec:
+  gatewayClassName: aigw-run
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 1975
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: AIGatewayRoute
+metadata:
+  name: aigw-run
+  namespace: default
+spec:
+  parentRefs:
+    - name: aigw-run
+      kind: Gateway
+      group: gateway.networking.k8s.io
+  rules:
+    - matches:
+        - headers:
+            - type: RegularExpression
+              name: x-ai-eg-model
+              value: .*
+      backendRefs:
+        - name: openai
+          namespace: default
+      timeouts:
+        # One deadline shared by the provider call and the Watcher decision; the
+        # processor's 450-second message timeout leaves the provider 210 seconds.
+        request: 660s
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: openai
+  namespace: default
+spec:
+  endpoints:
+    - fqdn:
+        hostname: ${OPENAI_HOST:=api.openai.com}
+        port: 443
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: AIServiceBackend
+metadata:
+  name: openai
+  namespace: default
+spec:
+  # The processor reads the provider response before Agent Router translates
+  # it, so every backend on this Gateway must use the OpenAI schema.
+  schema:
+    name: OpenAI
+  backendRef:
+    name: openai
+    kind: Backend
+    group: gateway.envoyproxy.io
+    namespace: default
+---
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: openai-tls
+  namespace: default
+spec:
+  targetRefs:
+    - group: gateway.envoyproxy.io
+      kind: Backend
+      name: openai
+  validation:
+    wellKnownCACertificates: System
+    hostname: ${OPENAI_HOST:=api.openai.com}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openai-apikey
+  namespace: default
+type: Opaque
+stringData:
+  apiKey: ${OPENAI_API_KEY}
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: BackendSecurityPolicy
+metadata:
+  name: openai-apikey
+  namespace: default
+spec:
+  targetRefs:
+    - group: aigateway.envoyproxy.io
+      kind: AIServiceBackend
+      name: openai
+  type: APIKey
+  apiKey:
+    secretRef:
+      name: openai-apikey
+---
+# Buffered processing holds whole bodies in Envoy. 8 MiB matches the
+# processor's MAX_BODY; larger bodies get HTTP 413 from Envoy. No bytes move
+# while Watcher grades, so the 5-minute default stream idle timeout is raised
+# above the processor's message timeout.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: client-buffer-limit
+  namespace: default
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: aigw-run
+  connection:
+    bufferLimit: 8Mi
+  timeout:
+    http:
+      streamIdleTimeout: 660s
+---
+# The Watcher processor started with `watcher-agent-router serve`. Keep it on
+# loopback or a private network: it has no client authentication of its own.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: watcher-processor
+  namespace: default
+spec:
+  appProtocols:
+    - gateway.envoyproxy.io/h2c
+  endpoints:
+    - ip:
+        address: ${WATCHER_PROCESSOR_ADDRESS:=127.0.0.1}
+        port: ${WATCHER_PROCESSOR_PORT:=50051}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyExtensionPolicy
+metadata:
+  name: watcher
+  namespace: default
+spec:
+  # Gateway scope covers every route on the listener, so no route bypasses it.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: aigw-run
+  extProc:
+    - backendRefs:
+        - group: gateway.envoyproxy.io
+          kind: Backend
+          name: watcher-processor
+      processingMode:
+        request:
+          body: Buffered
+        response:
+          body: Buffered
+        # Lets the processor switch server-sent event responses to streamed
+        # processing, so their text is not held back.
+        allowModeOverride: true
+      # 30 seconds above the processor's 420-second Watcher deadline, so a slow
+      # grade still ends in the processor's own logged 503. A full grade can take
+      # several minutes before the grading-failure policy applies.
+      messageTimeout: 450s
+      # Processor errors and timeouts return HTTP 500 instead of releasing traffic.
+      failOpen: false

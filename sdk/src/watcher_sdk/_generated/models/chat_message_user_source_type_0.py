@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ChatMessageUserSourceType0(str, Enum):
+class ChatMessageUserSourceType0(StrEnum):
     GENERATE = "generate"
     INPUT = "input"
     OPERATOR = "operator"

@@ -1,0 +1,41 @@
+{
+ "pre_tool_call": {
+  "hook_event_name": "pre_tool_call",
+  "tool_name": "terminal",
+  "tool_input": {
+   "command": "ls /tmp | head -3",
+   "workdir": "/tmp",
+   "timeout": 30
+  },
+  "session_id": "20261012_123758_954e5d",
+  "cwd": "/tmp",
+  "profile": "default",
+  "extra": {
+   "task_id": "59318550-2361-482e-bc06-4ec712c18007",
+   "tool_call_id": "call_XAiaPd0OLeTbdB9RjzrKHyxr",
+   "turn_id": "20261012_123758_954e5d:59318550-2361-482e-bc06-4ec712c18007:8128ba79",
+   "api_request_id": "20261012_123758_954e5d:59318550-2361-482e-bc06-4ec712c18007:8128ba79:api:1",
+   "middleware_trace": [],
+   "telemetry_schema_version": "hermes.observer.v1"
+  }
+ },
+ "on_session_end": {
+  "hook_event_name": "on_session_end",
+  "tool_name": null,
+  "tool_input": null,
+  "session_id": "20261012_123758_954e5d",
+  "cwd": "/tmp",
+  "profile": "default",
+  "extra": {
+   "task_id": "59318550-2361-482e-bc06-4ec712c18007",
+   "turn_id": "20261012_123758_954e5d:59318550-2361-482e-bc06-4ec712c18007:8128ba79",
+   "completed": true,
+   "failed": false,
+   "interrupted": false,
+   "turn_exit_reason": "text_response(finish_reason=stop)",
+   "model": "gpt-5.4-mini",
+   "platform": "cli",
+   "telemetry_schema_version": "hermes.observer.v1"
+  }
+ }
+}

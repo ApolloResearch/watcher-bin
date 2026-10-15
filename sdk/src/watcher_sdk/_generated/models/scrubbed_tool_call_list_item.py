@@ -12,7 +12,7 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..models.applied_decision import AppliedDecision
 from ..models.enforcement_mode import EnforcementMode
@@ -184,13 +184,13 @@ class ScrubbedToolCallListItem:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         tool_call_id = UUID(d.pop("tool_call_id"))
 
         session_id = UUID(d.pop("session_id"))
 
-        occurred_at = isoparse(d.pop("occurred_at"))
+        occurred_at = datetime.datetime.fromisoformat(d.pop("occurred_at"))
 
         def _parse_severity_score(data: object) -> int | None | Unset:
             if data is None:

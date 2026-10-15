@@ -1,17 +1,14 @@
-"""Resolve an explicit setup choice without changing identities after a request fails."""
+"""Select saved SDK sign-ins and display browser authorization instructions."""
 
-import asyncio
 import sys
 import webbrowser
-from functools import partial
-from pathlib import Path
 
 import httpx
 import typer
 
-from watcher_sdk.integration_auth import CLOUD_URL, IntegrationAuth, SDKLoginAuth, discover_logins
+from watcher_sdk.integration_auth import CLOUD_URL, IntegrationAuth
 from watcher_sdk.local_auth import _api_url
-from watcher_sdk.login import DeviceLoginPrompt, login
+from watcher_sdk.login import DeviceLoginPrompt
 
 
 class CommandError(Exception):
@@ -73,58 +70,3 @@ def choose_profile(candidates: list[IntegrationAuth]) -> IntegrationAuth:
 
     selected: int = typer.prompt("Use sign-in", value_proc=parse_selection)
     return candidates[selected - 1]
-
-
-def resolve_profile(
-    target: str | None,
-    existing: IntegrationAuth | None,
-    *,
-    project: Path | None,
-    watcher_auth: bool,
-    fresh_login: bool,
-    state_dir: Path | None,
-    watcher_state_dir: Path | None,
-) -> IntegrationAuth:
-    """Select credentials once during setup; preserve a compatible existing choice.
-
-    Integrations authenticate only with a user's own sign-in: an SDK sign-in or a
-    saved Watcher sign-in. An existing API-key choice from an earlier version is
-    never reused or rebuilt into a sign-in; its server is the destination only when
-    ``target`` names none, and is checked then like any other. Explicit sources
-    require a destination, either supplied or already installed. An explicit
-    destination change never carries the previous credential across. Discovery
-    occurs only without a saved choice. Only interactive setup starts browser
-    sign-in; unattended installations must sign in in advance. A browser sign-in's
-    store is checked to lie outside ``project``, when one is given, before
-    anything is saved.
-    """
-    if watcher_auth and fresh_login:
-        raise CommandError("Choose one credential source.")
-    if watcher_state_dir is not None and not watcher_auth:
-        raise CommandError("Use --watcher-auth with --watcher-state-dir.")
-    selected_url = target or (existing.base_url if existing is not None else None)
-    if existing is not None and existing.kind not in {"sdk_login", "watcher_login"}:
-        existing = None
-    if (watcher_auth or fresh_login) and selected_url is None:
-        raise CommandError("Choose --cloud or --url for the selected credential source.")
-    if watcher_auth:
-        assert selected_url is not None
-        return IntegrationAuth(base_url=selected_url, kind="watcher_login", state_dir=watcher_state_dir)
-    if not fresh_login:
-        if existing is not None and existing.base_url == selected_url:
-            return existing
-        candidates = discover_logins(selected_url, state_dir=state_dir)
-        if candidates:
-            return choose_profile(candidates)
-    if not sys.stdin.isatty():
-        if fresh_login:
-            raise CommandError(
-                "Browser sign-in needs an interactive terminal. Run watcher-sdk auth login --cloud or --url URL "
-                "first, then repeat setup without --login."
-            )
-        raise CommandError("No selected sign-in is available. Run watcher-sdk auth login --cloud or --url URL first.")
-    if selected_url is None:
-        selected_url = str(_api_url(typer.prompt("Watcher server URL", default=CLOUD_URL)))
-    if project is not None:
-        SDKLoginAuth(selected_url, state_dir=state_dir).validate_project_location(project)
-    return asyncio.run(login(selected_url, partial(show_authorization, selected_url), state_dir=state_dir))

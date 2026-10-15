@@ -43,7 +43,7 @@ container_id=""
 cleanup() { if [[ -n "$container_id" ]]; then docker rm -f "$container_id" >/dev/null; fi; }
 trap cleanup EXIT
 scenarios=(observe allow deny pending escalate deferred paused http-error timeout)
-if [[ "$slug" == github-copilot-cli ]]; then scenarios+=(outer-timeout); else scenarios+=(missing-outcome identity-error no-context-access rewrite outer-timeout delayed-allow); fi
+scenarios+=(missing-outcome identity-error no-context-access rewrite outer-timeout delayed-allow)
 if [[ "$#" -gt 0 ]]; then scenarios=("$@"); fi
 failed=0
 for scenario in "${scenarios[@]}"; do

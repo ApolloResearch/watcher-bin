@@ -157,9 +157,8 @@ def test_busy_checkpoint_still_attempts_latest_snapshot(tmp_path):
         async with AsyncWatcherClient(
             httpx_client=httpx.AsyncClient(base_url="http://fixture", transport=httpx.MockTransport(respond))
         ) as client:
-            with FileLock(str(checkpoint) + ".lock"):
-                with pytest.raises(ValueError, match="Another observation"):
-                    await observe(client, "native:s", history(1), checkpoint_path=checkpoint)
+            with FileLock(str(checkpoint) + ".lock"), pytest.raises(ValueError, match="Another observation"):
+                await observe(client, "native:s", history(1), checkpoint_path=checkpoint)
 
     asyncio.run(exercise())
     assert len(requests) == 1 and requests[0]["messages"][-1]["content"] == "Final answer"

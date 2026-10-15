@@ -1,0 +1,6 @@
+# Record only: merge into the Hermes profile's config.yaml (~/.hermes/config.yaml).
+# Generate the real block with `watcher-hermes hooks --record-only --watcher-url ...`.
+hooks:
+  on_session_end:
+    - command: "/path/to/watcher-example-hermes/.venv/bin/python -m watcher_hermes record --watcher-url https://your-watcher-api.example/api"
+      timeout: 60

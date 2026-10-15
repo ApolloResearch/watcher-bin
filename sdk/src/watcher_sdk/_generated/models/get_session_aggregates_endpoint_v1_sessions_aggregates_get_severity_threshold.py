@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class GetSessionAggregatesEndpointV1SessionsAggregatesGetSeverityThreshold(str, Enum):
+class GetSessionAggregatesEndpointV1SessionsAggregatesGetSeverityThreshold(StrEnum):
     CRITICAL = "critical"
     HIGH = "high"
     LOW = "low"

@@ -7,18 +7,19 @@ import json
 import re
 from collections.abc import Callable, Hashable
 from copy import deepcopy
-from functools import lru_cache
+from functools import lru_cache, partial
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
 import regex as regex_module
 import yaml
-from pydantic import ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from yaml import YAMLError
 from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode, Node
 
+from watcher_sdk.settings_schema.agent_enablement import merge_agent_enablement
 from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
     NO_DIFF,
     diff_against_base,
@@ -32,6 +33,7 @@ from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
     merge_profile_admin,
     merge_profile_local,
     node_permission,
+    path_permission,
     strip_permissions,
     unwrap,
     unwrap_composite_wrappers,
@@ -52,6 +54,7 @@ from watcher_sdk.settings_schema.watcher_settings_yaml_validation import (
 
 DEFAULT_PROFILE_ID = "default"
 PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_SETTINGS_TREE = TypeAdapter(dict[str, JsonValue])
 
 type LocalSettingsScope = Literal["none", "global", "all"]
 type SettingsCacheKey = tuple[str, tuple[tuple[str, tuple[int, int] | None], ...]]
@@ -435,6 +438,22 @@ def effective_raw(
     if cached is not None and applied_overlays is None:
         return cached
 
+    global_agent_choices: dict[str, JsonValue] = {}
+    written_agent_choices: dict[str, JsonValue] = {}
+    agents = local.get("agents")
+    if isinstance(agents, dict) and isinstance(agents.get("enabled"), dict):
+        global_agent_choices = {"agents": {"enabled": agents["enabled"]}}
+        written_agents = local_written.get("agents")
+        if isinstance(written_agents, dict):
+            written_agent_choices = {"agents": {"enabled": written_agents.get("enabled", {})}}
+        local = {**local, "agents": {key: value for key, value in agents.items() if key != "enabled"}}
+        local_written = {
+            **local_written,
+            "agents": {key: value for key, value in written_agents.items() if key != "enabled"}
+            if isinstance(written_agents, dict)
+            else {},
+        }
+
     merged = baseline_admin
     if local_scope in ("global", "all"):
         if applied_overlays is not None:
@@ -454,10 +473,57 @@ def effective_raw(
             local_doc=local,
             applied_overlays=applied_overlays,
         )
+    if global_agent_choices and local_scope in ("global", "all"):
+        authority = (
+            baseline_admin
+            if active_profile_id == DEFAULT_PROFILE_ID
+            else apply_profile_layers(
+                baseline_admin,
+                baseline_admin,
+                active_profile_id,
+                admin_path,
+                local_path,
+                "none",
+                [],
+                builtin_doc=builtin,
+                admin_doc=admin,
+                local_doc={},
+            )
+        )
+        merge_choices = partial(_merge_global_agent_choices, authority=_SETTINGS_TREE.validate_python(authority))
+        if applied_overlays is not None:
+            applied_overlays.append(AppliedOverlay(merged, written_agent_choices, global_agent_choices, merge_choices))
+        merged = merge_choices(merged, global_agent_choices)
     merged = repair_settings_tree(merged, baseline_admin, "local", local_path, issues)
     raw_cache[cache_key] = merged
     load_issues_cache[cache_key] = issues
     return merged
+
+
+def _merge_global_agent_choices(
+    base: dict[str, JsonValue],
+    overlay: dict[str, JsonValue],
+    *,
+    authority: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
+    """Apply global choices using only administrator settings as permission authority.
+
+    A local profile may enable an optional agent. That local choice must not
+    become an administrator requirement when the global choice is applied last.
+    Keeping the authority separate also lets diagnostics replay this exact merge.
+    """
+    agents = base.get("agents")
+    incoming = overlay.get("agents")
+    if not isinstance(agents, dict) or not isinstance(incoming, dict) or "enabled" not in incoming:
+        return dict(base)
+    enabled = merge_agent_enablement(
+        agents.get("enabled"),
+        incoming["enabled"],
+        path_permission(authority, ("agents", "enabled")),
+        enforce_permissions=True,
+        permission_base=get_path_or_none(authority, ("agents", "enabled")),
+    )
+    return {**base, "agents": {**agents, "enabled": enabled}}
 
 
 def settings_cache_key(
@@ -1055,7 +1121,49 @@ def load_admin_settings(path: Path, issues: list[SettingsLoadIssue]) -> dict[str
 
 
 def load_local_settings(path: Path, issues: list[SettingsLoadIssue]) -> dict[str, Any]:
-    return drop_derived_local_settings(load_yaml_path_lenient(path, "local", issues))
+    """Load a developer's own settings file, warning about each deprecated agent list in it.
+
+    Organization documents get no such warning here: developers cannot edit them, so
+    the administrator is warned when the document is saved instead.
+    """
+    document = drop_derived_local_settings(load_yaml_path_lenient(path, "local", issues))
+    for setting_path in legacy_agent_list_paths(document):
+        add_settings_load_issue(
+            issues,
+            "local",
+            path,
+            setting_path,
+            "The agent list is deprecated. Use an agents.enabled map; explicitly disable omitted agents to keep the same choices.",
+            severity="warning",
+        )
+    return document
+
+
+def legacy_agent_list_paths(document: object) -> list[tuple[str, ...]]:
+    """Setting paths where a settings document still writes ``agents.enabled`` as a list.
+
+    Covers the document root and each inline profile entry. Reporting a list does not
+    change its closed-set meaning. Malformed documents are left to the existing
+    sanitizer and yield no paths.
+    """
+    try:
+        parsed = _SETTINGS_TREE.validate_python(document)
+    except ValidationError:
+        return []
+    return _legacy_agent_list_paths(parsed, ())
+
+
+def _legacy_agent_list_paths(document: dict[str, JsonValue], location: tuple[str, ...]) -> list[tuple[str, ...]]:
+    paths: list[tuple[str, ...]] = []
+    agents = document.get("agents")
+    if isinstance(agents, dict) and isinstance(agents.get("enabled"), list):
+        paths.append((*location, "agents", "enabled"))
+    profiles = document.get("profiles")
+    if isinstance(profiles, dict):
+        for profile_id, entry in profiles.items():
+            if isinstance(entry, dict):
+                paths.extend(_legacy_agent_list_paths(entry, (*location, "profiles", profile_id)))
+    return paths
 
 
 def load_local_settings_for_write(path: Path) -> dict[str, Any]:

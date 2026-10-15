@@ -34,6 +34,7 @@ from watcher_pydantic_ai import Monitor
 monitor = Monitor(client, conversation_id)
 from watcher_pydantic_ai import before_tool
 
+
 @agent.tool
 async def double(ctx: RunContext[None], value: int) -> str:
     await before_tool(monitor, ctx, "double")

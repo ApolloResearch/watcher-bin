@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ClaudeCodeHookRequestMode(str, Enum):
+class ClaudeCodeHookRequestMode(StrEnum):
     FULL = "full"
     TRIAGE_ONLY = "triage_only"
 

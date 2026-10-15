@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.grading_usage_grader_option import GradingUsageGraderOption
@@ -59,9 +60,13 @@ class GradingUsageFilterOptions:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.grading_usage_grader_option import GradingUsageGraderOption
-        from ..models.grading_usage_user_option import GradingUsageUserOption
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.grading_usage_grader_option import (
+            GradingUsageGraderOption,
+        )
+        from ..models.grading_usage_user_option import (
+            GradingUsageUserOption,
+        )
 
         d = dict(src_dict)
         users = []

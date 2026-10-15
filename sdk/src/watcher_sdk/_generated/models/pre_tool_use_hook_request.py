@@ -10,6 +10,7 @@ from typing import (
 )
 
 from attrs import define as _attrs_define
+from typing_extensions import Self
 
 from ..models.pre_tool_use_hook_request_mode import PreToolUseHookRequestMode
 from ..types import UNSET, Unset
@@ -148,7 +149,9 @@ class PreToolUseHookRequest:
     ) = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.chat_message_assistant import ChatMessageAssistant
+        from ..models.chat_message_assistant import (
+            ChatMessageAssistant,
+        )
         from ..models.chat_message_system import ChatMessageSystem
         from ..models.chat_message_user import ChatMessageUser
         from ..models.hook_append_anchor import HookAppendAnchor
@@ -231,11 +234,11 @@ class PreToolUseHookRequest:
             messages = []
             for messages_type_0_item_data in self.messages:
                 messages_type_0_item: dict[str, Any]
-                if isinstance(messages_type_0_item_data, ChatMessageSystem):
-                    messages_type_0_item = messages_type_0_item_data.to_dict()
-                elif isinstance(messages_type_0_item_data, ChatMessageUser):
-                    messages_type_0_item = messages_type_0_item_data.to_dict()
-                elif isinstance(messages_type_0_item_data, ChatMessageAssistant):
+                if (
+                    isinstance(messages_type_0_item_data, ChatMessageSystem)
+                    or isinstance(messages_type_0_item_data, ChatMessageUser)
+                    or isinstance(messages_type_0_item_data, ChatMessageAssistant)
+                ):
                     messages_type_0_item = messages_type_0_item_data.to_dict()
                 else:
                     messages_type_0_item = messages_type_0_item_data.to_dict()
@@ -278,8 +281,10 @@ class PreToolUseHookRequest:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.chat_message_assistant import ChatMessageAssistant
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.chat_message_assistant import (
+            ChatMessageAssistant,
+        )
         from ..models.chat_message_system import ChatMessageSystem
         from ..models.chat_message_tool import ChatMessageTool
         from ..models.chat_message_user import ChatMessageUser

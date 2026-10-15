@@ -36,6 +36,7 @@ from watcher_dspy import PendingTrace
 
 trace = PendingTrace(prompt)
 
+
 async def double(value: int) -> str:
     call_id, arguments = trace.pending_call.get()
     await monitor.before(trace.messages, call_id, "double", arguments)

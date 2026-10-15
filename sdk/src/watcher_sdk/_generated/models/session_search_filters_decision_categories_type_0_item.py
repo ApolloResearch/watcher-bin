@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionSearchFiltersDecisionCategoriesType0Item(str, Enum):
+class SessionSearchFiltersDecisionCategoriesType0Item(StrEnum):
     AUTO_DENIED = "auto_denied"
     HUMAN_ALLOWED = "human_allowed"
     HUMAN_DENIED = "human_denied"

@@ -55,8 +55,8 @@ and the steps needed to verify your destination.
 | [Continue CLI](continue/README.md) | Static Tests | Not available | 2026-09-26 | Example |
 | [Cursor](cursor/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
 | [Gemini CLI](gemini-cli/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [GitHub Copilot CLI](github-copilot-cli/README.md) | Static Tests | Static Tests | 2026-10-02 | Example |
 | [Goose](goose/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
+| [Hermes Agent](hermes/README.md) | See README | See README | Not recorded | Example |
 | [Kilo Code](kilocode/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
 | [Mistral Vibe](mistral-vibe/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
 | [OpenCode](opencode/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
@@ -99,6 +99,7 @@ and the steps needed to verify your destination.
 
 | Integration | Observe | Block tools | Last tested | Support |
 | --- | --- | --- | --- | --- |
+| [Agent Router](agent-router/README.md) | End-to-end testing | End-to-end testing | 2026-10-06 | Example |
 | [Bifrost](bifrost/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
 | [Cloudflare AI Gateway](cloudflare-ai/README.md) | Static Tests | Not available | 2026-09-26 | Example |
 | [Helicone](helicone/README.md) | End-to-end testing | Not available | 2026-09-26 | Example |

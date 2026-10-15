@@ -5,20 +5,20 @@ from typing import Any, TypeVar
 from uuid import UUID
 
 from attrs import define as _attrs_define
+from typing_extensions import Self
 
 T = TypeVar("T", bound="HookAppendAnchor")
 
 
 @_attrs_define
 class HookAppendAnchor:
-    """The exact stored message after which a hook's delta begins.
+    """The exact stored message after which a delta begins.
 
-    Obtain the first pair from session search or trajectory ingestion, then use
-    the committed anchor returned by each successful hook append. An
-    explicit session and trajectory disambiguate branches; the server never
-    guesses which leaf the caller observed. A missing anchor returns 404 and
-    a conflicting continuation returns 409. Retry once with the full transcript
-    and without this field on 404, 409, or 422 (including older servers).
+    Ingest responses and successful hook appends return this session/trajectory
+    pair for the next append. Keep both fields together: a session may contain
+    several branches, and the server never guesses which leaf the caller observed.
+    A later write can overtake the anchor; on an append conflict, reconcile with
+    a full transcript upload before resuming deltas.
 
         Attributes:
             session_id (UUID):
@@ -45,7 +45,7 @@ class HookAppendAnchor:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         session_id = UUID(d.pop("session_id"))
 

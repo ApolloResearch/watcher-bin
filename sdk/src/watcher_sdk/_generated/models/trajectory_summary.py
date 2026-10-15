@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -78,7 +78,7 @@ class TrajectorySummary:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.grade_result import GradeResult
 
         d = dict(src_dict)
@@ -86,9 +86,9 @@ class TrajectorySummary:
 
         message_count = d.pop("message_count")
 
-        first_timestamp = isoparse(d.pop("first_timestamp"))
+        first_timestamp = datetime.datetime.fromisoformat(d.pop("first_timestamp"))
 
-        last_timestamp = isoparse(d.pop("last_timestamp"))
+        last_timestamp = datetime.datetime.fromisoformat(d.pop("last_timestamp"))
 
         source = d.pop("source")
 

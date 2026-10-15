@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class MonitorInfoRole(str, Enum):
+class MonitorInfoRole(StrEnum):
     DEEP_REVIEW = "deep_review"
     GATEWAY = "gateway"
     SUMMARIZE = "summarize"

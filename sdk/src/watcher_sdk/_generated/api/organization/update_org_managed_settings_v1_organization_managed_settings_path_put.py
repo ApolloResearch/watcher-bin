@@ -77,6 +77,8 @@ def sync_detailed(
     The document is validated against the Watcher settings schema (merged onto
     the builtin defaults, exactly as machines will apply it); an invalid
     document returns 422 with the field and value errors and stores nothing.
+    Notices about a valid document never block the save; they come back in
+    the response's ``warnings``, which reads leave empty.
     This endpoint is also the programmatic write path: an org API key with the
     write permission can call it from CI.
 
@@ -120,6 +122,8 @@ def sync(
     The document is validated against the Watcher settings schema (merged onto
     the builtin defaults, exactly as machines will apply it); an invalid
     document returns 422 with the field and value errors and stores nothing.
+    Notices about a valid document never block the save; they come back in
+    the response's ``warnings``, which reads leave empty.
     This endpoint is also the programmatic write path: an org API key with the
     write permission can call it from CI.
 
@@ -158,6 +162,8 @@ async def asyncio_detailed(
     The document is validated against the Watcher settings schema (merged onto
     the builtin defaults, exactly as machines will apply it); an invalid
     document returns 422 with the field and value errors and stores nothing.
+    Notices about a valid document never block the save; they come back in
+    the response's ``warnings``, which reads leave empty.
     This endpoint is also the programmatic write path: an org API key with the
     write permission can call it from CI.
 
@@ -199,6 +205,8 @@ async def asyncio(
     The document is validated against the Watcher settings schema (merged onto
     the builtin defaults, exactly as machines will apply it); an invalid
     document returns 422 with the field and value errors and stores nothing.
+    Notices about a valid document never block the save; they come back in
+    the response's ``warnings``, which reads leave empty.
     This endpoint is also the programmatic write path: an org API key with the
     write permission can call it from CI.
 

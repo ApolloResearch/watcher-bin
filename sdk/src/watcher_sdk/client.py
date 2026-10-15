@@ -65,6 +65,7 @@ import watcher_sdk._generated.api.sessions.get_session_detail_v1_sessions_sessio
 import watcher_sdk._generated.api.sessions.get_session_filter_options_endpoint_v1_sessions_filter_options_get as _get_session_filter_options_api
 import watcher_sdk._generated.api.sessions.get_session_message_v1_sessions_session_id_messages_message_ref_get as _get_message_api
 import watcher_sdk._generated.api.sessions.get_session_tool_call_decision_v1_sessions_session_id_tool_call_decision_get as _get_tool_call_decision_api
+import watcher_sdk._generated.api.sessions.get_session_tool_call_v1_sessions_session_id_tool_call_get as _get_tool_call_api
 import watcher_sdk._generated.api.sessions.get_session_trajectory_detail_v1_sessions_session_id_trajectories_trajectory_id_get as _get_trajectory_api
 import watcher_sdk._generated.api.sessions.list_session_trajectories_v1_sessions_session_id_trajectories_get as _list_trajectories_api
 import watcher_sdk._generated.api.sessions.list_sessions_endpoint_v1_sessions_get as _list_sessions_api
@@ -94,6 +95,7 @@ from watcher_sdk._generated.models import (
     ChatMessageUser,
     ClaudeCodeHookRequest,
     CodexHookRequest,
+    CopilotHookRequest,
     CreateSessionContentAccessRequest,
     DeepReviewRequestResponse,
     DeviceAuthorizationResponse,
@@ -137,6 +139,7 @@ from watcher_sdk._generated.models import (
     SessionSummary,
     ToolCallDecisionBatchRequest,
     ToolCallDecisionBatchResponse,
+    ToolCallDetailResponse,
     ToolCallFindingsResponse,
     ToolCallListResponse,
     ToolCallSearchFilters,
@@ -159,6 +162,7 @@ from watcher_sdk._generated.models.aperture_log import ApertureLog
 from watcher_sdk._generated.models.callback_request import CallbackRequest
 from watcher_sdk._generated.models.claude_code_trajectory import ClaudeCodeTrajectory
 from watcher_sdk._generated.models.codex_trajectory import CodexTrajectory
+from watcher_sdk._generated.models.copilot_trajectory import CopilotTrajectory
 from watcher_sdk._generated.models.create_grader_request import CreateGraderRequest
 from watcher_sdk._generated.models.create_grader_request_reasoning_effort_type_0 import (
     CreateGraderRequestReasoningEffortType0,
@@ -268,8 +272,11 @@ _LOCAL_JUDGMENTS: dict[str, str] = {
 
 # `external_ids` keys naming a harness whose own tool names the hook endpoint
 # translates onto Claude Code's before its deterministic checks (Codex's
-# `exec_command` is evaluated as `Bash`, for instance).
-_TRANSLATED_HARNESS_KEYS = frozenset({"claude_code", "codex"})
+# `exec_command` and GitHub Copilot CLI's `view` are evaluated as `Bash` and
+# `Read`, for instance).
+_TRANSLATED_HARNESS_KEYS = frozenset({"claude_code", "codex", "github_copilot_cli"})
+# The coding agents' own transcript formats `pre_tool_use_hook` accepts in `messages`.
+_TRANSCRIPT_FILE_FORMATS = ("claude-code-jsonl", "codex-jsonl", "copilot-events-jsonl")
 
 
 @functools.cache
@@ -282,8 +289,9 @@ def _hook_may_translate(external_ids: Mapping[str, str | None] | None, tool_name
     """Whether the hook endpoint may evaluate this call under a different tool name than the local stage would.
 
     The endpoint translates harness-specific tool names (Codex's
-    `exec_command`, Claude Cowork's `mcp__workspace__bash`) for requests whose
-    `external_ids` name Claude Code or Codex. This client carries no
+    `exec_command`, Claude Cowork's `mcp__workspace__bash`, Copilot's `view`)
+    for requests whose `external_ids` name Claude Code, Codex or GitHub Copilot
+    CLI. This client carries no
     translation table, so for those requests any name the packaged settings do
     not configure goes to the server rather than being judged locally under a
     name the server would not use.
@@ -796,7 +804,9 @@ class AsyncWatcherClient:
 
     @_sdk_method
     async def ingest(
-        self, source: str, trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | ApertureLog]
+        self,
+        source: str,
+        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog],
     ) -> IngestResponse:
         """Ingest trajectories for storage and deduplication.
 
@@ -804,7 +814,9 @@ class AsyncWatcherClient:
             source: Identifier for the data source (e.g. pipeline name or tool name).
             trajectories: List of trajectories to ingest. Each can be a
                 ClaudeCodeTrajectory (Claude Code JSONL entries), a CodexTrajectory
-                (Codex rollout JSONL entries), or an ApertureLog (S3 reference).
+                (Codex rollout JSONL entries), a CopilotTrajectory (one
+                conversation's events from a GitHub Copilot CLI events.jsonl),
+                or an ApertureLog (S3 reference).
 
         Returns:
             IngestResponse containing the session_id and trajectory_ids for the
@@ -820,7 +832,7 @@ class AsyncWatcherClient:
         session_id: str,
         anchor_trajectory_hash: str,
         source: str,
-        trajectory: ClaudeCodeTrajectory | CodexTrajectory,
+        trajectory: ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory,
     ) -> IngestResponse:
         """Append a delta of transcript entries to an existing session's chain.
 
@@ -836,8 +848,9 @@ class AsyncWatcherClient:
             anchor_trajectory_hash: The last uploaded message's trajectory
                 hash; the delta is appended after it.
             source: Identifier for the data source, as in :meth:`ingest`.
-            trajectory: The delta entries in Claude Code or Codex JSONL form.
-                Aperture logs have no append form.
+            trajectory: The delta entries in Claude Code or Codex JSONL form,
+                or a GitHub Copilot CLI conversation's events (led by the log's
+                ``session.start``). Aperture logs have no append form.
 
         Raises:
             WatcherAPIError: with status 404 when the server predates the
@@ -1262,17 +1275,21 @@ class AsyncWatcherClient:
                   With one input, top-level and nested transcripts must match
                   if both are non-null.
                 - The coding agent's own transcript file, the shape `ingest`
-                  accepts: ``{"format": "claude-code-jsonl" | "codex-jsonl",
-                  "timestamp": ..., "entries": [...]}``. The request takes that
-                  format. The calls are judged with the file's live branch as
-                  context; the file is stored up to its last complete tool
-                  cycle, as a direct upload would store it. Inputs never carry
-                  their own `messages` then. Each call should name its
-                  `tool_use_id`: Claude Code's hooks report it; for Codex read
-                  it from the rollout
+                  accepts: ``{"format": "claude-code-jsonl" | "codex-jsonl" |
+                  "copilot-events-jsonl", "timestamp": ..., "entries": [...]}``
+                  (a Copilot conversation also names its ``agent_id``, null for
+                  the parent). The request takes that format. The calls are
+                  judged with the file's live branch as context; the file is
+                  stored up to its last complete tool cycle, as a direct upload
+                  would store it. Inputs never carry their own `messages` then.
+                  Each call should name its `tool_use_id`: Claude Code's hooks
+                  report it; for Codex read it from the rollout
                   (`watcher_transcript_transport.codex.pending_call_id`). A
                   Codex call without one, or one the rollout does not hold, is
-                  never allowed by a command rule; the monitors decide.
+                  never allowed by a command rule; the monitors decide. A
+                  Copilot call names the ID its log's hook record gives it, under
+                  Copilot's native tool name and arguments, and must match the
+                  log's record of that ID exactly.
 
                 With `append_after`, send only what follows the anchor (chat
                 messages or file entries); an empty delta can evaluate a call
@@ -1389,8 +1406,10 @@ class AsyncWatcherClient:
                 RawPreToolUseHookRequest.from_dict(raw),
                 timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS,
             )
-        if isinstance(messages, Mapping) and messages.get("format") not in ("claude-code-jsonl", "codex-jsonl"):
-            raise ValueError("A transcript file in messages must be claude-code-jsonl or codex-jsonl")
+        if isinstance(messages, Mapping) and messages.get("format") not in _TRANSCRIPT_FILE_FORMATS:
+            raise ValueError(
+                "A transcript file in messages must be claude-code-jsonl, codex-jsonl or copilot-events-jsonl"
+            )
         if input is None or isinstance(input, list):
             if tool_use_id is not None:
                 raise ValueError("tool_use_id is only supported for scalar input; set each input.tool_use_id instead")
@@ -1431,6 +1450,8 @@ class AsyncWatcherClient:
             if body_dict["format"] == "claude-code-jsonl"
             else CodexHookRequest.from_dict(body_dict)
             if body_dict["format"] == "codex-jsonl"
+            else CopilotHookRequest.from_dict(body_dict)
+            if body_dict["format"] == "copilot-events-jsonl"
             else PreToolUseHookRequest.from_dict(body_dict)
         )
         return await self._send_pre_tool_use_hook(
@@ -1440,7 +1461,11 @@ class AsyncWatcherClient:
 
     async def _send_pre_tool_use_hook(
         self,
-        body: PreToolUseHookRequest | ClaudeCodeHookRequest | CodexHookRequest | RawPreToolUseHookRequest,
+        body: PreToolUseHookRequest
+        | ClaudeCodeHookRequest
+        | CodexHookRequest
+        | CopilotHookRequest
+        | RawPreToolUseHookRequest,
         timeout: float,
     ) -> HookAppendResponse | PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
         """POST one hook request under its own timeout, without the client's automatic retries."""
@@ -2018,7 +2043,7 @@ class AsyncWatcherClient:
                 values are lists of IDs to match within that namespace. Example:
                 {"anthropic-claude-code": ["cc-123", "cc-456"], "tailscale-aperture": ["ancc_789"]}
             agent_platforms: Filter by agent platforms. Known values: 'claude_code', 'codex',
-                'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and
+                'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe', 'pi' and
                 'other'; any string is accepted and unknown values match no sessions.
             grading_statuses: Filter by derived grading status.
             categories: Filter by score category names.
@@ -2343,6 +2368,27 @@ class AsyncWatcherClient:
         )
 
     @_sdk_method
+    async def get_session_tool_call(self, session_id: str, tool_use_id: str) -> ToolCallDetailResponse:
+        """Read one call's permitted arguments, result and optional decision.
+
+        Findings and content are authorized independently. Access flags distinguish
+        restricted fields from missing data, including calls with no grading record.
+        Surrounding messages and grader input transcripts are never returned.
+
+        Args:
+            session_id: Session UUID.
+            tool_use_id: Exact tool-use ID, including any nested-call suffix.
+
+        Raises:
+            WatcherNotFoundError: If the session is inaccessible or scrubbed, or the
+                call does not exist in that session.
+            WatcherValidationError: If the session UUID is malformed or tool_use_id is empty.
+        """
+        return await _get_tool_call_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            session_id, client=self._generated_client, tool_use_id=tool_use_id
+        )
+
+    @_sdk_method
     async def scrub_session_content(self, session_id: str) -> None:
         """Remove stored content for a session while retaining its historical record.
 
@@ -2604,7 +2650,7 @@ class AsyncWatcherClient:
     async def ingest_and_grade(
         self,
         source: str,
-        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | ApertureLog],
+        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog],
         grader_ids: list[str],
     ) -> tuple[IngestResponse, GradeResponse]:
         """Ingest trajectories and immediately grade them.
@@ -2692,7 +2738,7 @@ class AsyncWatcherClient:
             external_ids: Filter by external ID mappings. Keys are namespace strings,
                 values are lists of IDs to match within that namespace.
             agent_platforms: Filter by agent platforms. Known values: 'claude_code', 'codex',
-                'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe' and
+                'opencode', 'gemini_cli', 'antigravity_cli', 'qwen_code', 'mistral_vibe', 'pi' and
                 'other'; any string is accepted and unknown values match no sessions.
             grading_statuses: Filter by derived grading status.
             categories: Filter by score category names.

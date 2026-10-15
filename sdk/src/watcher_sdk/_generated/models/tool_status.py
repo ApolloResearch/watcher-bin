@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ToolStatus(str, Enum):
+class ToolStatus(StrEnum):
     BLOCKED = "blocked"
     CANCELLED = "cancelled"
     COMPLETED = "completed"

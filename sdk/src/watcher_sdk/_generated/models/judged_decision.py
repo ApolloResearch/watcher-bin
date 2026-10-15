@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class JudgedDecision(str, Enum):
+class JudgedDecision(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
     ESCALATE = "escalate"

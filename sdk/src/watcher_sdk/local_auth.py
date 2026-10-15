@@ -245,18 +245,6 @@ class WatcherLoginAuth(httpx.Auth):
         """Check local sign-in availability and server binding without making a request."""
         self._read_login()
 
-    def validate_project_location(self, project: Path) -> None:
-        """Reject project-contained stores before sign-in or refresh can write credentials.
-
-        Resolves the project, store, credential directory and file independently
-        so symlinks cannot place either saved tokens or temporary writes in the project.
-        Checks paths only; the store and credential file need not exist yet.
-        """
-        project = project.expanduser().resolve()
-        paths = (self.credential_file.parent.parent, self.credential_file.parent, self.credential_file)
-        if any(path.resolve().is_relative_to(project) for path in paths):
-            raise ValueError("The saved sign-in must be stored outside the project")
-
     def _superseded(self) -> bool:
         """Watcher's own store ignores a sign-in once headers or a helper own the server."""
         return watcher_login_superseded(self.state_dir, str(self.base_url))

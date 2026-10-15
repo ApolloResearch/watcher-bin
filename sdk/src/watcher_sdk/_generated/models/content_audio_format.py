@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ContentAudioFormat(str, Enum):
+class ContentAudioFormat(StrEnum):
     MP3 = "mp3"
     WAV = "wav"
 

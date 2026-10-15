@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class DecidedBy(str, Enum):
+class DecidedBy(StrEnum):
     AGENT_REVIEW = "agent_review"
     INTERRUPT = "interrupt"
     PERSON = "person"

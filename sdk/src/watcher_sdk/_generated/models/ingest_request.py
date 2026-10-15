@@ -5,11 +5,13 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.aperture_log import ApertureLog
     from ..models.claude_code_trajectory import ClaudeCodeTrajectory
     from ..models.codex_trajectory import CodexTrajectory
+    from ..models.copilot_trajectory import CopilotTrajectory
 
 
 T = TypeVar("T", bound="IngestRequest")
@@ -21,25 +23,30 @@ class IngestRequest:
 
     Attributes:
         source (str):
-        trajectories (list[ApertureLog | ClaudeCodeTrajectory | CodexTrajectory]):
+        trajectories (list[ApertureLog | ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory]):
     """
 
     source: str
-    trajectories: list[ApertureLog | ClaudeCodeTrajectory | CodexTrajectory]
+    trajectories: list[
+        ApertureLog | ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory
+    ]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.claude_code_trajectory import ClaudeCodeTrajectory
         from ..models.codex_trajectory import CodexTrajectory
+        from ..models.copilot_trajectory import CopilotTrajectory
 
         source = self.source
 
         trajectories = []
         for trajectories_item_data in self.trajectories:
             trajectories_item: dict[str, Any]
-            if isinstance(trajectories_item_data, ClaudeCodeTrajectory):
-                trajectories_item = trajectories_item_data.to_dict()
-            elif isinstance(trajectories_item_data, CodexTrajectory):
+            if (
+                isinstance(trajectories_item_data, ClaudeCodeTrajectory)
+                or isinstance(trajectories_item_data, CodexTrajectory)
+                or isinstance(trajectories_item_data, CopilotTrajectory)
+            ):
                 trajectories_item = trajectories_item_data.to_dict()
             else:
                 trajectories_item = trajectories_item_data.to_dict()
@@ -58,10 +65,13 @@ class IngestRequest:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.aperture_log import ApertureLog
-        from ..models.claude_code_trajectory import ClaudeCodeTrajectory
+        from ..models.claude_code_trajectory import (
+            ClaudeCodeTrajectory,
+        )
         from ..models.codex_trajectory import CodexTrajectory
+        from ..models.copilot_trajectory import CopilotTrajectory
 
         d = dict(src_dict)
         source = d.pop("source")
@@ -72,7 +82,9 @@ class IngestRequest:
 
             def _parse_trajectories_item(
                 data: object,
-            ) -> ApertureLog | ClaudeCodeTrajectory | CodexTrajectory:
+            ) -> (
+                ApertureLog | ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory
+            ):
                 try:
                     if not isinstance(data, dict):
                         raise TypeError()
@@ -89,11 +101,19 @@ class IngestRequest:
                     return trajectories_item_type_1
                 except (TypeError, ValueError, AttributeError, KeyError):
                     pass
+                try:
+                    if not isinstance(data, dict):
+                        raise TypeError()
+                    trajectories_item_type_2 = CopilotTrajectory.from_dict(data)
+
+                    return trajectories_item_type_2
+                except (TypeError, ValueError, AttributeError, KeyError):
+                    pass
                 if not isinstance(data, dict):
                     raise TypeError()
-                trajectories_item_type_2 = ApertureLog.from_dict(data)
+                trajectories_item_type_3 = ApertureLog.from_dict(data)
 
-                return trajectories_item_type_2
+                return trajectories_item_type_3
 
             trajectories_item = _parse_trajectories_item(trajectories_item_data)
 

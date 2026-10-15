@@ -7,7 +7,7 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..models.applied_decision import AppliedDecision
 from ..models.bypass_reason import BypassReason
@@ -280,7 +280,7 @@ class ToolCallDecisionPayload:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.tool_call_decision_payload_raw_tool_call import (
             ToolCallDecisionPayloadRawToolCall,
         )
@@ -399,7 +399,7 @@ class ToolCallDecisionPayload:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                human_decided_at_type_0 = isoparse(data)
+                human_decided_at_type_0 = datetime.datetime.fromisoformat(data)
 
                 return human_decided_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
@@ -433,7 +433,7 @@ class ToolCallDecisionPayload:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                decided_at_type_0 = isoparse(data)
+                decided_at_type_0 = datetime.datetime.fromisoformat(data)
 
                 return decided_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):

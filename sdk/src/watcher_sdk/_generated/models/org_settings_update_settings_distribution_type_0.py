@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class OrgSettingsUpdateSettingsDistributionType0(str, Enum):
+class OrgSettingsUpdateSettingsDistributionType0(StrEnum):
     MDM = "mdm"
     WATCHER = "watcher"
 

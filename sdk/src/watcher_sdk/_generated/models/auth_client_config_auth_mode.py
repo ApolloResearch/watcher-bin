@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class AuthClientConfigAuthMode(str, Enum):
+class AuthClientConfigAuthMode(StrEnum):
     PROXY = "proxy"
     WORKOS = "workos"
 

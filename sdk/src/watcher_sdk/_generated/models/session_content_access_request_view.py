@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionContentAccessRequestView(str, Enum):
+class SessionContentAccessRequestView(StrEnum):
     ACTIVE = "active"
     HISTORICAL = "historical"
     PENDING = "pending"

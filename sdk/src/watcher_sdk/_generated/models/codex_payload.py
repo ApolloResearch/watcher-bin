@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..models.codex_payload_type_type_0 import CodexPayloadTypeType0
 from ..types import UNSET, Unset
@@ -296,13 +297,21 @@ class CodexPayload:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.codex_content_item import CodexContentItem
         from ..models.codex_git_info import CodexGitInfo
-        from ..models.codex_local_shell_action import CodexLocalShellAction
-        from ..models.codex_payload_arguments_type_1 import CodexPayloadArgumentsType1
-        from ..models.codex_payload_input_type_1 import CodexPayloadInputType1
-        from ..models.codex_reasoning_summary_item import CodexReasoningSummaryItem
+        from ..models.codex_local_shell_action import (
+            CodexLocalShellAction,
+        )
+        from ..models.codex_payload_arguments_type_1 import (
+            CodexPayloadArgumentsType1,
+        )
+        from ..models.codex_payload_input_type_1 import (
+            CodexPayloadInputType1,
+        )
+        from ..models.codex_reasoning_summary_item import (
+            CodexReasoningSummaryItem,
+        )
 
         d = dict(src_dict)
 

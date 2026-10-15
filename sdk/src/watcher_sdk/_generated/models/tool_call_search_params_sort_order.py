@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ToolCallSearchParamsSortOrder(str, Enum):
+class ToolCallSearchParamsSortOrder(StrEnum):
     ASC = "asc"
     DESC = "desc"
 

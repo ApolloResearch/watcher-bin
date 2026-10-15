@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class GradeByMonitorV1MonitorsRoleGradePostRole(str, Enum):
+class GradeByMonitorV1MonitorsRoleGradePostRole(StrEnum):
     GATEWAY = "gateway"
     TRIAGE = "triage"
 

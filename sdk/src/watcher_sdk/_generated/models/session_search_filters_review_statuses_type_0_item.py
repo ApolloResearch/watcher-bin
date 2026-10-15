@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionSearchFiltersReviewStatusesType0Item(str, Enum):
+class SessionSearchFiltersReviewStatusesType0Item(StrEnum):
     ERROR = "error"
     NOT_REVIEWED = "not_reviewed"
     PENDING = "pending"

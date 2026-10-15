@@ -13,8 +13,11 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
+from ..models.available_session_detail_response_ingest_kinds_item import (
+    AvailableSessionDetailResponseIngestKindsItem,
+)
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -55,6 +58,9 @@ class AvailableSessionDetailResponse:
         user_email (None | str | Unset):
         external_ids (AvailableSessionDetailResponseExternalIdsType0 | None | Unset):
         metadata (AvailableSessionDetailResponseMetadataType0 | None | Unset):
+        ingest_kinds (list[AvailableSessionDetailResponseIngestKindsItem] | Unset): Sorted distinct recorded delivery
+            paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report
+            other.
         sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted; same
             values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone.
         content_state (Literal['available'] | Unset):  Default: 'available'.
@@ -78,6 +84,7 @@ class AvailableSessionDetailResponse:
     user_email: None | str | Unset = UNSET
     external_ids: AvailableSessionDetailResponseExternalIdsType0 | None | Unset = UNSET
     metadata: AvailableSessionDetailResponseMetadataType0 | None | Unset = UNSET
+    ingest_kinds: list[AvailableSessionDetailResponseIngestKindsItem] | Unset = UNSET
     sources: list[str] | Unset = UNSET
     content_state: Literal["available"] | Unset = "available"
     is_content_scrubbed: bool | Unset = False
@@ -162,6 +169,13 @@ class AvailableSessionDetailResponse:
         else:
             metadata = self.metadata
 
+        ingest_kinds: list[str] | Unset = UNSET
+        if not isinstance(self.ingest_kinds, Unset):
+            ingest_kinds = []
+            for ingest_kinds_item_data in self.ingest_kinds:
+                ingest_kinds_item = ingest_kinds_item_data.value
+                ingest_kinds.append(ingest_kinds_item)
+
         sources: list[str] | Unset = UNSET
         if not isinstance(self.sources, Unset):
             sources = self.sources
@@ -204,6 +218,8 @@ class AvailableSessionDetailResponse:
             field_dict["external_ids"] = external_ids
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
+        if ingest_kinds is not UNSET:
+            field_dict["ingest_kinds"] = ingest_kinds
         if sources is not UNSET:
             field_dict["sources"] = sources
         if content_state is not UNSET:
@@ -216,7 +232,7 @@ class AvailableSessionDetailResponse:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.available_session_detail_response_external_ids_type_0 import (
             AvailableSessionDetailResponseExternalIdsType0,
         )
@@ -235,13 +251,13 @@ class AvailableSessionDetailResponse:
 
         agent_platform = d.pop("agent_platform")
 
-        started_at = isoparse(d.pop("started_at"))
+        started_at = datetime.datetime.fromisoformat(d.pop("started_at"))
 
-        ended_at = isoparse(d.pop("ended_at"))
+        ended_at = datetime.datetime.fromisoformat(d.pop("ended_at"))
 
         message_count = d.pop("message_count")
 
-        created_at = isoparse(d.pop("created_at"))
+        created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 
         trajectories = []
         _trajectories = d.pop("trajectories")
@@ -347,6 +363,19 @@ class AvailableSessionDetailResponse:
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
 
+        _ingest_kinds = d.pop("ingest_kinds", UNSET)
+        ingest_kinds: list[AvailableSessionDetailResponseIngestKindsItem] | Unset = (
+            UNSET
+        )
+        if _ingest_kinds is not UNSET:
+            ingest_kinds = []
+            for ingest_kinds_item_data in _ingest_kinds:
+                ingest_kinds_item = AvailableSessionDetailResponseIngestKindsItem(
+                    ingest_kinds_item_data
+                )
+
+                ingest_kinds.append(ingest_kinds_item)
+
         sources = cast(list[str], d.pop("sources", UNSET))
 
         content_state = cast(
@@ -387,6 +416,7 @@ class AvailableSessionDetailResponse:
             user_email=user_email,
             external_ids=external_ids,
             metadata=metadata,
+            ingest_kinds=ingest_kinds,
             sources=sources,
             content_state=content_state,
             is_content_scrubbed=is_content_scrubbed,

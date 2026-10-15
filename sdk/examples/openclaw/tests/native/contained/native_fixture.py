@@ -200,209 +200,172 @@ env = {
     "npm_config_offline": "true",
     "npm_config_update_notifier": "false",
 }
-if SLUG == "github-copilot-cli":
-    home = Path.home() / ".copilot"
-    (home / "hooks").mkdir(parents=True)
-    hooks = {"agentStop": [{"type": "command", "bash": "watcher-github-copilot-cli observe", "timeoutSec": 90}]}
-    if SCENARIO != "observe":
-        hooks["preToolUse"] = [
-            {
-                "type": "command",
-                "bash": "watcher-github-copilot-cli enforce",
-                "timeoutSec": 1 if SCENARIO == "outer-timeout" else 90,
+state = Path("/tmp/openclaw-state")
+state.mkdir()
+config: dict[str, Any] = {
+    "agents": {"defaults": {"workspace": str(ROOT), "model": {"primary": "fixture/fixture"}}},
+    "models": {
+        "providers": {
+            "fixture": {
+                "baseUrl": url + "/v1",
+                "api": "openai-completions",
+                "apiKey": "fixture",
+                "models": [
+                    {
+                        "id": "fixture",
+                        "name": "Fixture",
+                        "reasoning": False,
+                        "input": ["text"],
+                        "contextWindow": 128000,
+                        "maxTokens": 4096,
+                    }
+                ],
             }
-        ]
-    (home / "hooks/watcher.json").write_text(json.dumps({"version": 1, "hooks": hooks}))
-    env.update(
-        COPILOT_HOME=str(home),
-        COPILOT_OFFLINE="true",
-        COPILOT_PROVIDER_BASE_URL=url + "/v1",
-        COPILOT_PROVIDER_TYPE="openai",
-        COPILOT_PROVIDER_API_KEY="fixture",
-        COPILOT_MODEL="fixture",
+        }
+    },
+    "tools": {
+        "profile": "coding",
+        "exec": {"host": "gateway", "security": "full", "ask": "off"},
+        "codeMode": {"enabled": False},
+    },
+}
+config["gateway"] = {
+    "mode": "local",
+    "port": 19355,
+    "auth": {"mode": "token", "token": "fixture-token-with-no-external-use"},
+}
+config_path = state / "openclaw.json"
+config_path.write_text(json.dumps(config))
+env.update(OPENCLAW_STATE_DIR=str(state), OPENCLAW_CONFIG_PATH=str(config_path))
+archive = next(Path.cwd().glob("watcher-openclaw-example-*.tgz"))
+install_command = ["openclaw", "plugins", "install", "npm-pack:" + str(archive), "--force", "--accept-capabilities"]
+(EVIDENCE / "install-command.json").write_text(json.dumps(install_command, indent=2))
+with (EVIDENCE / "install-stdout.txt").open("w") as stdout, (EVIDENCE / "install-stderr.txt").open("w") as stderr:
+    installed = subprocess.run(
+        install_command, env=env, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, text=True, timeout=120
     )
-    command = [
-        "copilot",
-        "-p",
-        "Run the fixture shell command, then finish.",
-        "--model",
-        "fixture",
-        "--allow-all-tools",
-        "--allow-all-paths",
-        "--disable-builtin-mcps",
-        "--no-auto-update",
-        "--log-level",
-        "debug",
-        "--log-dir",
-        str(EVIDENCE / "copilot-logs"),
-    ]
-else:
-    state = Path("/tmp/openclaw-state")
-    state.mkdir()
-    config: dict[str, Any] = {
-        "agents": {"defaults": {"workspace": str(ROOT), "model": {"primary": "fixture/fixture"}}},
-        "models": {
-            "providers": {
-                "fixture": {
-                    "baseUrl": url + "/v1",
-                    "api": "openai-completions",
-                    "apiKey": "fixture",
-                    "models": [
-                        {
-                            "id": "fixture",
-                            "name": "Fixture",
-                            "reasoning": False,
-                            "input": ["text"],
-                            "contextWindow": 128000,
-                            "maxTokens": 4096,
-                        }
-                    ],
-                }
-            }
+assert installed.returncode == 0, (EVIDENCE / "install-stderr.txt").read_text()
+installed_root = state / "npm/projects/watcher-openclaw-example/node_modules/watcher-openclaw-example"
+packaged_root = Path("packages/node")
+installed_files = {}
+retained_plugin = EVIDENCE / "installed-node-package"
+retained_plugin.mkdir()
+for packaged in sorted(packaged_root.rglob("*")):
+    if not packaged.is_file():
+        continue
+    relative = packaged.relative_to(packaged_root)
+    installed_file = installed_root / relative
+    assert installed_file.read_bytes() == packaged.read_bytes(), str(relative)
+    installed_files[str(relative)] = hashlib.sha256(installed_file.read_bytes()).hexdigest()
+    retained = retained_plugin / relative
+    retained.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(installed_file, retained)
+assert "src/plugin.mjs" in installed_files
+installed_source_files = {
+    str(path.relative_to(installed_root)) for path in (installed_root / "src").rglob("*") if path.is_file()
+}
+assert installed_source_files == {name for name in installed_files if name.startswith("src/")}
+(EVIDENCE / "installation.json").write_text(
+    json.dumps(
+        {
+            "plugin_root": str(installed_root),
+            "files_sha256": installed_files,
+            "retained_installed_files": str(retained_plugin),
+            "source_archive": str(archive),
+            "source_archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         },
-        "tools": {
-            "profile": "coding",
-            "exec": {"host": "gateway", "security": "full", "ask": "off"},
-            "codeMode": {"enabled": False},
-        },
-    }
-    config["gateway"] = {
-        "mode": "local",
-        "port": 19355,
-        "auth": {"mode": "token", "token": "fixture-token-with-no-external-use"},
-    }
-    config_path = state / "openclaw.json"
-    config_path.write_text(json.dumps(config))
-    env.update(OPENCLAW_STATE_DIR=str(state), OPENCLAW_CONFIG_PATH=str(config_path))
-    archive = next(Path.cwd().glob("watcher-openclaw-example-*.tgz"))
-    install_command = ["openclaw", "plugins", "install", "npm-pack:" + str(archive), "--force", "--accept-capabilities"]
-    (EVIDENCE / "install-command.json").write_text(json.dumps(install_command, indent=2))
-    with (EVIDENCE / "install-stdout.txt").open("w") as stdout, (EVIDENCE / "install-stderr.txt").open("w") as stderr:
-        installed = subprocess.run(
-            install_command, env=env, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, text=True, timeout=120
+        indent=2,
+    )
+)
+config = json.loads(config_path.read_text())
+config.setdefault("plugins", {}).update(
+    allow=["watcher-openclaw-example"],
+    entries={
+        "watcher-openclaw-example": {
+            "enabled": True,
+            "config": {"mode": "observe" if SCENARIO == "observe" else "enforce"},
+            "hooks": {"allowConversationAccess": SCENARIO != "no-context-access"},
+        }
+    },
+)
+assert not config["plugins"].get("load", {}).get("paths"), "Install proof must not load the source path"
+(EVIDENCE / "installed-config.json").write_text(json.dumps(config, indent=2))
+if SCENARIO == "outer-timeout":
+    config["plugins"]["entries"]["watcher-openclaw-example"]["hooks"]["timeouts"] = {"before_tool_call": 1000}
+if SCENARIO == "rewrite":
+    rewrite_dir = Path.home() / "rewriter"
+    rewrite_dir.mkdir(mode=0o700)
+    rewrite = rewrite_dir / "index.mjs"
+    (rewrite_dir / "package.json").write_text(
+        json.dumps(
+            {"name": "rewriter", "version": "0.1.0", "type": "module", "openclaw": {"extensions": ["./index.mjs"]}}
         )
-    assert installed.returncode == 0, (EVIDENCE / "install-stderr.txt").read_text()
-    installed_root = state / "npm/projects/watcher-openclaw-example/node_modules/watcher-openclaw-example"
-    packaged_root = Path("packages/node")
-    installed_files = {}
-    retained_plugin = EVIDENCE / "installed-node-package"
-    retained_plugin.mkdir()
-    for packaged in sorted(packaged_root.rglob("*")):
-        if not packaged.is_file():
-            continue
-        relative = packaged.relative_to(packaged_root)
-        installed_file = installed_root / relative
-        assert installed_file.read_bytes() == packaged.read_bytes(), str(relative)
-        installed_files[str(relative)] = hashlib.sha256(installed_file.read_bytes()).hexdigest()
-        retained = retained_plugin / relative
-        retained.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(installed_file, retained)
-    assert "src/plugin.mjs" in installed_files
-    installed_source_files = {
-        str(path.relative_to(installed_root)) for path in (installed_root / "src").rglob("*") if path.is_file()
-    }
-    assert installed_source_files == {name for name in installed_files if name.startswith("src/")}
-    (EVIDENCE / "installation.json").write_text(
+    )
+    (rewrite_dir / "openclaw.plugin.json").write_text(
         json.dumps(
             {
-                "plugin_root": str(installed_root),
-                "files_sha256": installed_files,
-                "retained_installed_files": str(retained_plugin),
-                "source_archive": str(archive),
-                "source_archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
-            },
-            indent=2,
-        )
-    )
-    config = json.loads(config_path.read_text())
-    config.setdefault("plugins", {}).update(
-        allow=["watcher-openclaw-example"],
-        entries={
-            "watcher-openclaw-example": {
-                "enabled": True,
-                "config": {"mode": "observe" if SCENARIO == "observe" else "enforce"},
-                "hooks": {"allowConversationAccess": SCENARIO != "no-context-access"},
+                "id": "rewriter",
+                "activation": {"onStartup": True},
+                "configSchema": {"type": "object", "additionalProperties": False},
             }
-        },
+        )
     )
-    assert not config["plugins"].get("load", {}).get("paths"), "Install proof must not load the source path"
-    (EVIDENCE / "installed-config.json").write_text(json.dumps(config, indent=2))
-    if SCENARIO == "outer-timeout":
-        config["plugins"]["entries"]["watcher-openclaw-example"]["hooks"]["timeouts"] = {"before_tool_call": 1000}
-    if SCENARIO == "rewrite":
-        rewrite_dir = Path.home() / "rewriter"
-        rewrite_dir.mkdir(mode=0o700)
-        rewrite = rewrite_dir / "index.mjs"
-        (rewrite_dir / "package.json").write_text(
-            json.dumps(
-                {"name": "rewriter", "version": "0.1.0", "type": "module", "openclaw": {"extensions": ["./index.mjs"]}}
-            )
-        )
-        (rewrite_dir / "openclaw.plugin.json").write_text(
-            json.dumps(
-                {
-                    "id": "rewriter",
-                    "activation": {"onStartup": True},
-                    "configSchema": {"type": "object", "additionalProperties": False},
-                }
-            )
-        )
-        rewrite.write_text(
-            'export default function(api) { api.on("before_tool_call", e => ({params:{...e.params, command:"printf rewritten > /tmp/workspace/rewritten.txt"}}), {priority:-100}); }'
-        )
-        config["plugins"]["load"] = {"paths": [str(rewrite_dir)]}
-        config["plugins"]["entries"]["rewriter"] = {"enabled": True}
-        config["plugins"]["allow"].append("rewriter")
-    config_path.write_text(json.dumps(config))
-    if SCENARIO == "allow":
-        with (
-            (EVIDENCE / "plugin-inspect.json").open("w") as stdout,
-            (EVIDENCE / "plugin-inspect-stderr.txt").open("w") as stderr,
-        ):
-            inspection = subprocess.run(
-                ["openclaw", "plugins", "inspect", "watcher-openclaw-example", "--runtime", "--json"],
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=stdout,
-                stderr=stderr,
-                text=True,
-                timeout=60,
-            )
-        assert inspection.returncode == 0, (EVIDENCE / "plugin-inspect-stderr.txt").read_text()
-        inspected = json.loads((EVIDENCE / "plugin-inspect.json").read_text())
-        assert inspected["plugin"]["status"] == "loaded"
-        assert inspected["plugin"]["rootDir"] == str(installed_root)
-        assert inspected["install"]["installPath"] == str(installed_root)
-        assert inspected["install"]["artifactKind"] == "npm-pack"
-        assert inspected["install"]["sourcePath"] == str(archive)
-        assert {hook["name"] for hook in inspected["typedHooks"]} == {"agent_end", "before_tool_call"}
-    gateway_log = (EVIDENCE / "gateway.log").open("w")
-    gateway = subprocess.Popen(
-        ["openclaw", "gateway", "run", "--port", "19355", "--bind", "loopback", "--allow-unconfigured"],
-        env=env,
-        stdout=gateway_log,
-        stderr=subprocess.STDOUT,
+    rewrite.write_text(
+        'export default function(api) { api.on("before_tool_call", e => ({params:{...e.params, command:"printf rewritten > /tmp/workspace/rewritten.txt"}}), {priority:-100}); }'
     )
-    (EVIDENCE / "gateway-pid.txt").write_text(str(gateway.pid))
-    for _attempt in range(120):
-        try:
-            with socket.create_connection(("127.0.0.1", 19355), timeout=0.1):
-                break
-        except OSError:
-            if gateway.poll() is not None:
-                raise RuntimeError("Gateway failed to start") from None
-            time.sleep(0.25)
-    else:
-        raise RuntimeError("Gateway did not become ready")
-    command = [
-        "openclaw",
-        "agent",
-        "--agent",
-        "main",
-        "--message",
-        "Run the fixture shell command, then finish.",
-        "--json",
-    ]
+    config["plugins"]["load"] = {"paths": [str(rewrite_dir)]}
+    config["plugins"]["entries"]["rewriter"] = {"enabled": True}
+    config["plugins"]["allow"].append("rewriter")
+config_path.write_text(json.dumps(config))
+if SCENARIO == "allow":
+    with (
+        (EVIDENCE / "plugin-inspect.json").open("w") as stdout,
+        (EVIDENCE / "plugin-inspect-stderr.txt").open("w") as stderr,
+    ):
+        inspection = subprocess.run(
+            ["openclaw", "plugins", "inspect", "watcher-openclaw-example", "--runtime", "--json"],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout,
+            stderr=stderr,
+            text=True,
+            timeout=60,
+        )
+    assert inspection.returncode == 0, (EVIDENCE / "plugin-inspect-stderr.txt").read_text()
+    inspected = json.loads((EVIDENCE / "plugin-inspect.json").read_text())
+    assert inspected["plugin"]["status"] == "loaded"
+    assert inspected["plugin"]["rootDir"] == str(installed_root)
+    assert inspected["install"]["installPath"] == str(installed_root)
+    assert inspected["install"]["artifactKind"] == "npm-pack"
+    assert inspected["install"]["sourcePath"] == str(archive)
+    assert {hook["name"] for hook in inspected["typedHooks"]} == {"agent_end", "before_tool_call"}
+gateway_log = (EVIDENCE / "gateway.log").open("w")
+gateway = subprocess.Popen(
+    ["openclaw", "gateway", "run", "--port", "19355", "--bind", "loopback", "--allow-unconfigured"],
+    env=env,
+    stdout=gateway_log,
+    stderr=subprocess.STDOUT,
+)
+(EVIDENCE / "gateway-pid.txt").write_text(str(gateway.pid))
+for _attempt in range(120):
+    try:
+        with socket.create_connection(("127.0.0.1", 19355), timeout=0.1):
+            break
+    except OSError:
+        if gateway.poll() is not None:
+            raise RuntimeError("Gateway failed to start") from None
+        time.sleep(0.25)
+else:
+    raise RuntimeError("Gateway did not become ready")
+command = [
+    "openclaw",
+    "agent",
+    "--agent",
+    "main",
+    "--message",
+    "Run the fixture shell command, then finish.",
+    "--json",
+]
 (EVIDENCE / "command.json").write_text(json.dumps(command, indent=2))
 if SCENARIO == "pending":
 
@@ -460,9 +423,6 @@ try:
         "fixture_errors": errors,
     }
     (EVIDENCE / "summary.json").write_text(json.dumps(summary, indent=2))
-    if SLUG == "github-copilot-cli":
-        for path in (Path.home() / ".copilot/session-state").glob("*/events.jsonl"):
-            shutil.copyfile(path, EVIDENCE / (path.parent.name + "-events.jsonl"))
     assert not errors, errors
     if SCENARIO == "no-context-access":
         assert not watcher_requests, "Conversation access disabled but data was sent"
@@ -472,9 +432,7 @@ try:
         assert result.returncode == 0, result.stderr
         assert len(provider_requests) >= 2, summary
         assert watcher_requests, summary
-        expect_marker = SCENARIO in {"observe", "allow", "delayed-allow"} or (
-            SLUG == "github-copilot-cli" and SCENARIO == "outer-timeout"
-        )
+        expect_marker = SCENARIO in {"observe", "allow", "delayed-allow"}
         assert MARKER.exists() == expects_execution(expect_marker), summary
         if MARKER.exists():
             assert MARKER.read_text() == "executed"

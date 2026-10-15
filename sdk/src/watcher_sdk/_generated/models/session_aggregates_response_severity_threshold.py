@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionAggregatesResponseSeverityThreshold(str, Enum):
+class SessionAggregatesResponseSeverityThreshold(StrEnum):
     CRITICAL = "critical"
     HIGH = "high"
     LOW = "low"

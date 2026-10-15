@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class PreToolUseHookRequestMode(str, Enum):
+class PreToolUseHookRequestMode(StrEnum):
     FULL = "full"
     TRIAGE_ONLY = "triage_only"
 

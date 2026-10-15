@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "watcher-agent-router-example"
+version = "0.1.0"
+description = "Envoy external processor that monitors Agent Router traffic with Watcher"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["watcher-sdk>=0.1,<1", "httpx>=0.28,<1", "grpcio==1.84.0", "xds-protos==1.84.0", "pydantic>=2.11,<3", "structlog>=25.1,<27", "typer==0.24.1"]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "httpx==0.28.1",
+    "openai==3.8.0",
+    "pyyaml==6.0.3",
+    "pytest-cov==7.1.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/watcher_agent_router"]
+
+[tool.uv.sources]
+watcher-sdk = { path = "../.." }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
+pythonpath = ["tests/native"]
+
+[tool.uv]
+exclude-newer = "7 days"
+
+[project.scripts]
+watcher-agent-router = "watcher_agent_router.processor:main"

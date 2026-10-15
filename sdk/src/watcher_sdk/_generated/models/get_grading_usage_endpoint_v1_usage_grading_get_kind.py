@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class GetGradingUsageEndpointV1UsageGradingGetKind(str, Enum):
+class GetGradingUsageEndpointV1UsageGradingGetKind(StrEnum):
     ALL = "all"
     GATEWAY = "gateway"
     TRAILING = "trailing"

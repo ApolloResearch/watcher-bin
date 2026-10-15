@@ -62,11 +62,14 @@ import httpx
 from watcher_sdk import AsyncWatcherClient
 from watcher_claude_compliance import ComplianceClient, import_conversation
 
-async with httpx.AsyncClient(
-    base_url="https://api.anthropic.com",
-    headers={"x-api-key": compliance_key, "anthropic-version": "2023-06-01"},
-    timeout=30,
-) as source_http, AsyncWatcherClient(watcher_url, api_key=watcher_key) as watcher:
+async with (
+    httpx.AsyncClient(
+        base_url="https://api.anthropic.com",
+        headers={"x-api-key": compliance_key, "anthropic-version": "2023-06-01"},
+        timeout=30,
+    ) as source_http,
+    AsyncWatcherClient(watcher_url, api_key=watcher_key) as watcher,
+):
     receipt = await import_conversation(
         ComplianceClient(source_http),
         watcher,

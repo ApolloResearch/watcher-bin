@@ -15,7 +15,6 @@ The SDK is source-distributed: each package's full LICENSE text is preserved in 
 | anyio             | MIT                                  | https://anyio.readthedocs.io/en/stable/versionhistory.html |
 | attrs             | MIT                                  | https://www.attrs.org/en/stable/changelog.html             |
 | certifi           | Mozilla Public License 2.0 (MPL 2.0) | https://github.com/certifi/python-certifi                  |
-| click             | BSD-3-Clause                         | https://github.com/pallets/click/                          |
 | h11               | MIT License                          | https://github.com/python-hyper/h11                        |
 | httpcore          | BSD-3-Clause                         | https://www.encode.io/httpcore/                            |
 | httpx             | BSD License                          | https://github.com/encode/httpx                            |

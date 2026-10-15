@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class BypassReason(str, Enum):
+class BypassReason(StrEnum):
     SNOOZE = "snooze"
     WATCHER_IGNORE = "watcher_ignore"
 

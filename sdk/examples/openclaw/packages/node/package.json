@@ -9,6 +9,9 @@
   "peerDependencies": {
     "openclaw": "2026.9.4"
   },
+  "overrides": {
+    "@modelcontextprotocol/sdk": "1.31.0"
+  },
   "openclaw": {
     "extensions": [
       "./src/plugin.mjs"

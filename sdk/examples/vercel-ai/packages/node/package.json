@@ -4,7 +4,7 @@
     "check": "node --check src/native.mjs"
   },
   "dependencies": {
-    "ai": "5.0.99"
+    "ai": "5.0.272"
   },
   "name": "watcher-vercel-ai-example",
   "version": "0.1.0",

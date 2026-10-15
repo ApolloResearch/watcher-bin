@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ReviewSessionContentAccessRequestStatus(str, Enum):
+class ReviewSessionContentAccessRequestStatus(StrEnum):
     APPROVED = "approved"
     DENIED = "denied"
 

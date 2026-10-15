@@ -41,8 +41,10 @@ async tool functions remain awaited normally. Generator tools are refused.
 from agno.tools.function import Function
 from watcher_agno import CaptureModelCalls, Monitor, WatcherAgent
 
+
 class MonitoredProvider(CaptureModelCalls, YourProviderModel):
     pass
+
 
 model = MonitoredProvider(...)  # Your provider's ordinary configuration.
 monitor = Monitor(client, conversation_id)

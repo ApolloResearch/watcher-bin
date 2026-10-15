@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionSearchFiltersSeveritiesType0Item(str, Enum):
+class SessionSearchFiltersSeveritiesType0Item(StrEnum):
     CRITICAL = "critical"
     HIGH = "high"
     LOW = "low"

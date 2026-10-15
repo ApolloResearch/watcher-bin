@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..models.org_settings_settings_distribution import OrgSettingsSettingsDistribution
 from ..models.org_settings_slack_alert_detail import OrgSettingsSlackAlertDetail
 from ..types import UNSET, Unset
+
+if TYPE_CHECKING:
+    from ..models.managed_settings_source import ManagedSettingsSource
+
 
 T = TypeVar("T", bound="OrgSettings")
 
@@ -28,6 +33,10 @@ class OrgSettings:
     and hint then describe the deployment's URL, and the settings API refuses
     writes to `slack_webhook_url`.
 
+    `managed_settings_source` is set when a self-host deployment mounts the
+    managed settings document as a file; both write paths then refuse with 409
+    `managed_settings_locked`.
+
         Attributes:
             organization_id (str):
             name (str):
@@ -46,6 +55,7 @@ class OrgSettings:
             slack_alert_detail (OrgSettingsSlackAlertDetail | Unset): Slack alert detail level. Findings-only alerts include
                 findings and aggregates, excluding session content. Default: OrgSettingsSlackAlertDetail.FULL.
             session_content_retention_days (int | None | Unset):
+            managed_settings_source (ManagedSettingsSource | None | Unset):
     """
 
     organization_id: str
@@ -66,9 +76,14 @@ class OrgSettings:
         OrgSettingsSlackAlertDetail.FULL
     )
     session_content_retention_days: int | None | Unset = UNSET
+    managed_settings_source: ManagedSettingsSource | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.managed_settings_source import (
+            ManagedSettingsSource,
+        )
+
         organization_id = self.organization_id
 
         name = self.name
@@ -119,6 +134,14 @@ class OrgSettings:
         else:
             session_content_retention_days = self.session_content_retention_days
 
+        managed_settings_source: dict[str, Any] | None | Unset
+        if isinstance(self.managed_settings_source, Unset):
+            managed_settings_source = UNSET
+        elif isinstance(self.managed_settings_source, ManagedSettingsSource):
+            managed_settings_source = self.managed_settings_source.to_dict()
+        else:
+            managed_settings_source = self.managed_settings_source
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -155,11 +178,17 @@ class OrgSettings:
             field_dict["session_content_retention_days"] = (
                 session_content_retention_days
             )
+        if managed_settings_source is not UNSET:
+            field_dict["managed_settings_source"] = managed_settings_source
 
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.managed_settings_source import (
+            ManagedSettingsSource,
+        )
+
         d = dict(src_dict)
         organization_id = d.pop("organization_id")
 
@@ -236,6 +265,27 @@ class OrgSettings:
             d.pop("session_content_retention_days", UNSET)
         )
 
+        def _parse_managed_settings_source(
+            data: object,
+        ) -> ManagedSettingsSource | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                managed_settings_source_type_0 = ManagedSettingsSource.from_dict(data)
+
+                return managed_settings_source_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ManagedSettingsSource | None | Unset, data)
+
+        managed_settings_source = _parse_managed_settings_source(
+            d.pop("managed_settings_source", UNSET)
+        )
+
         org_settings = cls(
             organization_id=organization_id,
             name=name,
@@ -253,6 +303,7 @@ class OrgSettings:
             slack_webhook_managed=slack_webhook_managed,
             slack_alert_detail=slack_alert_detail,
             session_content_retention_days=session_content_retention_days,
+            managed_settings_source=managed_settings_source,
         )
 
         org_settings.additional_properties = d

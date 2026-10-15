@@ -32,7 +32,9 @@ from watcher_llamaindex import Monitor, MonitoredFunctionAgent
 monitor = Monitor(watcher_client, conversation_id)
 memory = ChatMemoryBuffer.from_defaults(token_limit=10000)
 agent = MonitoredFunctionAgent(
-    monitor=monitor, llm=your_function_calling_model, tools=your_tools,
+    monitor=monitor,
+    llm=your_function_calling_model,
+    tools=your_tools,
 )
 await agent.run(user_msg=user_message, memory=memory)
 await monitor.record(memory.get_all())

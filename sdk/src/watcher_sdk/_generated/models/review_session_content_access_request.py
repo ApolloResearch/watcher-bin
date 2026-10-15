@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any, TypeVar, cast
 
 from attrs import define as _attrs_define
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..models.review_session_content_access_request_status import (
     ReviewSessionContentAccessRequestStatus,
@@ -51,7 +51,7 @@ class ReviewSessionContentAccessRequest:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         status = ReviewSessionContentAccessRequestStatus(d.pop("status"))
 
@@ -63,7 +63,7 @@ class ReviewSessionContentAccessRequest:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                valid_until_type_0 = isoparse(data)
+                valid_until_type_0 = datetime.datetime.fromisoformat(data)
 
                 return valid_until_type_0
             except (TypeError, ValueError, AttributeError, KeyError):

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Experimental Agno observation and synchronous monitoring with Watcher"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["watcher-sdk>=0.1,<1", "agno==2.2.3"]
+dependencies = ["watcher-sdk>=0.1,<1", "agno==2.3.24"]
 
 [dependency-groups]
 dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0"]

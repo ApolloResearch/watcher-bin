@@ -7,7 +7,7 @@ officially supported integration.
 
 ## Install and configure
 
-Use Python 3.12 or later and `uv`. The pinned framework packages are `langgraph==1.0.10`, `langgraph-prebuilt==1.0.8`, `langchain-core==1.3.3`.
+Use Python 3.12 or later and `uv`. The pinned framework packages are `langgraph==1.2.12`, `langgraph-prebuilt==1.1.0`, `langchain-core==1.6.6`.
 From this example directory:
 
 ```bash

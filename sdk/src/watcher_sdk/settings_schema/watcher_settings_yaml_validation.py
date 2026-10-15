@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -480,6 +480,8 @@ def add_settings_load_issue(
     source_path: Path,
     setting_path: tuple[str, ...] | str | None,
     message: str,
+    *,
+    severity: Literal["error", "warning"] = "error",
 ) -> None:
     formatted_path = format_setting_path(setting_path)
     if formatted_path and message.startswith(f"{formatted_path}: "):
@@ -490,6 +492,7 @@ def add_settings_load_issue(
             file_path=str(source_path),
             setting_path=formatted_path,
             message=message,
+            severity=severity,
         )
     )
 

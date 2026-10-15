@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ScoreDefinitionType(str, Enum):
+class ScoreDefinitionType(StrEnum):
     BOOL = "bool"
     FLOAT = "float"
     INT = "int"

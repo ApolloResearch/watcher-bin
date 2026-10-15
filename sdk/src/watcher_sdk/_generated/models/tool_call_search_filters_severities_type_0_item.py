@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ToolCallSearchFiltersSeveritiesType0Item(str, Enum):
+class ToolCallSearchFiltersSeveritiesType0Item(StrEnum):
     CRITICAL = "critical"
     HIGH = "high"
     LOW = "low"

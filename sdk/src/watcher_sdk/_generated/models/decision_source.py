@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class DecisionSource(str, Enum):
+class DecisionSource(StrEnum):
     BYPASS = "bypass"
     GRADING_ERROR = "grading_error"
     NOT_EVALUATED = "not_evaluated"

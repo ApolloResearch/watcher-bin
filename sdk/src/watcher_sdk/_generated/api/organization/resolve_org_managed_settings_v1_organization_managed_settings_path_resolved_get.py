@@ -60,7 +60,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[HTTPValidationError | OrgManagedSettingsResolved]:
-    r"""Resolve Org Managed Settings
+    """Resolve Org Managed Settings
 
      Return the document machines should apply for this path, or 404 when unmanaged.
 
@@ -68,11 +68,13 @@ def sync_detailed(
     with per-user credentials, so a member JWT need not carry the admin-only
     settings permission). An org or user API key is the exception: it must carry
     org:settings:read, the same slug the other settings routes enforce. 404
-    covers both \"the org distributes via MDM\" and \"no document saved yet\";
-    clients treat it as \"no managed settings\" and keep their last-known-good
+    covers both "the org distributes via MDM" and "no document saved yet";
+    clients treat it as "no managed settings" and keep their last-known-good
     file. That expected 404 carries a structured detail
-    (``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell
+    (``{"code": "no_managed_settings", "message": ...}``) so clients can tell
     it apart from a routing-layer 404, whose body is a plain string.
+    When the deployment mounts a managed settings file it is served here
+    regardless of the stored distribution flag.
 
     Args:
         path (str):
@@ -101,7 +103,7 @@ def sync(
     *,
     client: AuthenticatedClient | Client,
 ) -> HTTPValidationError | OrgManagedSettingsResolved | None:
-    r"""Resolve Org Managed Settings
+    """Resolve Org Managed Settings
 
      Return the document machines should apply for this path, or 404 when unmanaged.
 
@@ -109,11 +111,13 @@ def sync(
     with per-user credentials, so a member JWT need not carry the admin-only
     settings permission). An org or user API key is the exception: it must carry
     org:settings:read, the same slug the other settings routes enforce. 404
-    covers both \"the org distributes via MDM\" and \"no document saved yet\";
-    clients treat it as \"no managed settings\" and keep their last-known-good
+    covers both "the org distributes via MDM" and "no document saved yet";
+    clients treat it as "no managed settings" and keep their last-known-good
     file. That expected 404 carries a structured detail
-    (``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell
+    (``{"code": "no_managed_settings", "message": ...}``) so clients can tell
     it apart from a routing-layer 404, whose body is a plain string.
+    When the deployment mounts a managed settings file it is served here
+    regardless of the stored distribution flag.
 
     Args:
         path (str):
@@ -137,7 +141,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[HTTPValidationError | OrgManagedSettingsResolved]:
-    r"""Resolve Org Managed Settings
+    """Resolve Org Managed Settings
 
      Return the document machines should apply for this path, or 404 when unmanaged.
 
@@ -145,11 +149,13 @@ async def asyncio_detailed(
     with per-user credentials, so a member JWT need not carry the admin-only
     settings permission). An org or user API key is the exception: it must carry
     org:settings:read, the same slug the other settings routes enforce. 404
-    covers both \"the org distributes via MDM\" and \"no document saved yet\";
-    clients treat it as \"no managed settings\" and keep their last-known-good
+    covers both "the org distributes via MDM" and "no document saved yet";
+    clients treat it as "no managed settings" and keep their last-known-good
     file. That expected 404 carries a structured detail
-    (``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell
+    (``{"code": "no_managed_settings", "message": ...}``) so clients can tell
     it apart from a routing-layer 404, whose body is a plain string.
+    When the deployment mounts a managed settings file it is served here
+    regardless of the stored distribution flag.
 
     Args:
         path (str):
@@ -176,7 +182,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient | Client,
 ) -> HTTPValidationError | OrgManagedSettingsResolved | None:
-    r"""Resolve Org Managed Settings
+    """Resolve Org Managed Settings
 
      Return the document machines should apply for this path, or 404 when unmanaged.
 
@@ -184,11 +190,13 @@ async def asyncio(
     with per-user credentials, so a member JWT need not carry the admin-only
     settings permission). An org or user API key is the exception: it must carry
     org:settings:read, the same slug the other settings routes enforce. 404
-    covers both \"the org distributes via MDM\" and \"no document saved yet\";
-    clients treat it as \"no managed settings\" and keep their last-known-good
+    covers both "the org distributes via MDM" and "no document saved yet";
+    clients treat it as "no managed settings" and keep their last-known-good
     file. That expected 404 carries a structured detail
-    (``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell
+    (``{"code": "no_managed_settings", "message": ...}``) so clients can tell
     it apart from a routing-layer 404, whose body is a plain string.
+    When the deployment mounts a managed settings file it is served here
+    regardless of the stored distribution flag.
 
     Args:
         path (str):

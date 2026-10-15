@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -95,7 +95,7 @@ class TrajectoryDetailResponse:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.grade_result import GradeResult
         from ..models.trajectory_detail_response_messages_item import (
             TrajectoryDetailResponseMessagesItem,
@@ -132,7 +132,7 @@ class TrajectoryDetailResponse:
 
         source = d.pop("source")
 
-        created_at = isoparse(d.pop("created_at"))
+        created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 
         _tool_call_decisions = d.pop("tool_call_decisions", UNSET)
         tool_call_decisions: TrajectoryDetailResponseToolCallDecisions | Unset

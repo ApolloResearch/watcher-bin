@@ -48,7 +48,7 @@ Error handling::
             print(f"Rate limited, retry after {e.retry_after}s")
 
 Exported models (from the generated API schema):
-    ApertureLog, AvailableSessionDetailResponse, ClaudeCodeTrajectory, CodexTrajectory,
+    ApertureLog, AvailableSessionDetailResponse, ClaudeCodeTrajectory, CodexTrajectory, CopilotTrajectory,
     CreateGraderRequest, GradeRequest, GradeResponse,
     GradeResult, GraderDetail, GraderListResponse, GraderSearchRequest,
     GraderSearchResponse, GraderSummary, HealthResponse, IngestRequest,
@@ -64,6 +64,7 @@ from watcher_sdk._generated.models import (
     AvailableSessionDetailResponse,
     ClaudeCodeTrajectory,
     CodexTrajectory,
+    CopilotTrajectory,
     CreateGraderRequest,
     GraderDetail,
     GradeRequest,
@@ -89,7 +90,9 @@ from watcher_sdk._generated.models import (
     SessionSummary,
     SuggestedModel,
     ToolCallDecisionDetail,
+    ToolCallDetailResponse,
     ToolCallFindingsResponse,
+    ToolCallResult,
     TrajectoryDetailResponse,
     TrajectoryListInSessionResponse,
     TrajectorySummary,
@@ -148,6 +151,7 @@ __all__ = [
     "AvailableSessionDetailResponse",
     "ClaudeCodeTrajectory",
     "CodexTrajectory",
+    "CopilotTrajectory",
     "CreateGraderRequest",
     "GradeRequest",
     "GradeResponse",
@@ -174,6 +178,8 @@ __all__ = [
     "SessionSummary",
     "ToolCallDecisionDetail",
     "ToolCallFindingsResponse",
+    "ToolCallDetailResponse",
+    "ToolCallResult",
     "ScrubbedSessionDetailResponse",
     "MessageDetailResponse",
     "TrajectoryDetailResponse",

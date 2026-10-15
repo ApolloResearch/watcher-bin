@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class GradingFailureStageType0(str, Enum):
+class GradingFailureStageType0(StrEnum):
     GATEWAY = "gateway"
     TRIAGE = "triage"
 

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.tool_call_decision_detail import ToolCallDecisionDetail
@@ -15,8 +16,6 @@ T = TypeVar("T", bound="TrajectoryDetailResponseToolCallDecisions")
 
 @_attrs_define
 class TrajectoryDetailResponseToolCallDecisions:
-    """ """
-
     additional_properties: dict[str, ToolCallDecisionDetail] = _attrs_field(
         init=False, factory=dict
     )
@@ -30,8 +29,10 @@ class TrajectoryDetailResponseToolCallDecisions:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.tool_call_decision_detail import ToolCallDecisionDetail
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.tool_call_decision_detail import (
+            ToolCallDecisionDetail,
+        )
 
         d = dict(src_dict)
         trajectory_detail_response_tool_call_decisions = cls()

@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class UserFilterMode(str, Enum):
+class UserFilterMode(StrEnum):
     EXCLUDE = "exclude"
     INCLUDE = "include"
 

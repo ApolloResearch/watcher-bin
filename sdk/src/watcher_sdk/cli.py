@@ -1,4 +1,4 @@
-"""Sign in and manage SDK integrations without a local Watcher application."""
+"""Manage SDK browser sign-ins without a local Watcher application."""
 
 import asyncio
 from collections.abc import Callable
@@ -26,15 +26,7 @@ from watcher_sdk.login import login, logout
 
 app = typer.Typer(no_args_is_help=True, invoke_without_command=True, pretty_exceptions_enable=False)
 auth_app = typer.Typer(no_args_is_help=True, invoke_without_command=True, pretty_exceptions_enable=False)
-integrations_app = typer.Typer(no_args_is_help=True, invoke_without_command=True, pretty_exceptions_enable=False)
 app.add_typer(auth_app, name="auth", help="Manage SDK-owned browser sign-ins.")
-app.add_typer(integrations_app, name="integrations", help="Manage integrations for every session or one project.")
-
-ProjectOption = Annotated[
-    Path | None,
-    typer.Option(help="Use this project's own install instead of the personal one, which covers every session."),
-]
-ConfigDirOption = Annotated[Path | None, typer.Option(help="Private adapter configuration root.")]
 
 
 # Refusals whose messages are fixed SDK text without paths or credentials, so the
@@ -73,19 +65,19 @@ def command_errors[**P](function: Callable[P, None]) -> Callable[P, None]:
         except (httpx.HTTPError, WatcherError, TimeoutError):
             message = "The Watcher request failed. Check the server URL, connection and sign-in, then retry."
         except ImportError:
-            message = "The Copilot package is unavailable. Install it using the SDK release installer."
+            message = "A required SDK dependency is unavailable. Reinstall the SDK with [cli]."
         except (OSError, ValueError, KeyError) as error:
             # These refusals are fixed SDK text, so they are shown; other errors may quote external data.
             displayable = displayable_error(error)
             message = (
                 str(displayable)
                 if displayable is not None
-                else "Check the project, server URL, private credential source and hook ownership, then retry."
+                else "Check the server URL and private credential source, then retry."
             )
         except (TypeError, AttributeError):
-            # A defect in the SDK or adapter, such as a version skew after an update;
+            # A defect in the SDK, such as a version skew after an update;
             # reporting it as a connection problem would send the user the wrong way.
-            message = "The Watcher SDK hit an unexpected error. Re-run the SDK release installer, then retry."
+            message = "The Watcher SDK hit an unexpected error. Reinstall the SDK, then retry."
         typer.echo(message, err=True)
         raise typer.Exit(1)
 
@@ -94,7 +86,6 @@ def command_errors[**P](function: Callable[P, None]) -> Callable[P, None]:
 
 @app.command("help", hidden=True)
 @auth_app.command("help", hidden=True)
-@integrations_app.command("help", hidden=True)
 def help_command(ctx: typer.Context) -> None:
     typer.echo(ctx.parent.get_help() if ctx.parent is not None else ctx.get_help())
 
@@ -159,150 +150,6 @@ def logout_command(cloud: bool = False, url: str | None = None, state_dir: Path 
         if removed
         else "No SDK sign-in found."
     )
-
-
-def require_copilot(integration: str) -> None:
-    if integration != "copilot":
-        raise CommandError("Supported integration: copilot.")
-
-
-@integrations_app.command("install")
-@command_errors
-def install_command(
-    integration: Annotated[str, typer.Argument(help="Integration name: copilot.")],
-    project: Annotated[
-        Path | None,
-        typer.Option(help="Install in this project only. By default, hooks cover every Copilot session of this user."),
-    ] = None,
-    cloud: Annotated[bool, typer.Option(help="Use Watcher Cloud.")] = False,
-    url: Annotated[str | None, typer.Option("--url", "--watcher-url", help="Self-hosted server URL.")] = None,
-    watcher_auth: Annotated[bool, typer.Option(help="Use the local Watcher app's saved sign-in.")] = False,
-    fresh_login: Annotated[
-        bool, typer.Option("--login", help="Create or replace an SDK-owned browser sign-in.")
-    ] = False,
-    state_dir: Annotated[Path | None, typer.Option(help="Private SDK credential directory.")] = None,
-    watcher_state_dir: Annotated[Path | None, typer.Option(help="Watcher app credential directory.")] = None,
-    config_dir: ConfigDirOption = None,
-    record_only: Annotated[bool, typer.Option(help="Record without tool review.")] = False,
-    enforce: Annotated[bool, typer.Option(help="Enable tool review. New installs enable it by default.")] = False,
-    version: Annotated[str | None, typer.Option(hidden=True)] = None,
-) -> None:
-    """Verify access and install hooks for every Copilot session, or one project's, preserving mode and credentials."""
-    from watcher_sdk.cli_copilot import install
-
-    require_copilot(integration)
-    install(
-        project,
-        server_url(cloud, url),
-        config_dir=config_dir,
-        watcher_auth=watcher_auth,
-        fresh_login=fresh_login,
-        state_dir=state_dir,
-        watcher_state_dir=watcher_state_dir,
-        enforce=enforce,
-        record_only=record_only,
-    )
-
-
-@integrations_app.command("status")
-@command_errors
-def status_command(integration: str, project: ProjectOption = None, config_dir: ConfigDirOption = None) -> None:
-    """Show the installed hooks, confirmed transcript delivery and stored judgments, and any duplicate install."""
-    from watcher_sdk.cli_copilot import status
-
-    require_copilot(integration)
-    status(project, config_dir, verify=False)
-
-
-@integrations_app.command("doctor")
-@command_errors
-def doctor_command(integration: str, project: ProjectOption = None, config_dir: ConfigDirOption = None) -> None:
-    """Check hooks, credentials and server access, and read stored judgments back without grading anything."""
-    from watcher_sdk.cli_copilot import status
-
-    require_copilot(integration)
-    status(project, config_dir, verify=True)
-
-
-@integrations_app.command("logs")
-@command_errors
-def logs_command(
-    integration: str,
-    project: ProjectOption = None,
-    config_dir: ConfigDirOption = None,
-    limit: Annotated[int, typer.Option(min=1, max=1000)] = 20,
-) -> None:
-    """Show recent sanitized hook events, including detached recording failures."""
-    from watcher_sdk.cli_copilot import logs
-
-    require_copilot(integration)
-    logs(project, config_dir, limit)
-
-
-@integrations_app.command("remove")
-@command_errors
-def remove_command(integration: str, project: ProjectOption = None, config_dir: ConfigDirOption = None) -> None:
-    """Remove the owned hooks, retaining unrelated hooks and saved sign-ins; personal removal deletes opt-outs."""
-    from watcher_sdk.cli_copilot import remove
-
-    require_copilot(integration)
-    remove(project, config_dir)
-
-
-@integrations_app.command("update")
-@command_errors
-def update_command(
-    integration: str,
-    project: ProjectOption = None,
-    config_dir: ConfigDirOption = None,
-    version: str | None = None,
-    cloud: Annotated[bool, typer.Option(help="Reinstall against Watcher Cloud.")] = False,
-    url: Annotated[
-        str | None, typer.Option("--url", "--watcher-url", help="Reinstall against this self-hosted server.")
-    ] = None,
-) -> None:
-    """Install the server's SDK release and update the hooks, against the installed server unless one is named."""
-    from watcher_sdk.cli_copilot import update
-
-    require_copilot(integration)
-    update(project, config_dir, version, server_url(cloud, url))
-
-
-@integrations_app.command("opt-out")
-@command_errors
-def opt_out_command(
-    integration: str,
-    project: Annotated[Path, typer.Option(help="Project the hooks should leave alone, its own install included.")],
-    config_dir: ConfigDirOption = None,
-) -> None:
-    """Stop every installed Copilot hook from recording or judging anything in this project.
-
-    Asks you to confirm at an interactive terminal by typing the project folder.
-    An agent's ordinary shell command has no terminal, so it is refused, although
-    a process running as you can still fake one or edit the configuration.
-    """
-    from watcher_sdk.cli_copilot import opt_out
-
-    require_copilot(integration)
-    opt_out(project, config_dir, opted_out=True)
-
-
-@integrations_app.command("opt-in")
-@command_errors
-def opt_in_command(
-    integration: str,
-    project: Annotated[Path, typer.Option(help="Opted-out project the hooks should cover again.")],
-    config_dir: ConfigDirOption = None,
-) -> None:
-    """Let the installed Copilot hooks record and judge this project again.
-
-    Asks you to confirm at an interactive terminal by typing the project folder,
-    as opt-out does.
-    """
-    from watcher_sdk.cli_copilot import opt_out
-
-    require_copilot(integration)
-    opt_out(project, config_dir, opted_out=False)
 
 
 def main() -> None:

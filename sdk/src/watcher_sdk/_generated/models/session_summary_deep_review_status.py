@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionSummaryDeepReviewStatus(str, Enum):
+class SessionSummaryDeepReviewStatus(StrEnum):
     ERROR = "error"
     NOT_REVIEWED = "not_reviewed"
     PENDING = "pending"

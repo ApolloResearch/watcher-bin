@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
+
+if TYPE_CHECKING:
+    from ..models.session_capture_counts import SessionCaptureCounts
+
 
 T = TypeVar("T", bound="SessionAnalyticsSummary")
 
@@ -39,6 +44,7 @@ class SessionAnalyticsSummary:
             matching_users (int | Unset):  Default: 0.
             reviewed_sessions (int | Unset):  Default: 0.
             pending_sessions (int | Unset):  Default: 0.
+            session_capture (None | SessionCaptureCounts | Unset):
             tool_calls_evaluated (int | Unset):  Default: 0.
             tool_calls_blocked (int | Unset):  Default: 0.
             tool_calls_would_be_blocked (int | Unset):  Default: 0.
@@ -54,6 +60,7 @@ class SessionAnalyticsSummary:
     matching_users: int | Unset = 0
     reviewed_sessions: int | Unset = 0
     pending_sessions: int | Unset = 0
+    session_capture: None | SessionCaptureCounts | Unset = UNSET
     tool_calls_evaluated: int | Unset = 0
     tool_calls_blocked: int | Unset = 0
     tool_calls_would_be_blocked: int | Unset = 0
@@ -64,6 +71,10 @@ class SessionAnalyticsSummary:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.session_capture_counts import (
+            SessionCaptureCounts,
+        )
+
         total_sessions = self.total_sessions
 
         matching_sessions = self.matching_sessions
@@ -75,6 +86,14 @@ class SessionAnalyticsSummary:
         reviewed_sessions = self.reviewed_sessions
 
         pending_sessions = self.pending_sessions
+
+        session_capture: dict[str, Any] | None | Unset
+        if isinstance(self.session_capture, Unset):
+            session_capture = UNSET
+        elif isinstance(self.session_capture, SessionCaptureCounts):
+            session_capture = self.session_capture.to_dict()
+        else:
+            session_capture = self.session_capture
 
         tool_calls_evaluated = self.tool_calls_evaluated
 
@@ -106,6 +125,8 @@ class SessionAnalyticsSummary:
             field_dict["reviewed_sessions"] = reviewed_sessions
         if pending_sessions is not UNSET:
             field_dict["pending_sessions"] = pending_sessions
+        if session_capture is not UNSET:
+            field_dict["session_capture"] = session_capture
         if tool_calls_evaluated is not UNSET:
             field_dict["tool_calls_evaluated"] = tool_calls_evaluated
         if tool_calls_blocked is not UNSET:
@@ -126,7 +147,11 @@ class SessionAnalyticsSummary:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.session_capture_counts import (
+            SessionCaptureCounts,
+        )
+
         d = dict(src_dict)
         total_sessions = d.pop("total_sessions")
 
@@ -139,6 +164,23 @@ class SessionAnalyticsSummary:
         reviewed_sessions = d.pop("reviewed_sessions", UNSET)
 
         pending_sessions = d.pop("pending_sessions", UNSET)
+
+        def _parse_session_capture(data: object) -> None | SessionCaptureCounts | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                session_capture_type_0 = SessionCaptureCounts.from_dict(data)
+
+                return session_capture_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | SessionCaptureCounts | Unset, data)
+
+        session_capture = _parse_session_capture(d.pop("session_capture", UNSET))
 
         tool_calls_evaluated = d.pop("tool_calls_evaluated", UNSET)
 
@@ -163,6 +205,7 @@ class SessionAnalyticsSummary:
             matching_users=matching_users,
             reviewed_sessions=reviewed_sessions,
             pending_sessions=pending_sessions,
+            session_capture=session_capture,
             tool_calls_evaluated=tool_calls_evaluated,
             tool_calls_blocked=tool_calls_blocked,
             tool_calls_would_be_blocked=tool_calls_would_be_blocked,

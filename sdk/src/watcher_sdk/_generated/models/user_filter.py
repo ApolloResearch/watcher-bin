@@ -5,6 +5,7 @@ from typing import Any, TypeVar
 from uuid import UUID
 
 from attrs import define as _attrs_define
+from typing_extensions import Self
 
 from ..models.user_filter_mode import UserFilterMode
 
@@ -50,7 +51,7 @@ class UserFilter:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         ids = []
         _ids = d.pop("ids")

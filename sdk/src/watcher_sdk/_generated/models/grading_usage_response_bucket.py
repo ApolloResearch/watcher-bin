@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class GradingUsageResponseBucket(str, Enum):
+class GradingUsageResponseBucket(StrEnum):
     DAY = "day"
     WEEK = "week"
 

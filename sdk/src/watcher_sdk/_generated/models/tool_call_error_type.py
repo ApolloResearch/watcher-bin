@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ToolCallErrorType(str, Enum):
+class ToolCallErrorType(StrEnum):
     APPROVAL = "approval"
     CANCELLED = "cancelled"
     FILE_NOT_FOUND = "file_not_found"

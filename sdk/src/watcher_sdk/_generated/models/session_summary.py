@@ -7,9 +7,10 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..models.session_summary_deep_review_status import SessionSummaryDeepReviewStatus
+from ..models.session_summary_ingest_kinds_item import SessionSummaryIngestKindsItem
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -53,14 +54,16 @@ class SessionSummary:
             SessionSummaryDeepReviewStatus.NOT_REVIEWED.
         deep_review_reviewed_at (datetime.datetime | None | Unset):
         permission_decisions (None | SessionPermissionDecisions | Unset):
+        ingest_kinds (list[SessionSummaryIngestKindsItem] | Unset): Sorted distinct recorded delivery paths, including
+            duplicate uploads. Empty means no recorded delivery history; unknown stored values report other.
         sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted. Known
             values: 'watcher' (Watcher Live upload), 'tailscale-aperture' (Aperture ingestion), and three keys for other
             hook ingest, including raw pre-tool-use captures, chosen by the session's retained 'other' conversation ID:
             'watcher-gateway' (a gateway integration's prefix, such as 'litellm:'), 'watcher-sdk' (a registered SDK agent's
-            prefix, such as 'github-copilot-cli:'), and 'watcher-hook' (any other ID or none). Hook captures marked as
-            Aperture, and legacy captures without a transport marker, are classified as 'tailscale-aperture'; other source
-            keys pass through. Classification is for reporting only: stored message sources are unchanged. Empty for
-            scrubbed sessions or sessions without stored messages. This is not a complete ingestion history.
+            prefix, such as 'aider:'), and 'watcher-hook' (any other ID or none). Hook captures marked as Aperture, and
+            legacy captures without a transport marker, are classified as 'tailscale-aperture'; other source keys pass
+            through. Classification is for reporting only: stored message sources are unchanged. Empty for scrubbed sessions
+            or sessions without stored messages. This is not a complete ingestion history.
     """
 
     session_id: str
@@ -86,6 +89,7 @@ class SessionSummary:
     )
     deep_review_reviewed_at: datetime.datetime | None | Unset = UNSET
     permission_decisions: None | SessionPermissionDecisions | Unset = UNSET
+    ingest_kinds: list[SessionSummaryIngestKindsItem] | Unset = UNSET
     sources: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -208,6 +212,13 @@ class SessionSummary:
         else:
             permission_decisions = self.permission_decisions
 
+        ingest_kinds: list[str] | Unset = UNSET
+        if not isinstance(self.ingest_kinds, Unset):
+            ingest_kinds = []
+            for ingest_kinds_item_data in self.ingest_kinds:
+                ingest_kinds_item = ingest_kinds_item_data.value
+                ingest_kinds.append(ingest_kinds_item)
+
         sources: list[str] | Unset = UNSET
         if not isinstance(self.sources, Unset):
             sources = self.sources
@@ -254,19 +265,25 @@ class SessionSummary:
             field_dict["deep_review_reviewed_at"] = deep_review_reviewed_at
         if permission_decisions is not UNSET:
             field_dict["permission_decisions"] = permission_decisions
+        if ingest_kinds is not UNSET:
+            field_dict["ingest_kinds"] = ingest_kinds
         if sources is not UNSET:
             field_dict["sources"] = sources
 
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.grade_result import GradeResult
-        from ..models.session_permission_decisions import SessionPermissionDecisions
+        from ..models.session_permission_decisions import (
+            SessionPermissionDecisions,
+        )
         from ..models.session_summary_external_ids_type_0 import (
             SessionSummaryExternalIdsType0,
         )
-        from ..models.session_summary_metadata_type_0 import SessionSummaryMetadataType0
+        from ..models.session_summary_metadata_type_0 import (
+            SessionSummaryMetadataType0,
+        )
 
         d = dict(src_dict)
         session_id = d.pop("session_id")
@@ -277,9 +294,9 @@ class SessionSummary:
 
         message_count = d.pop("message_count")
 
-        started_at = isoparse(d.pop("started_at"))
+        started_at = datetime.datetime.fromisoformat(d.pop("started_at"))
 
-        ended_at = isoparse(d.pop("ended_at"))
+        ended_at = datetime.datetime.fromisoformat(d.pop("ended_at"))
 
         is_content_scrubbed = d.pop("is_content_scrubbed", UNSET)
 
@@ -442,7 +459,7 @@ class SessionSummary:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                deep_review_reviewed_at_type_0 = isoparse(data)
+                deep_review_reviewed_at_type_0 = datetime.datetime.fromisoformat(data)
 
                 return deep_review_reviewed_at_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
@@ -474,6 +491,17 @@ class SessionSummary:
             d.pop("permission_decisions", UNSET)
         )
 
+        _ingest_kinds = d.pop("ingest_kinds", UNSET)
+        ingest_kinds: list[SessionSummaryIngestKindsItem] | Unset = UNSET
+        if _ingest_kinds is not UNSET:
+            ingest_kinds = []
+            for ingest_kinds_item_data in _ingest_kinds:
+                ingest_kinds_item = SessionSummaryIngestKindsItem(
+                    ingest_kinds_item_data
+                )
+
+                ingest_kinds.append(ingest_kinds_item)
+
         sources = cast(list[str], d.pop("sources", UNSET))
 
         session_summary = cls(
@@ -498,6 +526,7 @@ class SessionSummary:
             deep_review_status=deep_review_status,
             deep_review_reviewed_at=deep_review_reviewed_at,
             permission_decisions=permission_decisions,
+            ingest_kinds=ingest_kinds,
             sources=sources,
         )
 

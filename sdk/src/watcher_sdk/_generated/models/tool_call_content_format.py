@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ToolCallContentFormat(str, Enum):
+class ToolCallContentFormat(StrEnum):
     MARKDOWN = "markdown"
     TEXT = "text"
 

@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ActivatedMonitorStagesItem(str, Enum):
+class ActivatedMonitorStagesItem(StrEnum):
     DEEP_REVIEW = "deep_review"
     GATEWAY = "gateway"
     SUMMARIZE = "summarize"

@@ -12,7 +12,7 @@ from typing import (
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -28,14 +28,21 @@ T = TypeVar("T", bound="ClaudeCodeTrajectory")
 
 @_attrs_define
 class ClaudeCodeTrajectory:
-    """A trajectory in Claude Code JSONL format (entries from the .jsonl file).
+    """A Claude Code JSONL file or delta, with a stable conversation identity.
 
-    Attributes:
-        timestamp (datetime.datetime):
-        format_ (Literal['claude-code-jsonl']):
-        entries (list[ClaudeCodeEntry]):
-        session_id (None | str | Unset):
-        metadata (ClaudeCodeTrajectoryMetadataType0 | None | Unset):
+    ``session_id`` is the current Claude Code conversation ID, not a Watcher
+    session UUID. Send the same value on full uploads and deltas: it takes
+    precedence over historical ``sessionId`` values in copied entries. When
+    omitted or empty, each parsed branch uses its first entry's ``sessionId``.
+    Ownership checks still apply to the selected conversation, and hook
+    appends must name the same conversation as their stored anchor.
+
+        Attributes:
+            timestamp (datetime.datetime):
+            format_ (Literal['claude-code-jsonl']):
+            entries (list[ClaudeCodeEntry]):
+            session_id (None | str | Unset):
+            metadata (ClaudeCodeTrajectoryMetadataType0 | None | Unset):
     """
 
     timestamp: datetime.datetime
@@ -90,14 +97,14 @@ class ClaudeCodeTrajectory:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.claude_code_entry import ClaudeCodeEntry
         from ..models.claude_code_trajectory_metadata_type_0 import (
             ClaudeCodeTrajectoryMetadataType0,
         )
 
         d = dict(src_dict)
-        timestamp = isoparse(d.pop("timestamp"))
+        timestamp = datetime.datetime.fromisoformat(d.pop("timestamp"))
 
         format_ = cast(Literal["claude-code-jsonl"], d.pop("format"))
         if format_ != "claude-code-jsonl":

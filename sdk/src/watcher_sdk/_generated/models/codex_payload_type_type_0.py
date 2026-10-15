@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class CodexPayloadTypeType0(str, Enum):
+class CodexPayloadTypeType0(StrEnum):
     COMPACTION = "compaction"
     COMPACTION_SUMMARY = "compaction_summary"
     CUSTOM_TOOL_CALL = "custom_tool_call"

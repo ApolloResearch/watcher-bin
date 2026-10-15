@@ -18,7 +18,16 @@
   "scripts": {
     "check": "node --check src/read_history.mjs"
   },
+  "overrides": {
+    "@simple-git/argv-parser": "2.0.1"
+  },
   "bin": {
     "watcher-cline-history": "src/read_history.mjs"
+  },
+  "overrides": {
+    "simple-git": "^4.0.1",
+    "dify-ai-provider": {
+      "undici@^5.29.0": "^6.28.1"
+    }
   }
 }

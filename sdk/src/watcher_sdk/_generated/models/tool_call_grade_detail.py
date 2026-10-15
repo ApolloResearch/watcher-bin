@@ -7,7 +7,7 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..models.tool_call_grade_kind import ToolCallGradeKind
 from ..types import UNSET, Unset
@@ -106,8 +106,10 @@ class ToolCallGradeDetail:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.tool_call_grade_detail_grades import ToolCallGradeDetailGrades
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.tool_call_grade_detail_grades import (
+            ToolCallGradeDetailGrades,
+        )
         from ..models.tool_call_grade_detail_input_messages_item import (
             ToolCallGradeDetailInputMessagesItem,
         )
@@ -132,7 +134,7 @@ class ToolCallGradeDetail:
 
         run_kind = ToolCallGradeKind(d.pop("run_kind"))
 
-        created_at = isoparse(d.pop("created_at"))
+        created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 
         def _parse_model(data: object) -> None | str | Unset:
             if data is None:

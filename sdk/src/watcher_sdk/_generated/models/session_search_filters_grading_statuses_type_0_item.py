@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionSearchFiltersGradingStatusesType0Item(str, Enum):
+class SessionSearchFiltersGradingStatusesType0Item(StrEnum):
     CLEAN = "clean"
     ERROR = "error"
     FLAGGED = "flagged"

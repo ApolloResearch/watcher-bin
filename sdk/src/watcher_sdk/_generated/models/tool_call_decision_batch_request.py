@@ -6,6 +6,7 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.tool_call_decision_payload import ToolCallDecisionPayload
@@ -51,8 +52,10 @@ class ToolCallDecisionBatchRequest:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.tool_call_decision_payload import ToolCallDecisionPayload
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.tool_call_decision_payload import (
+            ToolCallDecisionPayload,
+        )
 
         d = dict(src_dict)
         session_id = UUID(d.pop("session_id"))

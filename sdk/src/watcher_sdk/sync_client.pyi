@@ -22,6 +22,7 @@ from watcher_sdk._generated.models.aperture_log import ApertureLog
 from watcher_sdk._generated.models.auth_client_config import AuthClientConfig
 from watcher_sdk._generated.models.claude_code_trajectory import ClaudeCodeTrajectory
 from watcher_sdk._generated.models.codex_trajectory import CodexTrajectory
+from watcher_sdk._generated.models.copilot_trajectory import CopilotTrajectory
 from watcher_sdk._generated.models.deep_review_request_response import DeepReviewRequestResponse
 from watcher_sdk._generated.models.device_authorization_response import DeviceAuthorizationResponse
 from watcher_sdk._generated.models.device_token_response import DeviceTokenResponse
@@ -54,6 +55,7 @@ from watcher_sdk._generated.models.session_deep_review_response import SessionDe
 from watcher_sdk._generated.models.session_filter_options_response import SessionFilterOptionsResponse
 from watcher_sdk._generated.models.session_list_response import SessionListResponse
 from watcher_sdk._generated.models.session_summary import SessionSummary
+from watcher_sdk._generated.models.tool_call_detail_response import ToolCallDetailResponse
 from watcher_sdk._generated.models.tool_call_findings_response import ToolCallFindingsResponse
 from watcher_sdk._generated.models.tool_call_list_response import ToolCallListResponse
 from watcher_sdk._generated.models.trajectory_detail_response import TrajectoryDetailResponse
@@ -112,7 +114,7 @@ class WatcherClient:
     def auth_device_token(self, device_code: str) -> DeviceTokenResponse: ...
     def check_permissions(self, permissions: list[str] | tuple[str, ...]) -> PermissionCheckResponse: ...
     def ingest(
-        self, source: str, trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | ApertureLog]
+        self, source: str, trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog]
     ) -> IngestResponse: ...
     def ingest_append(
         self,
@@ -120,7 +122,7 @@ class WatcherClient:
         session_id: str,
         anchor_trajectory_hash: str,
         source: str,
-        trajectory: ClaudeCodeTrajectory | CodexTrajectory,
+        trajectory: ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory,
     ) -> IngestResponse: ...
     def grade(
         self,
@@ -350,6 +352,7 @@ class WatcherClient:
     def get_session_filter_options(self) -> SessionFilterOptionsResponse: ...
     def get_session(self, session_id: str) -> SessionDetailResponse: ...
     def get_session_tool_call_decision(self, session_id: str, tool_use_id: str) -> ToolCallFindingsResponse: ...
+    def get_session_tool_call(self, session_id: str, tool_use_id: str) -> ToolCallDetailResponse: ...
     def scrub_session_content(self, session_id: str) -> None: ...
     def request_deep_review(self, session_id: str) -> DeepReviewRequestResponse: ...
     def get_deep_review_request(self, session_id: str, operation_id: str) -> DeepReviewRequestResponse: ...
@@ -389,7 +392,7 @@ class WatcherClient:
     def ingest_and_grade(
         self,
         source: str,
-        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | ApertureLog],
+        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog],
         grader_ids: list[str],
     ) -> tuple[IngestResponse, GradeResponse]: ...
 

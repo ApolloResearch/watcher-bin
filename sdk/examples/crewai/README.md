@@ -36,6 +36,7 @@ from watcher_crewai import MonitoredTrace
 
 trace = MonitoredTrace(monitor, asyncio.get_running_loop(), prompt)
 
+
 @tool("double")
 def double(value: int) -> str:
     return trace.invoke("double", {"value": value}, effect)

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..models.grading_usage_response_bucket import GradingUsageResponseBucket
 
@@ -111,11 +112,17 @@ class GradingUsageResponse:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.grading_usage_breakdown_row import GradingUsageBreakdownRow
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.grading_usage_breakdown_row import (
+            GradingUsageBreakdownRow,
+        )
         from ..models.grading_usage_bucket import GradingUsageBucket
-        from ..models.grading_usage_cost_bucket import GradingUsageCostBucket
-        from ..models.grading_usage_filter_options import GradingUsageFilterOptions
+        from ..models.grading_usage_cost_bucket import (
+            GradingUsageCostBucket,
+        )
+        from ..models.grading_usage_filter_options import (
+            GradingUsageFilterOptions,
+        )
 
         d = dict(src_dict)
         token_details_enabled = d.pop("token_details_enabled")

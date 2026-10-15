@@ -10,6 +10,7 @@ from typing import (
 )
 
 from attrs import define as _attrs_define
+from typing_extensions import Self
 
 from ..models.claude_code_hook_request_mode import ClaudeCodeHookRequestMode
 from ..types import UNSET, Unset
@@ -41,7 +42,14 @@ class ClaudeCodeHookRequest:
 
         Attributes:
             format_ (Literal['claude-code-jsonl']):
-            messages (ClaudeCodeTrajectory): A trajectory in Claude Code JSONL format (entries from the .jsonl file).
+            messages (ClaudeCodeTrajectory): A Claude Code JSONL file or delta, with a stable conversation identity.
+
+                ``session_id`` is the current Claude Code conversation ID, not a Watcher
+                session UUID. Send the same value on full uploads and deltas: it takes
+                precedence over historical ``sessionId`` values in copied entries. When
+                omitted or empty, each parsed branch uses its first entry's ``sessionId``.
+                Ownership checks still apply to the selected conversation, and hook
+                appends must name the same conversation as their stored anchor.
             append_after (HookAppendAnchor | None | Unset): Append messages after this exact stored session/trajectory
                 anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and
                 cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered
@@ -190,14 +198,16 @@ class ClaudeCodeHookRequest:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.claude_code_hook_request_external_ids_type_0 import (
             ClaudeCodeHookRequestExternalIdsType0,
         )
         from ..models.claude_code_hook_request_settings_overrides_type_1 import (
             ClaudeCodeHookRequestSettingsOverridesType1,
         )
-        from ..models.claude_code_trajectory import ClaudeCodeTrajectory
+        from ..models.claude_code_trajectory import (
+            ClaudeCodeTrajectory,
+        )
         from ..models.hook_append_anchor import HookAppendAnchor
         from ..models.monitoring_input import MonitoringInput
 

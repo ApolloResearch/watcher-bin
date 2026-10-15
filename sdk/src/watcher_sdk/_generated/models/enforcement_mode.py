@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class EnforcementMode(str, Enum):
+class EnforcementMode(StrEnum):
     ENFORCE = "enforce"
     OBSERVE = "observe"
     PAUSED = "paused"

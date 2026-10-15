@@ -375,7 +375,7 @@
           "organization"
         ],
         "summary": "Update Org Managed Settings",
-        "description": "Validate and save a new version of the org's managed settings document.\n\nThe document is validated against the Watcher settings schema (merged onto\nthe builtin defaults, exactly as machines will apply it); an invalid\ndocument returns 422 with the field and value errors and stores nothing.\nThis endpoint is also the programmatic write path: an org API key with the\nwrite permission can call it from CI.",
+        "description": "Validate and save a new version of the org's managed settings document.\n\nThe document is validated against the Watcher settings schema (merged onto\nthe builtin defaults, exactly as machines will apply it); an invalid\ndocument returns 422 with the field and value errors and stores nothing.\nNotices about a valid document never block the save; they come back in\nthe response's ``warnings``, which reads leave empty.\nThis endpoint is also the programmatic write path: an org API key with the\nwrite permission can call it from CI.",
         "operationId": "update_org_managed_settings_v1_organization_managed_settings__path__put",
         "parameters": [
           {
@@ -473,7 +473,7 @@
           "organization"
         ],
         "summary": "Resolve Org Managed Settings",
-        "description": "Return the document machines should apply for this path, or 404 when unmanaged.\n\nAny authenticated member of the org can read this (machines authenticate\nwith per-user credentials, so a member JWT need not carry the admin-only\nsettings permission). An org or user API key is the exception: it must carry\norg:settings:read, the same slug the other settings routes enforce. 404\ncovers both \"the org distributes via MDM\" and \"no document saved yet\";\nclients treat it as \"no managed settings\" and keep their last-known-good\nfile. That expected 404 carries a structured detail\n(``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell\nit apart from a routing-layer 404, whose body is a plain string.",
+        "description": "Return the document machines should apply for this path, or 404 when unmanaged.\n\nAny authenticated member of the org can read this (machines authenticate\nwith per-user credentials, so a member JWT need not carry the admin-only\nsettings permission). An org or user API key is the exception: it must carry\norg:settings:read, the same slug the other settings routes enforce. 404\ncovers both \"the org distributes via MDM\" and \"no document saved yet\";\nclients treat it as \"no managed settings\" and keep their last-known-good\nfile. That expected 404 carries a structured detail\n(``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell\nit apart from a routing-layer 404, whose body is a plain string.\nWhen the deployment mounts a managed settings file it is served here\nregardless of the stored distribution flag.",
         "operationId": "resolve_org_managed_settings_v1_organization_managed_settings__path__resolved_get",
         "parameters": [
           {
@@ -713,7 +713,7 @@
           "tool-call-decisions"
         ],
         "summary": "Upload Tool Call Decisions Batch",
-        "description": "Persist decisions for already-ingested tool calls, alerting on newly flagged ones.\n\nThis endpoint is intentionally batch-oriented and post-ingest-only. The\ntranscript must already exist in Watcher so each decision can be resolved to\na canonical session message. Decisions that cannot be resolved to an\ningested tool call, or that reference missing/already-linked grade IDs, are\nreported in the response and skipped. Other valid decisions in the same\nbatch are still persisted.\n\nSlack alerts for flagged tool calls fire from here (not from grading): only\nonce the decision is uploaded are the coding agent (from the session) and the\nAnalyzer deep link available. Alerts fire once per decision \u2014 only for\ndecisions newly inserted by this call, so re-pushes (e.g. pending ->\nresolved) do not re-notify.",
+        "description": "Persist decisions for already-ingested tool calls, alerting on newly flagged ones.\n\nThis endpoint is intentionally batch-oriented and post-ingest-only. The\ntranscript must already exist in Watcher so each decision can be resolved to\na canonical session message. Decisions that cannot be resolved to an\ningested tool call, or that reference missing/already-linked grade IDs, are\nreported in the response and skipped. Other valid decisions in the same\nbatch are still persisted.\n\nSlack alerts for flagged tool calls fire from here (not from grading): only\nonce the decision is uploaded are the coding agent (from the session) and the\nAnalyzer deep link available. Alerts fire once per decision \u2014 only for\ndecisions newly inserted by this call, so re-pushes (e.g. pending ->\nresolved) do not re-notify.\n\nAny synced decision also asks for a session summary after the response\n(``request_summary_safely``, which queues one only when due): a\ndecision, new or updated, can link the triage grade of a call graded before\nthe client knew the session's id, which the grading route could not\nattribute to the session at the time.",
         "operationId": "upload_tool_call_decisions_batch_v1_tool_call_decisions_batch_post",
         "requestBody": {
           "content": {
@@ -817,6 +817,9 @@
                     "$ref": "#/components/schemas/CodexHookRequest"
                   },
                   {
+                    "$ref": "#/components/schemas/CopilotHookRequest"
+                  },
+                  {
                     "$ref": "#/components/schemas/RawPreToolUseHookRequest"
                   }
                 ],
@@ -827,6 +830,7 @@
                     "watcher": "#/components/schemas/PreToolUseHookRequest",
                     "claude-code-jsonl": "#/components/schemas/ClaudeCodeHookRequest",
                     "codex-jsonl": "#/components/schemas/CodexHookRequest",
+                    "copilot-events-jsonl": "#/components/schemas/CopilotHookRequest",
                     "raw": "#/components/schemas/RawPreToolUseHookRequest"
                   }
                 }
@@ -877,7 +881,7 @@
             "description": "The request body exceeds the endpoint's size limit"
           },
           "503": {
-            "description": "Append messages committed but decision recording failed (detail.code: append_recording_failed). The body retains ordered results, including denies, but no append_after cursor."
+            "description": "Two cases, told apart by detail.code. image_capacity_exhausted: the server is already converting its maximum of image-bearing requests; nothing was evaluated or recorded, so retry the whole request after Retry-After. append_recording_failed: append messages committed but decision recording failed; the body retains ordered results, including denies, but no append_after cursor, so apply those decisions and retry the same append."
           },
           "422": {
             "description": "Validation Error",
@@ -898,7 +902,7 @@
           "hooks"
         ],
         "summary": "Aperture Entire Request Hook",
-        "description": "Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous monitoring.\n\nConfigure Aperture with events=[\"entire_request\"] and\nsend=[\"request_body\", \"response_body\"]. The API key must have\nsessions:write:any so metadata.login_name can attribute the session.\nAdmin enforcement.mode selects observation or ingestion only (paused);\nthis asynchronous transport always caps enforcement at observe. Only tool\ncalls in the response are evaluated. Text-only turns are ingested too.\n\nA 202 confirms admission, not completed grading or durable storage.\nUnsupported formats and malformed provider bodies are logged after the\nACK. Captures require recognized coding-harness identity, using the\nper-format markers documented in the hooks reference. Other applications\nare skipped.",
+        "description": "Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous monitoring.\n\nConfigure Aperture with events=[\"entire_request\"] and\nsend=[\"request_body\", \"response_body\"]. The API key must have\nsessions:write:any so metadata.login_name can attribute the session.\nAdmin enforcement.mode selects observation or ingestion only (paused);\nthis asynchronous transport always caps enforcement at observe. Only tool\ncalls in the response are evaluated. Text-only turns are ingested too.\n\nA 202 confirms admission, not completed grading or durable storage.\nUnsupported formats and malformed provider bodies are logged after the\nACK. Captures require recognized coding-harness identity, using the\nper-format markers documented in the hooks reference. Other applications\nare skipped; those the raw capture already identifies are answered 202\nwithout being admitted (see the module docstring).",
         "operationId": "aperture_entire_request_hook_v1_hooks_aperture_post",
         "requestBody": {
           "content": {
@@ -1466,6 +1470,59 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrajectoryListInSessionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/tool-call": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Session Tool Call",
+        "description": "Read one exact tool call without its surrounding transcript.\n\nFindings and content are independently authorized with existing session grants,\nownership and content approvals. Restricted fields are null; access flags\ndistinguish restriction from an absent result or decision. Grader input\ntranscripts are never returned. Tool-use IDs are query parameters because\nthey can contain slashes and '#'. Returns 404 for missing, inaccessible or\nscrubbed sessions and missing calls, and 400 for malformed session UUIDs.",
+        "operationId": "get_session_tool_call_v1_sessions__session_id__tool_call_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "tool_use_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Tool Use Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCallDetailResponse"
                 }
               }
             }
@@ -3347,6 +3404,20 @@
             "format": "date-time",
             "title": "Created At"
           },
+          "ingest_kinds": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "client",
+                "gateway",
+                "sdk",
+                "other"
+              ]
+            },
+            "type": "array",
+            "title": "Ingest Kinds",
+            "description": "Sorted distinct recorded delivery paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report other."
+          },
           "sources": {
             "items": {
               "type": "string"
@@ -4555,7 +4626,7 @@
           "entries"
         ],
         "title": "ClaudeCodeTrajectory",
-        "description": "A trajectory in Claude Code JSONL format (entries from the .jsonl file)."
+        "description": "A Claude Code JSONL file or delta, with a stable conversation identity.\n\n``session_id`` is the current Claude Code conversation ID, not a Watcher\nsession UUID. Send the same value on full uploads and deltas: it takes\nprecedence over historical ``sessionId`` values in copied entries. When\nomitted or empty, each parsed branch uses its first entry's ``sessionId``.\nOwnership checks still apply to the selected conversation, and hook\nappends must name the same conversation as their stored anchor."
       },
       "CodexContentItem": {
         "properties": {
@@ -5851,6 +5922,288 @@
         "title": "ContentVideo",
         "description": "Video content."
       },
+      "CopilotEntry": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "parentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentid"
+          },
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agentid"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "CopilotEntry",
+        "description": "One event from a GitHub Copilot CLI session log, after the client's selection and shrinking."
+      },
+      "CopilotHookRequest": {
+        "properties": {
+          "append_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Append messages after this exact stored session/trajectory anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered results. Retry once with the full transcript and without append_after on 404, 409, or 422."
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringInput"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MonitoringInput"
+                },
+                "type": "array",
+                "maxItems": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "full",
+              "triage_only"
+            ],
+            "title": "Mode",
+            "default": "full"
+          },
+          "external_ids": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "propertyNames": {
+                  "$ref": "#/components/schemas/ExternalIdSource"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ids",
+            "description": "Distinct conversation IDs from the harness and gateway, keyed by source. Required unless ephemeral is true; send every id you have, e.g. {\"claude_code\": \"<Claude Code session uuid>\", \"other\": \"<your own conversation id>\"}. The keys also name the harness. A caller with no id at all records id-less by sending an explicit null value, e.g. {\"other\": null} or {\"claude_code\": null}: the session is then found by transcript prefix. With append_after the explicit anchor selects the session; any non-null external IDs must already belong to that session."
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "ephemeral": {
+            "type": "boolean",
+            "title": "Ephemeral",
+            "default": false
+          },
+          "force_regrade": {
+            "type": "boolean",
+            "title": "Force Regrade",
+            "description": "Evaluate again even when this session and tool-use ID have a completed judgment. The new result may replace the recorded decision, including in observe mode. Otherwise a readable completed judgment with matching tool arguments is reused, regardless of policy version, under the current enforcement posture.",
+            "default": false
+          },
+          "skip_rules": {
+            "type": "boolean",
+            "title": "Skip Rules",
+            "default": false
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          },
+          "settings_overrides": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 65536
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings Overrides",
+            "description": "Per-request settings as YAML or a JSON object; at most 65,536 characters of YAML or serialized JSON. Administrator permission locks apply."
+          },
+          "format": {
+            "type": "string",
+            "const": "copilot-events-jsonl",
+            "title": "Format"
+          },
+          "messages": {
+            "$ref": "#/components/schemas/CopilotTrajectory",
+            "description": "One conversation of the GitHub Copilot CLI session log as events (or only those after append_after), in the shape trajectory ingestion accepts."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "format",
+          "messages"
+        ],
+        "title": "CopilotHookRequest",
+        "description": "Judge pending calls with one GitHub Copilot CLI conversation's own event log as their context.\n\n``messages`` holds that conversation's events (or only those after\n``append_after``): the parent conversation, or the one subagent named by\n``messages.agent_id``. Copilot's hooks report a call under its native tool\nname and arguments, and the log records the call before its hook runs, so\neach selected call names its ``tool_use_id`` and must match the log's\nrecord of that ID exactly."
+      },
+      "CopilotTrajectory": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "format": {
+            "type": "string",
+            "const": "copilot-events-jsonl",
+            "title": "Format"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/CopilotEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "format",
+          "agent_id",
+          "entries"
+        ],
+        "title": "CopilotTrajectory",
+        "description": "A trajectory in GitHub Copilot CLI format: one conversation's events from the session's events.jsonl.\n\nA Copilot log holds the parent conversation and every subagent's. Each\nupload carries one of them: ``agent_id`` is null for the parent\nconversation, or names the one subagent whose events ``entries`` holds,\nwhich Watcher records as its own session. ``agent_id`` is required, with\nnull for the parent, so a subagent upload that leaves it out is refused\nrather than recorded as the parent."
+      },
       "CreateGraderRequest": {
         "properties": {
           "name": {
@@ -6229,11 +6582,12 @@
         "enum": [
           "claude_code",
           "codex",
+          "github_copilot_cli",
           "aperture",
           "other"
         ],
         "title": "ExternalIdSource",
-        "description": "Where an external conversation id in a hook request comes from.\n\nKeys of `PreToolUseHookRequest.external_ids`. Each maps onto the external-id\nsource the matching ingest path already stores, so a hook-recorded decision\nconverges onto the session Watcher Live (`claude_code`, `codex`) or the\nTailscale Aperture log ingest (`aperture`) created for the same\nconversation; `other` is the gateway's own id and matches only other hook\ncalls."
+        "description": "Where an external conversation id in a hook request comes from.\n\nKeys of `PreToolUseHookRequest.external_ids`. Each maps onto the external-id\nsource the matching ingest path already stores, so a hook-recorded decision\nconverges onto the session Watcher Live (`claude_code`, `codex`) or the\nTailscale Aperture log ingest (`aperture`) created for the same\nconversation; `other` is the gateway's own id and matches only other hook\ncalls. `github_copilot_cli` is GitHub Copilot CLI's own session id, which\nthe Watcher client sends for the sessions it records through this hook."
       },
       "GatewayResult": {
         "properties": {
@@ -7351,7 +7705,7 @@
           "trajectory_id"
         ],
         "title": "HookAppendAnchor",
-        "description": "The exact stored message after which a hook's delta begins.\n\nObtain the first pair from session search or trajectory ingestion, then use\nthe committed anchor returned by each successful hook append. An\nexplicit session and trajectory disambiguate branches; the server never\nguesses which leaf the caller observed. A missing anchor returns 404 and\na conflicting continuation returns 409. Retry once with the full transcript\nand without this field on 404, 409, or 422 (including older servers)."
+        "description": "The exact stored message after which a delta begins.\n\nIngest responses and successful hook appends return this session/trajectory\npair for the next append. Keep both fields together: a session may contain\nseveral branches, and the server never guesses which leaf the caller observed.\nA later write can overtake the anchor; on an append conflict, reconcile with\na full transcript upload before resuming deltas."
       },
       "HookAppendResponse": {
         "properties": {
@@ -7436,6 +7790,9 @@
               },
               {
                 "$ref": "#/components/schemas/CodexTrajectory"
+              },
+              {
+                "$ref": "#/components/schemas/CopilotTrajectory"
               }
             ],
             "title": "Trajectory",
@@ -7443,7 +7800,8 @@
               "propertyName": "format",
               "mapping": {
                 "claude-code-jsonl": "#/components/schemas/ClaudeCodeTrajectory",
-                "codex-jsonl": "#/components/schemas/CodexTrajectory"
+                "codex-jsonl": "#/components/schemas/CodexTrajectory",
+                "copilot-events-jsonl": "#/components/schemas/CopilotTrajectory"
               }
             }
           }
@@ -7472,6 +7830,9 @@
                   "$ref": "#/components/schemas/CodexTrajectory"
                 },
                 {
+                  "$ref": "#/components/schemas/CopilotTrajectory"
+                },
+                {
                   "$ref": "#/components/schemas/ApertureLog"
                 }
               ],
@@ -7480,7 +7841,8 @@
                 "mapping": {
                   "aperture-log": "#/components/schemas/ApertureLog",
                   "claude-code-jsonl": "#/components/schemas/ClaudeCodeTrajectory",
-                  "codex-jsonl": "#/components/schemas/CodexTrajectory"
+                  "codex-jsonl": "#/components/schemas/CodexTrajectory",
+                  "copilot-events-jsonl": "#/components/schemas/CopilotTrajectory"
                 }
               }
             },
@@ -7520,6 +7882,16 @@
           "skipped_count": {
             "type": "integer",
             "title": "Skipped Count"
+          },
+          "append_anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -7531,7 +7903,7 @@
           "skipped_count"
         ],
         "title": "IngestResponse",
-        "description": "Response from the full ingest and per-session append endpoints.\n\nOne shape for both paths keeps client bookkeeping (cursor advance, leaf\ntracking) shared. ``trajectory_ids`` echoes an already-stored leaf in two\ncases: an append whose delta parsed to zero messages, and a full ingest\nthat exactly duplicates the caller's own session (which still counts\ntoward ``duplicate_count``). Either way the client keeps a valid anchor\nfor its next append.\n\n``ingested_count`` and ``duplicate_count`` are in stored-leaf units, not\nuploaded files: a rewound Claude Code file stores one leaf per\nconversation branch, so one upload can produce several of either.\n\n``trajectory_ids`` lists the resulting leaves in processing order \u2014 for a\nrewound Claude Code file, abandoned branches first and the live branch\nlast, whether each leaf was newly stored or an echoed duplicate. The last\nentry is what clients record as their next append anchor, so live-last is\na contract, not a coincidence of storage order."
+        "description": "Response from the full ingest and per-session append endpoints.\n\n``trajectory_ids`` includes newly stored leaves and echoes of existing\nleaves: empty appends, recognized append replays, and exact full-ingest\nduplicates. Successful appends return their committed or echoed endpoint\nin ``append_anchor``.\n\n``ingested_count`` and ``duplicate_count`` are in stored-leaf units, not\nuploaded files: a rewound Claude Code file stores one leaf per\nconversation branch, so one upload can produce several of either.\n\n``append_anchor`` identifies the continuation of the final nonempty parsed\ninput (the live branch of a rewound Claude Code file). Null means it has no\nusable leaf, for example because it ends inside a longer stored chain;\ndo not advance the append cursor in that case.\n\n``trajectory_ids`` still lists stored leaves in processing order for grading\nand queries. Neither its last ID nor the legacy representative ``session_id``\nselects the append anchor. Only responses from older servers that omit\n``append_anchor`` use the legacy last-ID convention."
       },
       "JsonValue": {},
       "JudgedDecision": {
@@ -7543,6 +7915,53 @@
         ],
         "title": "JudgedDecision",
         "description": "What the decision pipeline concluded about a tool call.\n\nNULL (an absent value) means grading never ran: the call was snoozed,\nignored, admin-paused before any deterministic rule fired, or never routed\nthrough Watcher. A non-null judged value proves the pipeline evaluated the\ncall, which is what \"evaluated\" means for dedup ranking and observe-mode\naggregates. The judged and applied values differ exactly when the\nenforcement mode withheld enforcement (e.g. an observe-mode would-be deny is\njudged ``deny`` with an applied ``deferred``). Watcher live's fail-closed\n``block`` outcome folds into ``deny`` on this wire enum."
+      },
+      "ManagedSettingsSource": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "modified_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Modified At"
+          },
+          "error_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "file_missing",
+                  "file_unreadable",
+                  "invalid_content"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Kind"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "modified_at"
+        ],
+        "title": "ManagedSettingsSource",
+        "description": "Where the organization's managed settings document is coming from when an admin cannot edit it.\n\nPresent on `OrgSettings` only when the deployment mounts a managed settings\nfile (self-host). `path` is the file inside the API container and\n`modified_at` the file's modification time when the content now in force\nwas read, so every API worker reports the same value. When the latest\nstate of the file could not be applied, `error_kind` says why and `error`\ngives a short human-readable reason (validation messages name setting\npaths, never document content); the previous content stays in force."
       },
       "MessageDetailResponse": {
         "properties": {
@@ -8004,6 +8423,14 @@
               }
             ],
             "title": "Updated By"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "Human-readable notices about a document a save just stored; empty when there are none and on reads."
           }
         },
         "type": "object",
@@ -8169,6 +8596,16 @@
             ],
             "title": "Settings Distribution"
           },
+          "managed_settings_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedSettingsSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "restrict_cross_user_session_content": {
             "type": "boolean",
             "title": "Restrict Cross User Session Content"
@@ -8182,7 +8619,7 @@
           "restrict_cross_user_session_content"
         ],
         "title": "OrgSettings",
-        "description": "Response from GET /v1/org/settings.\n\nThe Slack webhook URL is write-only: responses expose only the\n`slack_webhook_configured` flag and `slack_webhook_hint` (the URL's\nlast 4 characters, for confirming which webhook is set), never the\nfull URL.\n\n`slack_webhook_managed` is True when the deployment supplies the webhook\nURL through the `SLACK_WEBHOOK_URL` environment variable. That value takes\nprecedence over anything stored per organization, so the configured flag\nand hint then describe the deployment's URL, and the settings API refuses\nwrites to `slack_webhook_url`."
+        "description": "Response from GET /v1/org/settings.\n\nThe Slack webhook URL is write-only: responses expose only the\n`slack_webhook_configured` flag and `slack_webhook_hint` (the URL's\nlast 4 characters, for confirming which webhook is set), never the\nfull URL.\n\n`slack_webhook_managed` is True when the deployment supplies the webhook\nURL through the `SLACK_WEBHOOK_URL` environment variable. That value takes\nprecedence over anything stored per organization, so the configured flag\nand hint then describe the deployment's URL, and the settings API refuses\nwrites to `slack_webhook_url`.\n\n`managed_settings_source` is set when a self-host deployment mounts the\nmanaged settings document as a file; both write paths then refuse with 409\n`managed_settings_locked`."
       },
       "OrgSettingsUpdate": {
         "properties": {
@@ -9133,6 +9570,20 @@
             "format": "date-time",
             "title": "Created At"
           },
+          "ingest_kinds": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "client",
+                "gateway",
+                "sdk",
+                "other"
+              ]
+            },
+            "type": "array",
+            "title": "Ingest Kinds",
+            "description": "Sorted distinct recorded delivery paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report other."
+          },
           "sources": {
             "items": {
               "type": "string"
@@ -9419,6 +9870,16 @@
             "title": "Pending Sessions",
             "default": 0
           },
+          "session_capture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionCaptureCounts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "tool_calls_evaluated": {
             "type": "integer",
             "title": "Tool Calls Evaluated",
@@ -9487,6 +9948,40 @@
         ],
         "title": "SessionAnalyticsTrendPoint",
         "description": "Bucketed trend counts for aggregate charts.\n\nBoth are daily-active session counts (distinct sessions with activity in the\nbucket), so ``matching_count`` reads directly as a slice of ``total_count``:\nthose whose deep-review severity meets the requested threshold."
+      },
+      "SessionCaptureCounts": {
+        "properties": {
+          "client": {
+            "type": "integer",
+            "title": "Client"
+          },
+          "gateway": {
+            "type": "integer",
+            "title": "Gateway"
+          },
+          "sdk": {
+            "type": "integer",
+            "title": "Sdk"
+          },
+          "other": {
+            "type": "integer",
+            "title": "Other"
+          },
+          "unknown": {
+            "type": "integer",
+            "title": "Unknown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client",
+          "gateway",
+          "sdk",
+          "other",
+          "unknown"
+        ],
+        "title": "SessionCaptureCounts",
+        "description": "Visible sessions counted independently for each recorded ingestion path.\n\nA session can contribute to several source counts. Each count uses the\ncontaining summary's total_sessions as its denominator, so shares can sum\nabove 100%. Source presence covers the whole session and survives content\nscrubbing; unknown means no recoverable source record. These counts\ndescribe recorded uploads, not installation, grading or complete coverage."
       },
       "SessionContentAccessRequestListResponse": {
         "properties": {
@@ -10215,13 +10710,27 @@
               }
             ]
           },
+          "ingest_kinds": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "client",
+                "gateway",
+                "sdk",
+                "other"
+              ]
+            },
+            "type": "array",
+            "title": "Ingest Kinds",
+            "description": "Sorted distinct recorded delivery paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report other."
+          },
           "sources": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Sources",
-            "description": "Distinct canonical ingestion sources among retained session messages, sorted. Known values: 'watcher' (Watcher Live upload), 'tailscale-aperture' (Aperture ingestion), and three keys for other hook ingest, including raw pre-tool-use captures, chosen by the session's retained 'other' conversation ID: 'watcher-gateway' (a gateway integration's prefix, such as 'litellm:'), 'watcher-sdk' (a registered SDK agent's prefix, such as 'github-copilot-cli:'), and 'watcher-hook' (any other ID or none). Hook captures marked as Aperture, and legacy captures without a transport marker, are classified as 'tailscale-aperture'; other source keys pass through. Classification is for reporting only: stored message sources are unchanged. Empty for scrubbed sessions or sessions without stored messages. This is not a complete ingestion history."
+            "description": "Distinct canonical ingestion sources among retained session messages, sorted. Known values: 'watcher' (Watcher Live upload), 'tailscale-aperture' (Aperture ingestion), and three keys for other hook ingest, including raw pre-tool-use captures, chosen by the session's retained 'other' conversation ID: 'watcher-gateway' (a gateway integration's prefix, such as 'litellm:'), 'watcher-sdk' (a registered SDK agent's prefix, such as 'aider:'), and 'watcher-hook' (any other ID or none). Hook captures marked as Aperture, and legacy captures without a transport marker, are classified as 'tailscale-aperture'; other source keys pass through. Classification is for reporting only: stored message sources are unchanged. Empty for scrubbed sessions or sessions without stored messages. This is not a complete ingestion history."
           }
         },
         "type": "object",
@@ -10648,6 +11157,48 @@
             "format": "uuid",
             "title": "Tool Call Decision Id"
           },
+          "ingest_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "client",
+                  "gateway",
+                  "sdk",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest Kind",
+            "description": "Delivery path of the current evaluation. Null means the path was not recorded; unknown stored values report other. Outcome-only updates preserve this attribution."
+          },
+          "api_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Id",
+            "description": "ID of the API key that authenticated the current evaluation."
+          },
+          "api_key_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Name",
+            "description": "API key name at the time of the current evaluation."
+          },
           "tool_call_created_at": {
             "type": "string",
             "format": "date-time",
@@ -10908,6 +11459,81 @@
         "title": "ToolCallDecisionPayload",
         "description": "Payload for one tool-call decision.\n\nThe caller identifies the tool call by ``tool_use_id``. The server resolves that\nID against already-ingested assistant messages and stores the decision on\nthe canonical tool-call row."
       },
+      "ToolCallDetailResponse": {
+        "properties": {
+          "tool_use_id": {
+            "type": "string",
+            "title": "Tool Use Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "title": "Tool Name"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "can_read_findings": {
+            "type": "boolean",
+            "title": "Can Read Findings"
+          },
+          "can_read_content": {
+            "type": "boolean",
+            "title": "Can Read Content"
+          },
+          "arguments": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments"
+          },
+          "has_result": {
+            "type": "boolean",
+            "title": "Has Result"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolCallResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolCallDecisionDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_use_id",
+          "tool_name",
+          "occurred_at",
+          "can_read_findings",
+          "can_read_content",
+          "arguments",
+          "has_result",
+          "result",
+          "decision"
+        ],
+        "title": "ToolCallDetailResponse",
+        "description": "One call with independently authorized findings and content.\n\nAccess flags distinguish restriction from missing data: arguments/results are\nnull without content access, and decision is null without findings access.\nA call may also have no recorded decision or result. Decision raw content and\ngrader input messages stay empty; arguments are exposed only in their own field.\nhas_result reports stored-result existence even when result is restricted."
+      },
       "ToolCallError": {
         "properties": {
           "type": {
@@ -11150,6 +11776,48 @@
             "format": "uuid",
             "title": "Tool Call Decision Id"
           },
+          "ingest_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "client",
+                  "gateway",
+                  "sdk",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest Kind",
+            "description": "Delivery path of the current evaluation. Null means the path was not recorded; unknown stored values report other. Outcome-only updates preserve this attribution."
+          },
+          "api_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Id",
+            "description": "ID of the API key that authenticated the current evaluation."
+          },
+          "api_key_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Name",
+            "description": "API key name at the time of the current evaluation."
+          },
           "tool_call_created_at": {
             "type": "string",
             "format": "date-time",
@@ -11323,6 +11991,42 @@
         ],
         "title": "ToolCallListResponse",
         "description": "Paginated response from POST /v1/tool-calls/search."
+      },
+      "ToolCallResult": {
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Content"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ToolCallResult",
+        "description": "The exact call's output, excluding enclosing message metadata and context."
       },
       "ToolCallSearchFilters": {
         "properties": {

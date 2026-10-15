@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from uuid import UUID
 
 from attrs import define as _attrs_define
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..models.session_search_filters_decision_categories_type_0_item import (
     SessionSearchFiltersDecisionCategoriesType0Item,
@@ -260,7 +260,7 @@ class SessionSearchFilters:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.session_search_filters_external_ids_type_0 import (
             SessionSearchFiltersExternalIdsType0,
         )
@@ -276,7 +276,7 @@ class SessionSearchFilters:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                start_date_type_0 = isoparse(data)
+                start_date_type_0 = datetime.datetime.fromisoformat(data)
 
                 return start_date_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
@@ -293,7 +293,7 @@ class SessionSearchFilters:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                end_date_type_0 = isoparse(data)
+                end_date_type_0 = datetime.datetime.fromisoformat(data)
 
                 return end_date_type_0
             except (TypeError, ValueError, AttributeError, KeyError):

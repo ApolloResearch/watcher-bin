@@ -13,8 +13,11 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
+from ..models.scrubbed_session_detail_response_ingest_kinds_item import (
+    ScrubbedSessionDetailResponseIngestKindsItem,
+)
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -54,6 +57,9 @@ class ScrubbedSessionDetailResponse:
         user_email (None | str | Unset):
         external_ids (None | ScrubbedSessionDetailResponseExternalIdsType0 | Unset):
         metadata (None | ScrubbedSessionDetailResponseMetadataType0 | Unset):
+        ingest_kinds (list[ScrubbedSessionDetailResponseIngestKindsItem] | Unset): Sorted distinct recorded delivery
+            paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report
+            other.
         sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted; same
             values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone.
         content_state (Literal['scrubbed'] | Unset):  Default: 'scrubbed'.
@@ -78,6 +84,7 @@ class ScrubbedSessionDetailResponse:
     user_email: None | str | Unset = UNSET
     external_ids: None | ScrubbedSessionDetailResponseExternalIdsType0 | Unset = UNSET
     metadata: None | ScrubbedSessionDetailResponseMetadataType0 | Unset = UNSET
+    ingest_kinds: list[ScrubbedSessionDetailResponseIngestKindsItem] | Unset = UNSET
     sources: list[str] | Unset = UNSET
     content_state: Literal["scrubbed"] | Unset = "scrubbed"
     is_content_scrubbed: bool | Unset = True
@@ -159,6 +166,13 @@ class ScrubbedSessionDetailResponse:
         else:
             metadata = self.metadata
 
+        ingest_kinds: list[str] | Unset = UNSET
+        if not isinstance(self.ingest_kinds, Unset):
+            ingest_kinds = []
+            for ingest_kinds_item_data in self.ingest_kinds:
+                ingest_kinds_item = ingest_kinds_item_data.value
+                ingest_kinds.append(ingest_kinds_item)
+
         sources: list[str] | Unset = UNSET
         if not isinstance(self.sources, Unset):
             sources = self.sources
@@ -210,6 +224,8 @@ class ScrubbedSessionDetailResponse:
             field_dict["external_ids"] = external_ids
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
+        if ingest_kinds is not UNSET:
+            field_dict["ingest_kinds"] = ingest_kinds
         if sources is not UNSET:
             field_dict["sources"] = sources
         if content_state is not UNSET:
@@ -226,7 +242,7 @@ class ScrubbedSessionDetailResponse:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.grade_result import GradeResult
         from ..models.scrubbed_session_detail_response_external_ids_type_0 import (
             ScrubbedSessionDetailResponseExternalIdsType0,
@@ -245,13 +261,13 @@ class ScrubbedSessionDetailResponse:
 
         agent_platform = d.pop("agent_platform")
 
-        started_at = isoparse(d.pop("started_at"))
+        started_at = datetime.datetime.fromisoformat(d.pop("started_at"))
 
-        ended_at = isoparse(d.pop("ended_at"))
+        ended_at = datetime.datetime.fromisoformat(d.pop("ended_at"))
 
         message_count = d.pop("message_count")
 
-        created_at = isoparse(d.pop("created_at"))
+        created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 
         retained_grades = []
         _retained_grades = d.pop("retained_grades")
@@ -348,6 +364,17 @@ class ScrubbedSessionDetailResponse:
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
 
+        _ingest_kinds = d.pop("ingest_kinds", UNSET)
+        ingest_kinds: list[ScrubbedSessionDetailResponseIngestKindsItem] | Unset = UNSET
+        if _ingest_kinds is not UNSET:
+            ingest_kinds = []
+            for ingest_kinds_item_data in _ingest_kinds:
+                ingest_kinds_item = ScrubbedSessionDetailResponseIngestKindsItem(
+                    ingest_kinds_item_data
+                )
+
+                ingest_kinds.append(ingest_kinds_item)
+
         sources = cast(list[str], d.pop("sources", UNSET))
 
         content_state = cast(Literal["scrubbed"] | Unset, d.pop("content_state", UNSET))
@@ -394,6 +421,7 @@ class ScrubbedSessionDetailResponse:
             user_email=user_email,
             external_ids=external_ids,
             metadata=metadata,
+            ingest_kinds=ingest_kinds,
             sources=sources,
             content_state=content_state,
             is_content_scrubbed=is_content_scrubbed,

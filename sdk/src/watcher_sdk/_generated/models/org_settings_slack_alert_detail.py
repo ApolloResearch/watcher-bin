@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class OrgSettingsSlackAlertDetail(str, Enum):
+class OrgSettingsSlackAlertDetail(StrEnum):
     FINDINGS_ONLY = "findings_only"
     FULL = "full"
 

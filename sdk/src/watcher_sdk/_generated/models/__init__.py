@@ -29,6 +29,9 @@ from .available_session_detail_response import AvailableSessionDetailResponse
 from .available_session_detail_response_external_ids_type_0 import (
     AvailableSessionDetailResponseExternalIdsType0,
 )
+from .available_session_detail_response_ingest_kinds_item import (
+    AvailableSessionDetailResponseIngestKindsItem,
+)
 from .available_session_detail_response_metadata_type_0 import (
     AvailableSessionDetailResponseMetadataType0,
 )
@@ -104,6 +107,16 @@ from .content_tool_use import ContentToolUse
 from .content_tool_use_tool_type import ContentToolUseToolType
 from .content_video import ContentVideo
 from .content_video_format import ContentVideoFormat
+from .copilot_entry import CopilotEntry
+from .copilot_entry_data_type_0 import CopilotEntryDataType0
+from .copilot_hook_request import CopilotHookRequest
+from .copilot_hook_request_external_ids_type_0 import CopilotHookRequestExternalIdsType0
+from .copilot_hook_request_mode import CopilotHookRequestMode
+from .copilot_hook_request_settings_overrides_type_1 import (
+    CopilotHookRequestSettingsOverridesType1,
+)
+from .copilot_trajectory import CopilotTrajectory
+from .copilot_trajectory_metadata_type_0 import CopilotTrajectoryMetadataType0
 from .create_grader_request import CreateGraderRequest
 from .create_grader_request_reasoning_effort_type_0 import (
     CreateGraderRequestReasoningEffortType0,
@@ -175,6 +188,10 @@ from .ingest_append_request import IngestAppendRequest
 from .ingest_request import IngestRequest
 from .ingest_response import IngestResponse
 from .judged_decision import JudgedDecision
+from .managed_settings_source import ManagedSettingsSource
+from .managed_settings_source_error_kind_type_0 import (
+    ManagedSettingsSourceErrorKindType0,
+)
 from .message_detail_response import MessageDetailResponse
 from .message_detail_response_message import MessageDetailResponseMessage
 from .model_token_budget import ModelTokenBudget
@@ -238,6 +255,9 @@ from .scrubbed_session_detail_response import ScrubbedSessionDetailResponse
 from .scrubbed_session_detail_response_external_ids_type_0 import (
     ScrubbedSessionDetailResponseExternalIdsType0,
 )
+from .scrubbed_session_detail_response_ingest_kinds_item import (
+    ScrubbedSessionDetailResponseIngestKindsItem,
+)
 from .scrubbed_session_detail_response_metadata_type_0 import (
     ScrubbedSessionDetailResponseMetadataType0,
 )
@@ -254,6 +274,7 @@ from .session_aggregates_response_severity_threshold import (
 )
 from .session_analytics_summary import SessionAnalyticsSummary
 from .session_analytics_trend_point import SessionAnalyticsTrendPoint
+from .session_capture_counts import SessionCaptureCounts
 from .session_content_access_request_list_response import (
     SessionContentAccessRequestListResponse,
 )
@@ -286,6 +307,7 @@ from .session_search_params_sort_order import SessionSearchParamsSortOrder
 from .session_summary import SessionSummary
 from .session_summary_deep_review_status import SessionSummaryDeepReviewStatus
 from .session_summary_external_ids_type_0 import SessionSummaryExternalIdsType0
+from .session_summary_ingest_kinds_item import SessionSummaryIngestKindsItem
 from .session_summary_metadata_type_0 import SessionSummaryMetadataType0
 from .suggested_model import SuggestedModel
 from .token_response import TokenResponse
@@ -297,12 +319,22 @@ from .tool_call_content_format import ToolCallContentFormat
 from .tool_call_decision_batch_request import ToolCallDecisionBatchRequest
 from .tool_call_decision_batch_response import ToolCallDecisionBatchResponse
 from .tool_call_decision_detail import ToolCallDecisionDetail
+from .tool_call_decision_detail_ingest_kind_type_0 import (
+    ToolCallDecisionDetailIngestKindType0,
+)
 from .tool_call_decision_detail_raw_tool_call import ToolCallDecisionDetailRawToolCall
 from .tool_call_decision_payload import ToolCallDecisionPayload
 from .tool_call_decision_payload_raw_tool_call import ToolCallDecisionPayloadRawToolCall
+from .tool_call_detail_response import ToolCallDetailResponse
+from .tool_call_detail_response_arguments_type_0 import (
+    ToolCallDetailResponseArgumentsType0,
+)
 from .tool_call_error import ToolCallError
 from .tool_call_error_type import ToolCallErrorType
 from .tool_call_findings_response import ToolCallFindingsResponse
+from .tool_call_findings_response_ingest_kind_type_0 import (
+    ToolCallFindingsResponseIngestKindType0,
+)
 from .tool_call_findings_response_raw_tool_call import (
     ToolCallFindingsResponseRawToolCall,
 )
@@ -313,6 +345,8 @@ from .tool_call_grade_detail_input_messages_item import (
 )
 from .tool_call_grade_kind import ToolCallGradeKind
 from .tool_call_list_response import ToolCallListResponse
+from .tool_call_result import ToolCallResult
+from .tool_call_result_content_type_1_item import ToolCallResultContentType1Item
 from .tool_call_search_filters import ToolCallSearchFilters
 from .tool_call_search_filters_decision_categories_type_0_item import (
     ToolCallSearchFiltersDecisionCategoriesType0Item,
@@ -362,9 +396,9 @@ from .version_response import VersionResponse
 
 __all__ = (
     "ActivatedMonitor",
+    "ActivatedMonitorStagesItem",
     "ActivatedMonitorsResponse",
     "ActivatedMonitorsResponseDistribution",
-    "ActivatedMonitorStagesItem",
     "AdminSessionContentAccessRequest",
     "AdminSessionContentAccessRequestListResponse",
     "ApertureHookAccepted",
@@ -380,6 +414,7 @@ __all__ = (
     "AuthUser",
     "AvailableSessionDetailResponse",
     "AvailableSessionDetailResponseExternalIdsType0",
+    "AvailableSessionDetailResponseIngestKindsItem",
     "AvailableSessionDetailResponseMetadataType0",
     "AvailableToolCallListItem",
     "AvailableToolCallListItemCoverageState",
@@ -443,6 +478,14 @@ __all__ = (
     "ContentToolUseToolType",
     "ContentVideo",
     "ContentVideoFormat",
+    "CopilotEntry",
+    "CopilotEntryDataType0",
+    "CopilotHookRequest",
+    "CopilotHookRequestExternalIdsType0",
+    "CopilotHookRequestMode",
+    "CopilotHookRequestSettingsOverridesType1",
+    "CopilotTrajectory",
+    "CopilotTrajectoryMetadataType0",
     "CreateGraderRequest",
     "CreateGraderRequestReasoningEffortType0",
     "CreateGraderRequestScores",
@@ -467,13 +510,13 @@ __all__ = (
     "GetSessionAggregatesEndpointV1SessionsAggregatesGetBucket",
     "GetSessionAggregatesEndpointV1SessionsAggregatesGetSeverityThreshold",
     "GradeByMonitorV1MonitorsRoleGradePostRole",
-    "GraderDetail",
-    "GraderDetailReasoningEffortType0",
-    "GraderDetailScores",
     "GradeRequest",
     "GradeResponse",
     "GradeResult",
     "GradeResultGrades",
+    "GraderDetail",
+    "GraderDetailReasoningEffortType0",
+    "GraderDetailScores",
     "GraderListResponse",
     "GraderSearchRequest",
     "GraderSearchResponse",
@@ -490,20 +533,22 @@ __all__ = (
     "GradingUsageResponse",
     "GradingUsageResponseBucket",
     "GradingUsageUserOption",
+    "HTTPValidationError",
     "HealthResponse",
     "HookAppendAnchor",
     "HookAppendResponse",
     "HookCallError",
-    "HTTPValidationError",
     "HumanDecision",
     "IngestAppendRequest",
     "IngestRequest",
     "IngestResponse",
     "JudgedDecision",
+    "ManagedSettingsSource",
+    "ManagedSettingsSourceErrorKindType0",
     "MessageDetailResponse",
     "MessageDetailResponseMessage",
-    "ModelsConfig",
     "ModelTokenBudget",
+    "ModelsConfig",
     "MonitorContextPolicy",
     "MonitorCustomizationResponse",
     "MonitorInfo",
@@ -543,6 +588,7 @@ __all__ = (
     "ScoreDefinitionType",
     "ScrubbedSessionDetailResponse",
     "ScrubbedSessionDetailResponseExternalIdsType0",
+    "ScrubbedSessionDetailResponseIngestKindsItem",
     "ScrubbedSessionDetailResponseMetadataType0",
     "ScrubbedToolCallListItem",
     "ScrubbedToolCallListItemCoverageState",
@@ -551,6 +597,7 @@ __all__ = (
     "SessionAggregatesResponseSeverityThreshold",
     "SessionAnalyticsSummary",
     "SessionAnalyticsTrendPoint",
+    "SessionCaptureCounts",
     "SessionContentAccessRequestListResponse",
     "SessionContentAccessRequestStatus",
     "SessionContentAccessRequestSummary",
@@ -571,6 +618,7 @@ __all__ = (
     "SessionSummary",
     "SessionSummaryDeepReviewStatus",
     "SessionSummaryExternalIdsType0",
+    "SessionSummaryIngestKindsItem",
     "SessionSummaryMetadataType0",
     "SuggestedModel",
     "TokenResponse",
@@ -582,18 +630,24 @@ __all__ = (
     "ToolCallDecisionBatchRequest",
     "ToolCallDecisionBatchResponse",
     "ToolCallDecisionDetail",
+    "ToolCallDecisionDetailIngestKindType0",
     "ToolCallDecisionDetailRawToolCall",
     "ToolCallDecisionPayload",
     "ToolCallDecisionPayloadRawToolCall",
+    "ToolCallDetailResponse",
+    "ToolCallDetailResponseArgumentsType0",
     "ToolCallError",
     "ToolCallErrorType",
     "ToolCallFindingsResponse",
+    "ToolCallFindingsResponseIngestKindType0",
     "ToolCallFindingsResponseRawToolCall",
     "ToolCallGradeDetail",
     "ToolCallGradeDetailGrades",
     "ToolCallGradeDetailInputMessagesItem",
     "ToolCallGradeKind",
     "ToolCallListResponse",
+    "ToolCallResult",
+    "ToolCallResultContentType1Item",
     "ToolCallSearchFilters",
     "ToolCallSearchFiltersDecisionCategoriesType0Item",
     "ToolCallSearchFiltersSeveritiesType0Item",

@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ToolCallGradeKind(str, Enum):
+class ToolCallGradeKind(StrEnum):
     POLICY_GATEWAY = "policy_gateway"
     POLICY_TRIAGE = "policy_triage"
 

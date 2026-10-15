@@ -7,7 +7,7 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from dateutil.parser import isoparse
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -101,7 +101,7 @@ class GraderSummary:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.grader_summary_scores import GraderSummaryScores
 
         d = dict(src_dict)
@@ -129,7 +129,7 @@ class GraderSummary:
 
         default_model = _parse_default_model(d.pop("default_model"))
 
-        created_at = isoparse(d.pop("created_at"))
+        created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 
         def _parse_user_id(data: object) -> None | Unset | UUID:
             if data is None:

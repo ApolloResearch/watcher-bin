@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../metadata.schema.json
+schema_version: 2
+slug: hermes
+name: Hermes Agent
+summary: Native pre_tool_call gate with full stored history; per-turn session recording.
+category: coding-harness
+upstream_url: https://github.com/NousResearch/hermes-agent
+support_status: experimental
+updated_at: '2026-10-12'
+capabilities:
+  observe:
+    implemented: true
+    scope: Stored session history (text, reasoning, tool calls and results) after every turn via on_session_end.
+    example: demo/hooks.record.yaml
+    timeout_seconds: 30
+    native_timeout_seconds: 60
+    recording: required
+  enforce:
+    implemented: true
+    scope: Native pre_tool_call shell hook; escalations use Hermes's own approval prompt.
+    example: demo/hooks.enforce.yaml
+    boundary: native-hook
+    context: full stored session history up to and including the pending call
+    recording: required
+    failure_behavior: fail-closed
+    timeout_seconds: 240
+    native_timeout_seconds: 300
+manifests:
+- pyproject.toml
+verification: []
+verification_plan:
+  watcher_test_target: mocked-sdk-transport
+  observe:
+    coverage: contract
+    checks:
+    - python
+  enforce:
+    coverage: contract
+    checks:
+    - python
+limitations:
+- id: hook-callback-timeout
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Hermes abandons a pre_tool_call hook after plugins.hook_callback_timeout
+    (30 seconds by default) and refuses the call, whatever the hook's own timeout says.
+    The generated configuration raises it to 300 seconds; without that line, grading
+    slower than 30 seconds blocks every call (hermes_cli/plugins_dispatch.py lines
+    176-180 and 226-236 in v0.21.7).
+- id: hook-deadline-cap
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Hermes caps a shell hook's timeout at 300 seconds, so Watcher grading
+    is limited to 240 seconds by default and 270 at most. Slower grading fails closed
+    (agent/shell_hooks.py lines 37-38 in v0.21.7).
+- id: approval-bypass
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Hermes approves an escalation without asking anyone under --yolo,
+    approvals.mode off, or an unattended approval mode set to approve. Use
+    --escalate-as-block where escalated calls must never run unattended
+    (tools/approval.py lines 967-990 in v0.21.7).
+- id: human-answers-not-recorded
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: A person's answer in Hermes's approval prompt decides the call but is
+    not stored in Watcher as a human decision. Session and permanent answers cover
+    only the one escalation they were given for.
+- id: policy-tool-names
+  mode: enforce
+  cause: watcher
+  kind: constraint
+  description: Watcher's builtin command rules and per-tool thresholds name Claude
+    Code tools. Hermes tools (terminal, read_file, write_file, patch) are not translated,
+    so they reach grading unless an administrator writes rules for the Hermes names.
+- id: rewind-compaction-forks
+  mode: both
+  cause: integration-scope
+  kind: constraint
+  description: Only the rows the model currently sees are sent. After a rewind or
+    context compaction the history no longer extends what Watcher stored, so Watcher
+    records a new branch of the session.
+- id: unjudgeable-calls-refused
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Calls the gate cannot judge in context are refused without grading.
+    These are tools called inside execute_code (Hermes passes no session or call ID),
+    calls from persistence-disabled agents such as background review (shared parent
+    session ID, history only in memory), and connector tools called through the
+    tool_call bridge. Local and MCP bridge batches are split by Hermes and judged.
+- id: argument-rewrites
+  mode: enforce
+  cause: upstream
+  kind: constraint
+  description: Hermes merges other pre_tool_call hooks' modify answers after all hooks
+    run, so a hook that rewrites arguments can execute something other than what
+    Watcher judged. Do not combine the gate with argument-modifying hooks.
+- id: export-latency
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Each gated call first runs hermes sessions export, which took about
+    2 seconds per call in local tests.
+- id: native-fixture
+  mode: both
+  cause: unverified
+  kind: verification-gap
+  description: Checked-in tests use captured Hermes exports and a mocked SDK transport.
+    Gating, escalation and recording were exercised against Hermes v0.21.7 and a local
+    Watcher by hand, which is not a recorded report.

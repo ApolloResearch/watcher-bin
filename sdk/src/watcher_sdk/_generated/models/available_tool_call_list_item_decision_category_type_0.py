@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class AvailableToolCallListItemDecisionCategoryType0(str, Enum):
+class AvailableToolCallListItemDecisionCategoryType0(StrEnum):
     AUTO_DENIED = "auto_denied"
     CLEARED = "cleared"
     HUMAN_ALLOWED = "human_allowed"

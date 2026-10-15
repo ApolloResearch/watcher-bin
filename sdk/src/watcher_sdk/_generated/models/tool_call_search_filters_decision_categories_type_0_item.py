@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ToolCallSearchFiltersDecisionCategoriesType0Item(str, Enum):
+class ToolCallSearchFiltersDecisionCategoriesType0Item(StrEnum):
     AUTO_DENIED = "auto_denied"
     CLEARED = "cleared"
     HUMAN_ALLOWED = "human_allowed"

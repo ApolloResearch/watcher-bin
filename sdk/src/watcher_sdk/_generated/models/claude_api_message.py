@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -38,7 +39,9 @@ class ClaudeAPIMessage:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.claude_api_message_usage_type_0 import ClaudeAPIMessageUsageType0
+        from ..models.claude_api_message_usage_type_0 import (
+            ClaudeAPIMessageUsageType0,
+        )
 
         role = self.role
 
@@ -98,8 +101,10 @@ class ClaudeAPIMessage:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.claude_api_message_usage_type_0 import ClaudeAPIMessageUsageType0
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.claude_api_message_usage_type_0 import (
+            ClaudeAPIMessageUsageType0,
+        )
         from ..models.content_block import ContentBlock
 
         d = dict(src_dict)

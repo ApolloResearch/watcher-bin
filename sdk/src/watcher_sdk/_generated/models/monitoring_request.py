@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -68,7 +69,9 @@ class MonitoringRequest:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.chat_message_assistant import ChatMessageAssistant
+        from ..models.chat_message_assistant import (
+            ChatMessageAssistant,
+        )
         from ..models.chat_message_system import ChatMessageSystem
         from ..models.chat_message_user import ChatMessageUser
         from ..models.monitoring_input import MonitoringInput
@@ -97,16 +100,12 @@ class MonitoringRequest:
                 messages_type_0_item = []
                 for messages_type_0_item_item_data in messages_type_0_item_data:
                     messages_type_0_item_item: dict[str, Any]
-                    if isinstance(messages_type_0_item_item_data, ChatMessageSystem):
-                        messages_type_0_item_item = (
-                            messages_type_0_item_item_data.to_dict()
+                    if (
+                        isinstance(messages_type_0_item_item_data, ChatMessageSystem)
+                        or isinstance(messages_type_0_item_item_data, ChatMessageUser)
+                        or isinstance(
+                            messages_type_0_item_item_data, ChatMessageAssistant
                         )
-                    elif isinstance(messages_type_0_item_item_data, ChatMessageUser):
-                        messages_type_0_item_item = (
-                            messages_type_0_item_item_data.to_dict()
-                        )
-                    elif isinstance(
-                        messages_type_0_item_item_data, ChatMessageAssistant
                     ):
                         messages_type_0_item_item = (
                             messages_type_0_item_item_data.to_dict()
@@ -154,8 +153,10 @@ class MonitoringRequest:
         return field_dict
 
     @classmethod
-    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.chat_message_assistant import ChatMessageAssistant
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.chat_message_assistant import (
+            ChatMessageAssistant,
+        )
         from ..models.chat_message_system import ChatMessageSystem
         from ..models.chat_message_tool import ChatMessageTool
         from ..models.chat_message_user import ChatMessageUser

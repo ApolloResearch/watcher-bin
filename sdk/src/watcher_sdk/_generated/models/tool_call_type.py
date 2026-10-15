@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ToolCallType(str, Enum):
+class ToolCallType(StrEnum):
     CUSTOM = "custom"
     FUNCTION = "function"
 

@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ContentVideoFormat(str, Enum):
+class ContentVideoFormat(StrEnum):
     MOV = "mov"
     MP4 = "mp4"
     MPEG = "mpeg"

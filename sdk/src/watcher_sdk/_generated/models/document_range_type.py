@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class DocumentRangeType(str, Enum):
+class DocumentRangeType(StrEnum):
     BLOCK = "block"
     CHAR = "char"
     PAGE = "page"

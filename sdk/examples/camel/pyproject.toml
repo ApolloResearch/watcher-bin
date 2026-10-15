@@ -30,3 +30,4 @@ junit_family = "legacy"
 
 [tool.uv]
 exclude-newer = "7 days"
+override-dependencies = ["pillow>=12.1.1"]

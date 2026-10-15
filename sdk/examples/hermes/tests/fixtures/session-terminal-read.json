@@ -1,0 +1,123 @@
+{
+ "id": "20261012_123758_954e5d",
+ "messages": [
+  {
+   "id": 7,
+   "session_id": "20261012_123758_954e5d",
+   "role": "user",
+   "content": "Use your terminal tool to run 'ls /tmp | head -3', then read the file /tmp/hermes-probe.txt with your file reading tool, then reply DONE.",
+   "tool_call_id": null,
+   "tool_calls": null,
+   "tool_name": null,
+   "timestamp": 1791808679.1255133,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "d8d4ea3c620d4e079c1f08bb28f2597b"
+  },
+  {
+   "id": 8,
+   "session_id": "20261012_123758_954e5d",
+   "role": "assistant",
+   "content": "",
+   "tool_call_id": null,
+   "tool_calls": [
+    {
+     "id": "call_XAiaPd0OLeTbdB9RjzrKHyxr",
+     "call_id": "call_XAiaPd0OLeTbdB9RjzrKHyxr",
+     "response_item_id": "fc_XAiaPd0OLeTbdB9RjzrKHyxr",
+     "type": "function",
+     "function": {
+      "name": "terminal",
+      "arguments": "{\"command\":\"ls /tmp | head -3\",\"workdir\":\"/tmp\",\"timeout\":30}"
+     }
+    }
+   ],
+   "tool_name": null,
+   "timestamp": 1791808680.9019873,
+   "finish_reason": "tool_calls",
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "c7b9f84ee694436d9c3c45fc7866fe8c"
+  },
+  {
+   "id": 9,
+   "session_id": "20261012_123758_954e5d",
+   "role": "tool",
+   "content": "{\"output\": \"000f1b6ef76a899e\\n001035ab8e4b52af\\n0017523702f6d963\", \"exit_code\": 0, \"error\": null}",
+   "tool_call_id": "call_XAiaPd0OLeTbdB9RjzrKHyxr",
+   "tool_calls": null,
+   "tool_name": "terminal",
+   "timestamp": 1791808681.1041622,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "6662a53652a84db2bace40e0af241970"
+  },
+  {
+   "id": 10,
+   "session_id": "20261012_123758_954e5d",
+   "role": "assistant",
+   "content": "",
+   "tool_call_id": null,
+   "tool_calls": [
+    {
+     "id": "call_UT2tqa6356FQUtRqQaO3quFa",
+     "call_id": "call_UT2tqa6356FQUtRqQaO3quFa",
+     "response_item_id": "fc_UT2tqa6356FQUtRqQaO3quFa",
+     "type": "function",
+     "function": {
+      "name": "read_file",
+      "arguments": "{\"path\":\"/tmp/hermes-probe.txt\",\"offset\":1,\"limit\":2000}"
+     }
+    }
+   ],
+   "tool_name": null,
+   "timestamp": 1791808682.1574926,
+   "finish_reason": "tool_calls",
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "3dd50de59ae74ebdb54271a0282831e7"
+  },
+  {
+   "id": 11,
+   "session_id": "20261012_123758_954e5d",
+   "role": "tool",
+   "content": "{\"content\": \"1|hermes-ok\", \"total_lines\": 1, \"file_size\": 10, \"truncated\": false, \"is_binary\": false, \"is_image\": false, \"not_found\": false}",
+   "tool_call_id": "call_UT2tqa6356FQUtRqQaO3quFa",
+   "tool_calls": null,
+   "tool_name": "read_file",
+   "timestamp": 1791808682.2363455,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "e206cf95a52a45c3a7bebb02ff1aa6b9"
+  },
+  {
+   "id": 12,
+   "session_id": "20261012_123758_954e5d",
+   "role": "assistant",
+   "content": "DONE",
+   "tool_call_id": null,
+   "tool_calls": null,
+   "tool_name": null,
+   "timestamp": 1791808683.0895703,
+   "finish_reason": "stop",
+   "reasoning": null,
+   "reasoning_content": null,
+   "active": 1,
+   "compacted": 0,
+   "message_uid": "4de27bf176fa435997446483198722c6"
+  }
+ ]
+}

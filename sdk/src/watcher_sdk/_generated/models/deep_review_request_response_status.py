@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class DeepReviewRequestResponseStatus(str, Enum):
+class DeepReviewRequestResponseStatus(StrEnum):
     FAILED = "failed"
     QUEUED = "queued"
     RUNNING = "running"

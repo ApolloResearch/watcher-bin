@@ -74,8 +74,10 @@ def sync_detailed(
 
      Read one exact tool call without its surrounding transcript.
 
-    Findings and content are independently authorized with existing session grants,
-    ownership and content approvals. Restricted fields are null; access flags
+    Findings and content are independently authorized with session grants,
+    ownership and content approvals. The flagged-call content permission also
+    permits arguments/results for calls with a recorded risk-driven block or
+    escalation, without permitting surrounding messages. Restricted fields are null; access flags
     distinguish restriction from an absent result or decision. Grader input
     transcripts are never returned. Tool-use IDs are query parameters because
     they can contain slashes and '#'. Returns 404 for missing, inaccessible or
@@ -115,8 +117,10 @@ def sync(
 
      Read one exact tool call without its surrounding transcript.
 
-    Findings and content are independently authorized with existing session grants,
-    ownership and content approvals. Restricted fields are null; access flags
+    Findings and content are independently authorized with session grants,
+    ownership and content approvals. The flagged-call content permission also
+    permits arguments/results for calls with a recorded risk-driven block or
+    escalation, without permitting surrounding messages. Restricted fields are null; access flags
     distinguish restriction from an absent result or decision. Grader input
     transcripts are never returned. Tool-use IDs are query parameters because
     they can contain slashes and '#'. Returns 404 for missing, inaccessible or
@@ -151,8 +155,10 @@ async def asyncio_detailed(
 
      Read one exact tool call without its surrounding transcript.
 
-    Findings and content are independently authorized with existing session grants,
-    ownership and content approvals. Restricted fields are null; access flags
+    Findings and content are independently authorized with session grants,
+    ownership and content approvals. The flagged-call content permission also
+    permits arguments/results for calls with a recorded risk-driven block or
+    escalation, without permitting surrounding messages. Restricted fields are null; access flags
     distinguish restriction from an absent result or decision. Grader input
     transcripts are never returned. Tool-use IDs are query parameters because
     they can contain slashes and '#'. Returns 404 for missing, inaccessible or
@@ -190,8 +196,10 @@ async def asyncio(
 
      Read one exact tool call without its surrounding transcript.
 
-    Findings and content are independently authorized with existing session grants,
-    ownership and content approvals. Restricted fields are null; access flags
+    Findings and content are independently authorized with session grants,
+    ownership and content approvals. The flagged-call content permission also
+    permits arguments/results for calls with a recorded risk-driven block or
+    escalation, without permitting surrounding messages. Restricted fields are null; access flags
     distinguish restriction from an absent result or decision. Grader input
     transcripts are never returned. Tool-use IDs are query parameters because
     they can contain slashes and '#'. Returns 404 for missing, inaccessible or

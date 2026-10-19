@@ -27,11 +27,13 @@ class UserProfile:
         organization_id (None | str | Unset):
         organization_name (None | str | Unset):
         memberships (list[UserProfileMembershipsItem] | Unset):
-        permissions (list[str] | Unset): Effective permission slugs for client UI gates: explicit grants plus known
-            Watcher permissions granted by built-in roles. WorkOS widget permissions remain explicit.
-        role (None | str | Unset): The caller's role in the active organization, for display only; gating belongs on
-            ``permissions``, which includes built-in role grants. Under WorkOS this is the role the token names; proxy auth
-            reports admin, org-viewer, or member. Null when the authentication in use vouches for no single role.
+        permissions (list[str] | Unset): Effective permission slugs after organization policy: YAML role grants plus,
+            for WorkOS users, widgets:users-table:manage and widgets:api-keys:manage when present in the verified token. No
+            automatic baseline grants; other WorkOS token permissions and server-only internal: grants are excluded. Use
+            these permissions for client UI gates.
+        role (None | str | Unset): Display-only role; use permissions for authorization. WorkOS returns the token's
+            singular role claim, or null when absent. Proxy auth returns the trimmed, lowercase role header, or null when
+            missing or blank. Custom and unknown role names may appear.
     """
 
     user_id: str

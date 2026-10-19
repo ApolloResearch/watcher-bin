@@ -35,13 +35,13 @@ class CaptureModelCalls:
 
     async def ainvoke(self, messages, **kwargs):
         self.watcher_messages = messages
-        return await super().ainvoke(messages, **kwargs)  # ty: ignore[unresolved-attribute]
+        return await super().ainvoke(messages, **kwargs)
 
 
 def _before_tool(monitor, model, previous_hook):
     """Compose an awaited Function pre-hook for WatcherAgent's async-only dispatch.
 
-    Agno 2.2.3 logs and swallows ordinary pre_hook exceptions. StopAgentRun is the
+    Agno 2.3.24 logs and swallows ordinary pre_hook exceptions. StopAgentRun is the
     public exception it propagates before execution. Existing application hooks
     run first, with Agno's documented context arguments. Their AgentRunException
     subclasses retain native retry/stop behavior and messages; other failures stop
@@ -50,10 +50,17 @@ def _before_tool(monitor, model, previous_hook):
     on an ordinary Agent: synchronous runs do not await it.
     """
 
-    async def before(fc, agent=None, team=None, session_state=None):
+    async def before(fc, agent=None, team=None, run_context=None, session_state=None, dependencies=None):
         try:
             if previous_hook is not None:
-                context = {"fc": fc, "agent": agent, "team": team, "session_state": session_state}
+                context = {
+                    "fc": fc,
+                    "agent": agent,
+                    "team": team,
+                    "run_context": run_context,
+                    "session_state": session_state,
+                    "dependencies": dependencies,
+                }
                 parameters = signature(previous_hook).parameters
                 result = previous_hook(**{key: value for key, value in context.items() if key in parameters})
                 if isawaitable(result):
@@ -94,6 +101,7 @@ def _refuse_generated_tools(options):
     adapter installs pre-hooks. Knowledge search is enabled by default when a
     knowledge source or retriever is supplied; disabling both knowledge tool
     options leaves that source usable without adding an unmonitored tool.
+    Skills add instruction, reference and script tools.
     """
     unsupported = [
         name
@@ -107,6 +115,8 @@ def _refuse_generated_tools(options):
         )
         if options.get(name)
     ]
+    if options.get("skills") is not None:
+        unsupported.append("skills")
     if options.get("knowledge") is not None or options.get("knowledge_retriever") is not None:
         if options.get("search_knowledge", True):
             unsupported.append("search_knowledge")

@@ -30,6 +30,10 @@ class ToolCallSearchFilters:
         end_date (datetime.datetime | None | Unset): Include only tool calls whose message was recorded at or before
             this time.
         session_id (None | Unset | UUID): Restrict results to one session.
+        trajectory_id (None | str | Unset): Restrict calls to this trajectory and its ancestors. Requires session_id.
+            Use latest for the session's latest trajectory. Missing or scrubbed trajectories match no calls.
+        is_flagged (bool | None | Unset): Filter by Watcher's recorded risk classification, including observe-mode
+            judgments. Combines with decision_categories using AND: calls must match both filters when both are set.
         user_id (None | Unset | UUID): Restrict results to one user. Callers without sessions:findings:read:any may only
             name themselves.
         tool_names (list[str] | None | Unset): Tool names to match with OR semantics. Unknown names are valid and match
@@ -43,6 +47,8 @@ class ToolCallSearchFilters:
     start_date: datetime.datetime | None | Unset = UNSET
     end_date: datetime.datetime | None | Unset = UNSET
     session_id: None | Unset | UUID = UNSET
+    trajectory_id: None | str | Unset = UNSET
+    is_flagged: bool | None | Unset = UNSET
     user_id: None | Unset | UUID = UNSET
     tool_names: list[str] | None | Unset = UNSET
     severities: list[ToolCallSearchFiltersSeveritiesType0Item] | None | Unset = UNSET
@@ -74,6 +80,18 @@ class ToolCallSearchFilters:
             session_id = str(self.session_id)
         else:
             session_id = self.session_id
+
+        trajectory_id: None | str | Unset
+        if isinstance(self.trajectory_id, Unset):
+            trajectory_id = UNSET
+        else:
+            trajectory_id = self.trajectory_id
+
+        is_flagged: bool | None | Unset
+        if isinstance(self.is_flagged, Unset):
+            is_flagged = UNSET
+        else:
+            is_flagged = self.is_flagged
 
         user_id: None | str | Unset
         if isinstance(self.user_id, Unset):
@@ -127,6 +145,10 @@ class ToolCallSearchFilters:
             field_dict["end_date"] = end_date
         if session_id is not UNSET:
             field_dict["session_id"] = session_id
+        if trajectory_id is not UNSET:
+            field_dict["trajectory_id"] = trajectory_id
+        if is_flagged is not UNSET:
+            field_dict["is_flagged"] = is_flagged
         if user_id is not UNSET:
             field_dict["user_id"] = user_id
         if tool_names is not UNSET:
@@ -192,6 +214,24 @@ class ToolCallSearchFilters:
             return cast(None | Unset | UUID, data)
 
         session_id = _parse_session_id(d.pop("session_id", UNSET))
+
+        def _parse_trajectory_id(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        trajectory_id = _parse_trajectory_id(d.pop("trajectory_id", UNSET))
+
+        def _parse_is_flagged(data: object) -> bool | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(bool | None | Unset, data)
+
+        is_flagged = _parse_is_flagged(d.pop("is_flagged", UNSET))
 
         def _parse_user_id(data: object) -> None | Unset | UUID:
             if data is None:
@@ -292,6 +332,8 @@ class ToolCallSearchFilters:
             start_date=start_date,
             end_date=end_date,
             session_id=session_id,
+            trajectory_id=trajectory_id,
+            is_flagged=is_flagged,
             user_id=user_id,
             tool_names=tool_names,
             severities=severities,

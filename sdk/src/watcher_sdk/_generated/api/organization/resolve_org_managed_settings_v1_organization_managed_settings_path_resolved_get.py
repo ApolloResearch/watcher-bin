@@ -64,11 +64,9 @@ def sync_detailed(
 
      Return the document machines should apply for this path, or 404 when unmanaged.
 
-    Any authenticated member of the org can read this (machines authenticate
-    with per-user credentials, so a member JWT need not carry the admin-only
-    settings permission). An org or user API key is the exception: it must carry
-    org:settings:read, the same slug the other settings routes enforce. 404
-    covers both "the org distributes via MDM" and "no document saved yet";
+    Requires ``org:managed-settings:read`` or the broader ``org:settings:read``.
+    Users receive these through role YAML; API keys must carry either permission
+    explicitly. 404 covers both "the org distributes via MDM" and "no document saved yet";
     clients treat it as "no managed settings" and keep their last-known-good
     file. That expected 404 carries a structured detail
     (``{"code": "no_managed_settings", "message": ...}``) so clients can tell
@@ -107,11 +105,9 @@ def sync(
 
      Return the document machines should apply for this path, or 404 when unmanaged.
 
-    Any authenticated member of the org can read this (machines authenticate
-    with per-user credentials, so a member JWT need not carry the admin-only
-    settings permission). An org or user API key is the exception: it must carry
-    org:settings:read, the same slug the other settings routes enforce. 404
-    covers both "the org distributes via MDM" and "no document saved yet";
+    Requires ``org:managed-settings:read`` or the broader ``org:settings:read``.
+    Users receive these through role YAML; API keys must carry either permission
+    explicitly. 404 covers both "the org distributes via MDM" and "no document saved yet";
     clients treat it as "no managed settings" and keep their last-known-good
     file. That expected 404 carries a structured detail
     (``{"code": "no_managed_settings", "message": ...}``) so clients can tell
@@ -145,11 +141,9 @@ async def asyncio_detailed(
 
      Return the document machines should apply for this path, or 404 when unmanaged.
 
-    Any authenticated member of the org can read this (machines authenticate
-    with per-user credentials, so a member JWT need not carry the admin-only
-    settings permission). An org or user API key is the exception: it must carry
-    org:settings:read, the same slug the other settings routes enforce. 404
-    covers both "the org distributes via MDM" and "no document saved yet";
+    Requires ``org:managed-settings:read`` or the broader ``org:settings:read``.
+    Users receive these through role YAML; API keys must carry either permission
+    explicitly. 404 covers both "the org distributes via MDM" and "no document saved yet";
     clients treat it as "no managed settings" and keep their last-known-good
     file. That expected 404 carries a structured detail
     (``{"code": "no_managed_settings", "message": ...}``) so clients can tell
@@ -186,11 +180,9 @@ async def asyncio(
 
      Return the document machines should apply for this path, or 404 when unmanaged.
 
-    Any authenticated member of the org can read this (machines authenticate
-    with per-user credentials, so a member JWT need not carry the admin-only
-    settings permission). An org or user API key is the exception: it must carry
-    org:settings:read, the same slug the other settings routes enforce. 404
-    covers both "the org distributes via MDM" and "no document saved yet";
+    Requires ``org:managed-settings:read`` or the broader ``org:settings:read``.
+    Users receive these through role YAML; API keys must carry either permission
+    explicitly. 404 covers both "the org distributes via MDM" and "no document saved yet";
     clients treat it as "no managed settings" and keep their last-known-good
     file. That expected 404 carries a structured detail
     (``{"code": "no_managed_settings", "message": ...}``) so clients can tell

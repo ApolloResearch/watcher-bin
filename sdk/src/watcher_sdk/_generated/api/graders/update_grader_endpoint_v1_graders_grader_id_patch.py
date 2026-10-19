@@ -72,7 +72,10 @@ def sync_detailed(
 ) -> Response[GraderDetail | HTTPValidationError]:
     """Update Grader Endpoint
 
-     Create a new grader version with the given updates. Only the creator may modify.
+     Create a new version of a visible grader with the supplied updates.
+
+    Updating a visible grader requires ownership (403 otherwise). Built-in
+    graders are immutable (403); missing, inaccessible or archived graders return 404.
 
     Args:
         grader_id (str):
@@ -109,7 +112,10 @@ def sync(
 ) -> GraderDetail | HTTPValidationError | None:
     """Update Grader Endpoint
 
-     Create a new grader version with the given updates. Only the creator may modify.
+     Create a new version of a visible grader with the supplied updates.
+
+    Updating a visible grader requires ownership (403 otherwise). Built-in
+    graders are immutable (403); missing, inaccessible or archived graders return 404.
 
     Args:
         grader_id (str):
@@ -141,7 +147,10 @@ async def asyncio_detailed(
 ) -> Response[GraderDetail | HTTPValidationError]:
     """Update Grader Endpoint
 
-     Create a new grader version with the given updates. Only the creator may modify.
+     Create a new version of a visible grader with the supplied updates.
+
+    Updating a visible grader requires ownership (403 otherwise). Built-in
+    graders are immutable (403); missing, inaccessible or archived graders return 404.
 
     Args:
         grader_id (str):
@@ -176,7 +185,10 @@ async def asyncio(
 ) -> GraderDetail | HTTPValidationError | None:
     """Update Grader Endpoint
 
-     Create a new grader version with the given updates. Only the creator may modify.
+     Create a new version of a visible grader with the supplied updates.
+
+    Updating a visible grader requires ownership (403 otherwise). Built-in
+    graders are immutable (403); missing, inaccessible or archived graders return 404.
 
     Args:
         grader_id (str):

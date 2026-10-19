@@ -319,6 +319,9 @@ class WatcherClient:
         offset: int = 0,
         sort_by: str = "severity",
         sort_order: str = "desc",
+        *,
+        is_flagged: bool | None = None,
+        trajectory_id: str | None = None,
     ) -> ToolCallListResponse: ...
     def get_session_aggregates(
         self,

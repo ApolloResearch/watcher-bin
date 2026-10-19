@@ -36,6 +36,7 @@ class ScrubbedToolCallListItem:
         tool_call_id (UUID):
         session_id (UUID):
         occurred_at (datetime.datetime):
+        is_flagged (bool): Whether Watcher recorded a policy block or escalation, excluding grading failures.
         severity_score (int | None | Unset):
         coverage_state (ScrubbedToolCallListItemCoverageState | Unset):  Default:
             ScrubbedToolCallListItemCoverageState.DECIDED.
@@ -53,6 +54,7 @@ class ScrubbedToolCallListItem:
     tool_call_id: UUID
     session_id: UUID
     occurred_at: datetime.datetime
+    is_flagged: bool
     severity_score: int | None | Unset = UNSET
     coverage_state: ScrubbedToolCallListItemCoverageState | Unset = (
         ScrubbedToolCallListItemCoverageState.DECIDED
@@ -76,6 +78,8 @@ class ScrubbedToolCallListItem:
         session_id = str(self.session_id)
 
         occurred_at = self.occurred_at.isoformat()
+
+        is_flagged = self.is_flagged
 
         severity_score: int | None | Unset
         if isinstance(self.severity_score, Unset):
@@ -156,6 +160,7 @@ class ScrubbedToolCallListItem:
                 "tool_call_id": tool_call_id,
                 "session_id": session_id,
                 "occurred_at": occurred_at,
+                "is_flagged": is_flagged,
             }
         )
         if severity_score is not UNSET:
@@ -191,6 +196,8 @@ class ScrubbedToolCallListItem:
         session_id = UUID(d.pop("session_id"))
 
         occurred_at = datetime.datetime.fromisoformat(d.pop("occurred_at"))
+
+        is_flagged = d.pop("is_flagged")
 
         def _parse_severity_score(data: object) -> int | None | Unset:
             if data is None:
@@ -336,6 +343,7 @@ class ScrubbedToolCallListItem:
             tool_call_id=tool_call_id,
             session_id=session_id,
             occurred_at=occurred_at,
+            is_flagged=is_flagged,
             severity_score=severity_score,
             coverage_state=coverage_state,
             decision_category=decision_category,

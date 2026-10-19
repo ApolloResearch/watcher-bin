@@ -1,5 +1,5 @@
 {
-  "jackson-databind-2.20.0.jar": "a70e146a6bf2cba4f9cd367169787f50adcfbb57122bc2e9c8390cd0b397ac30",
+  "jackson-databind-2.21.7.jar": "1290c2795e93e8a6861a6c4d9ff0d844d32f5ea178362cb2721edf5561e828b1",
   "slf4j-api-2.0.18.jar": "44508fd1576500688c790b190acdd16fec4f8c79a3e0b900afd70503cf055f55",
   "jackson-core-2.22.1.jar": "941ff029bcdb93e83d209ce516c1a7fb8bbac07d0a2fa122f5bf194b2cd7b4f4",
   "langchain4j-http-client-1.20.0.jar": "867abe5012fa5d6101f5194c076292caf56300a818f68b171f48df87959888c9",

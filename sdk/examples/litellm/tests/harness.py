@@ -26,7 +26,9 @@ def free_port() -> int:
 def serve_in_thread(app: ASGIApp) -> str:
     """Run an ASGI app on a free loopback port for the rest of the test session."""
     port = free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    # log_config=None stops uvicorn calling logging.config.dictConfig, which would close every logging handler in the
+    # whole pytest process.
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", log_config=None))
     threading.Thread(target=server.run, daemon=True).start()
     while not server.started:
         time.sleep(0.02)

@@ -62,7 +62,10 @@ def sync_detailed(
 ) -> Response[GraderDetail | HTTPValidationError]:
     """Get Grader Endpoint
 
-     Get the latest non-archived version of a grader owned by the org or built-in.
+     Get the latest non-archived version of an organization or built-in grader.
+
+    Private graders are visible only to their creator. Missing or inaccessible
+    graders return 404.
 
     Args:
         grader_id (str):
@@ -93,7 +96,10 @@ def sync(
 ) -> GraderDetail | HTTPValidationError | None:
     """Get Grader Endpoint
 
-     Get the latest non-archived version of a grader owned by the org or built-in.
+     Get the latest non-archived version of an organization or built-in grader.
+
+    Private graders are visible only to their creator. Missing or inaccessible
+    graders return 404.
 
     Args:
         grader_id (str):
@@ -119,7 +125,10 @@ async def asyncio_detailed(
 ) -> Response[GraderDetail | HTTPValidationError]:
     """Get Grader Endpoint
 
-     Get the latest non-archived version of a grader owned by the org or built-in.
+     Get the latest non-archived version of an organization or built-in grader.
+
+    Private graders are visible only to their creator. Missing or inaccessible
+    graders return 404.
 
     Args:
         grader_id (str):
@@ -148,7 +157,10 @@ async def asyncio(
 ) -> GraderDetail | HTTPValidationError | None:
     """Get Grader Endpoint
 
-     Get the latest non-archived version of a grader owned by the org or built-in.
+     Get the latest non-archived version of an organization or built-in grader.
+
+    Private graders are visible only to their creator. Missing or inaccessible
+    graders return 404.
 
     Args:
         grader_id (str):

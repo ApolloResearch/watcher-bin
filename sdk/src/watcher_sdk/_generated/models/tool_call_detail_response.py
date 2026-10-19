@@ -24,7 +24,8 @@ class ToolCallDetailResponse:
     """One call with independently authorized findings and content.
 
     Access flags distinguish restriction from missing data: arguments/results are
-    null without content access, and decision is null without findings access.
+    null without content access to this call, and decision is null without findings
+    access. The flagged-call grant permits content here without session-content access.
     A call may also have no recorded decision or result. Decision raw content and
     grader input messages stay empty; arguments are exposed only in their own field.
     has_result reports stored-result existence even when result is restricted.
@@ -33,6 +34,8 @@ class ToolCallDetailResponse:
             tool_use_id (str):
             tool_name (str):
             occurred_at (datetime.datetime):
+            is_flagged (bool | None): Whether Watcher recorded a policy block or escalation, excluding grading failures;
+                null without findings access.
             can_read_findings (bool):
             can_read_content (bool):
             arguments (None | ToolCallDetailResponseArgumentsType0):
@@ -44,6 +47,7 @@ class ToolCallDetailResponse:
     tool_use_id: str
     tool_name: str
     occurred_at: datetime.datetime
+    is_flagged: bool | None
     can_read_findings: bool
     can_read_content: bool
     arguments: None | ToolCallDetailResponseArgumentsType0
@@ -66,6 +70,9 @@ class ToolCallDetailResponse:
         tool_name = self.tool_name
 
         occurred_at = self.occurred_at.isoformat()
+
+        is_flagged: bool | None
+        is_flagged = self.is_flagged
 
         can_read_findings = self.can_read_findings
 
@@ -98,6 +105,7 @@ class ToolCallDetailResponse:
                 "tool_use_id": tool_use_id,
                 "tool_name": tool_name,
                 "occurred_at": occurred_at,
+                "is_flagged": is_flagged,
                 "can_read_findings": can_read_findings,
                 "can_read_content": can_read_content,
                 "arguments": arguments,
@@ -125,6 +133,13 @@ class ToolCallDetailResponse:
         tool_name = d.pop("tool_name")
 
         occurred_at = datetime.datetime.fromisoformat(d.pop("occurred_at"))
+
+        def _parse_is_flagged(data: object) -> bool | None:
+            if data is None:
+                return data
+            return cast(bool | None, data)
+
+        is_flagged = _parse_is_flagged(d.pop("is_flagged"))
 
         can_read_findings = d.pop("can_read_findings")
 
@@ -183,6 +198,7 @@ class ToolCallDetailResponse:
             tool_use_id=tool_use_id,
             tool_name=tool_name,
             occurred_at=occurred_at,
+            is_flagged=is_flagged,
             can_read_findings=can_read_findings,
             can_read_content=can_read_content,
             arguments=arguments,

@@ -250,7 +250,7 @@
           "auth"
         ],
         "summary": "Auth Me",
-        "description": "Return the current authenticated user's profile.\n\nIncludes display identity (user_id, email, role), org context\n(organization_id, organization_name, memberships for multi-org\ncallers), and effective permission slugs after organization policy;\nknown Watcher permissions granted by built-in roles are included in\nboth WorkOS and proxy modes. The role is for display only: clients gate\ncontrols on permissions, matching the backend authorization policy.",
+        "description": "Return the current authenticated user's profile.\n\nIncludes display identity, organization context, memberships, and effective\npermissions from the shared authentication boundary. Both sign-in modes use\nYAML role grants after organization policy; WorkOS also passes through the\ntwo supported widget grants from verified tokens. No baseline grants are\nadded. The role is display-only metadata; clients gate controls on permissions.",
         "operationId": "auth_me_v1_auth_me_get",
         "responses": {
           "200": {
@@ -473,7 +473,7 @@
           "organization"
         ],
         "summary": "Resolve Org Managed Settings",
-        "description": "Return the document machines should apply for this path, or 404 when unmanaged.\n\nAny authenticated member of the org can read this (machines authenticate\nwith per-user credentials, so a member JWT need not carry the admin-only\nsettings permission). An org or user API key is the exception: it must carry\norg:settings:read, the same slug the other settings routes enforce. 404\ncovers both \"the org distributes via MDM\" and \"no document saved yet\";\nclients treat it as \"no managed settings\" and keep their last-known-good\nfile. That expected 404 carries a structured detail\n(``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell\nit apart from a routing-layer 404, whose body is a plain string.\nWhen the deployment mounts a managed settings file it is served here\nregardless of the stored distribution flag.",
+        "description": "Return the document machines should apply for this path, or 404 when unmanaged.\n\nRequires ``org:managed-settings:read`` or the broader ``org:settings:read``.\nUsers receive these through role YAML; API keys must carry either permission\nexplicitly. 404 covers both \"the org distributes via MDM\" and \"no document saved yet\";\nclients treat it as \"no managed settings\" and keep their last-known-good\nfile. That expected 404 carries a structured detail\n(``{\"code\": \"no_managed_settings\", \"message\": ...}``) so clients can tell\nit apart from a routing-layer 404, whose body is a plain string.\nWhen the deployment mounts a managed settings file it is served here\nregardless of the stored distribution flag.",
         "operationId": "resolve_org_managed_settings_v1_organization_managed_settings__path__resolved_get",
         "parameters": [
           {
@@ -1493,7 +1493,7 @@
           "sessions"
         ],
         "summary": "Get Session Tool Call",
-        "description": "Read one exact tool call without its surrounding transcript.\n\nFindings and content are independently authorized with existing session grants,\nownership and content approvals. Restricted fields are null; access flags\ndistinguish restriction from an absent result or decision. Grader input\ntranscripts are never returned. Tool-use IDs are query parameters because\nthey can contain slashes and '#'. Returns 404 for missing, inaccessible or\nscrubbed sessions and missing calls, and 400 for malformed session UUIDs.",
+        "description": "Read one exact tool call without its surrounding transcript.\n\nFindings and content are independently authorized with session grants,\nownership and content approvals. The flagged-call content permission also\npermits arguments/results for calls with a recorded risk-driven block or\nescalation, without permitting surrounding messages. Restricted fields are null; access flags\ndistinguish restriction from an absent result or decision. Grader input\ntranscripts are never returned. Tool-use IDs are query parameters because\nthey can contain slashes and '#'. Returns 404 for missing, inaccessible or\nscrubbed sessions and missing calls, and 400 for malformed session UUIDs.",
         "operationId": "get_session_tool_call_v1_sessions__session_id__tool_call_get",
         "parameters": [
           {
@@ -1916,7 +1916,7 @@
           "graders"
         ],
         "summary": "List Graders Endpoint",
-        "description": "List latest non-archived version of each grader visible to the authenticated org.",
+        "description": "List the latest non-archived versions of organization and built-in graders.\n\nPrivate graders are included only for their creator.",
         "operationId": "list_graders_endpoint_v1_graders_get",
         "parameters": [
           {
@@ -1971,7 +1971,7 @@
           "graders"
         ],
         "summary": "Create Grader Endpoint",
-        "description": "Create a new grader (version 0) owned by the current organization and user.",
+        "description": "Create version 0 of a grader in your organization.\n\nRequires an authenticated user, who becomes the grader's owner. API keys\ncannot create graders (403).",
         "operationId": "create_grader_endpoint_v1_graders_post",
         "requestBody": {
           "required": true,
@@ -2013,7 +2013,7 @@
           "graders"
         ],
         "summary": "Get Grader Version Endpoint",
-        "description": "Get a specific grader version, even if archived (for grade provenance lookups).",
+        "description": "Get a specific version, including archived versions for grade provenance.\n\nPrivate graders are visible only to their creator. Missing or inaccessible\nversions return 404.",
         "operationId": "get_grader_version_endpoint_v1_graders__grader_id___version__get",
         "parameters": [
           {
@@ -2065,7 +2065,7 @@
           "graders"
         ],
         "summary": "Get Grader Endpoint",
-        "description": "Get the latest non-archived version of a grader owned by the org or built-in.",
+        "description": "Get the latest non-archived version of an organization or built-in grader.\n\nPrivate graders are visible only to their creator. Missing or inaccessible\ngraders return 404.",
         "operationId": "get_grader_endpoint_v1_graders__grader_id__get",
         "parameters": [
           {
@@ -2106,7 +2106,7 @@
           "graders"
         ],
         "summary": "Update Grader Endpoint",
-        "description": "Create a new grader version with the given updates. Only the creator may modify.",
+        "description": "Create a new version of a visible grader with the supplied updates.\n\nUpdating a visible grader requires ownership (403 otherwise). Built-in\ngraders are immutable (403); missing, inaccessible or archived graders return 404.",
         "operationId": "update_grader_endpoint_v1_graders__grader_id__patch",
         "parameters": [
           {
@@ -2157,7 +2157,7 @@
           "graders"
         ],
         "summary": "Delete Grader Endpoint",
-        "description": "Archive all versions of a grader (soft delete). Only the creator may delete.",
+        "description": "Archive all versions of a visible grader.\n\nDeleting a visible grader requires ownership (403 otherwise). Built-in\ngraders are immutable (403); missing, inaccessible or archived graders return 404.",
         "operationId": "delete_grader_endpoint_v1_graders__grader_id__delete",
         "parameters": [
           {
@@ -2193,7 +2193,7 @@
           "graders"
         ],
         "summary": "Search Graders Endpoint",
-        "description": "Search graders by name and header/footer content. Scoped to the authenticated org + built-in.",
+        "description": "Search organization and built-in graders by name and header/footer content.\n\nSearches the latest non-archived version of each grader. Private graders\nare included only for their creator.",
         "operationId": "search_graders_endpoint_v1_graders_search_post",
         "requestBody": {
           "content": {
@@ -3497,6 +3497,11 @@
             "format": "date-time",
             "title": "Occurred At"
           },
+          "is_flagged": {
+            "type": "boolean",
+            "title": "Is Flagged",
+            "description": "Whether Watcher recorded a policy block or escalation, excluding grading failures."
+          },
           "severity_score": {
             "anyOf": [
               {
@@ -3666,6 +3671,7 @@
           "tool_call_id",
           "session_id",
           "occurred_at",
+          "is_flagged",
           "tool_use_id",
           "message_ref",
           "tool_name"
@@ -9662,6 +9668,11 @@
             "format": "date-time",
             "title": "Occurred At"
           },
+          "is_flagged": {
+            "type": "boolean",
+            "title": "Is Flagged",
+            "description": "Whether Watcher recorded a policy block or escalation, excluding grading failures."
+          },
           "severity_score": {
             "anyOf": [
               {
@@ -9792,7 +9803,8 @@
         "required": [
           "tool_call_id",
           "session_id",
-          "occurred_at"
+          "occurred_at",
+          "is_flagged"
         ],
         "title": "ScrubbedToolCallListItem",
         "description": "A retained verdict whose tool-call evidence has been scrubbed."
@@ -11474,6 +11486,18 @@
             "format": "date-time",
             "title": "Occurred At"
           },
+          "is_flagged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Flagged",
+            "description": "Whether Watcher recorded a policy block or escalation, excluding grading failures; null without findings access."
+          },
           "can_read_findings": {
             "type": "boolean",
             "title": "Can Read Findings"
@@ -11524,6 +11548,7 @@
           "tool_use_id",
           "tool_name",
           "occurred_at",
+          "is_flagged",
           "can_read_findings",
           "can_read_content",
           "arguments",
@@ -11532,7 +11557,7 @@
           "decision"
         ],
         "title": "ToolCallDetailResponse",
-        "description": "One call with independently authorized findings and content.\n\nAccess flags distinguish restriction from missing data: arguments/results are\nnull without content access, and decision is null without findings access.\nA call may also have no recorded decision or result. Decision raw content and\ngrader input messages stay empty; arguments are exposed only in their own field.\nhas_result reports stored-result existence even when result is restricted."
+        "description": "One call with independently authorized findings and content.\n\nAccess flags distinguish restriction from missing data: arguments/results are\nnull without content access to this call, and decision is null without findings\naccess. The flagged-call grant permits content here without session-content access.\nA call may also have no recorded decision or result. Decision raw content and\ngrader input messages stay empty; arguments are exposed only in their own field.\nhas_result reports stored-result existence even when result is restricted."
       },
       "ToolCallError": {
         "properties": {
@@ -12068,6 +12093,31 @@
             ],
             "title": "Session Id",
             "description": "Restrict results to one session."
+          },
+          "trajectory_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trajectory Id",
+            "description": "Restrict calls to this trajectory and its ancestors. Requires session_id. Use latest for the session's latest trajectory. Missing or scrubbed trajectories match no calls."
+          },
+          "is_flagged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Flagged",
+            "description": "Filter by Watcher's recorded risk classification, including observe-mode judgments. Combines with decision_categories using AND: calls must match both filters when both are set."
           },
           "user_id": {
             "anyOf": [
@@ -12897,7 +12947,7 @@
             },
             "type": "array",
             "title": "Permissions",
-            "description": "Effective permission slugs for client UI gates: explicit grants plus known Watcher permissions granted by built-in roles. WorkOS widget permissions remain explicit."
+            "description": "Effective permission slugs after organization policy: YAML role grants plus, for WorkOS users, widgets:users-table:manage and widgets:api-keys:manage when present in the verified token. No automatic baseline grants; other WorkOS token permissions and server-only internal: grants are excluded. Use these permissions for client UI gates."
           },
           "role": {
             "anyOf": [
@@ -12909,7 +12959,7 @@
               }
             ],
             "title": "Role",
-            "description": "The caller's role in the active organization, for display only; gating belongs on ``permissions``, which includes built-in role grants. Under WorkOS this is the role the token names; proxy auth reports admin, org-viewer, or member. Null when the authentication in use vouches for no single role."
+            "description": "Display-only role; use permissions for authorization. WorkOS returns the token's singular role claim, or null when absent. Proxy auth returns the trimmed, lowercase role header, or null when missing or blank. Custom and unknown role names may appear."
           }
         },
         "type": "object",

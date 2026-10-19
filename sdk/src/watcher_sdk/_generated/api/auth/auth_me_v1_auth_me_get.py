@@ -52,12 +52,11 @@ def sync_detailed(
 
      Return the current authenticated user's profile.
 
-    Includes display identity (user_id, email, role), org context
-    (organization_id, organization_name, memberships for multi-org
-    callers), and effective permission slugs after organization policy;
-    known Watcher permissions granted by built-in roles are included in
-    both WorkOS and proxy modes. The role is for display only: clients gate
-    controls on permissions, matching the backend authorization policy.
+    Includes display identity, organization context, memberships, and effective
+    permissions from the shared authentication boundary. Both sign-in modes use
+    YAML role grants after organization policy; WorkOS also passes through the
+    two supported widget grants from verified tokens. No baseline grants are
+    added. The role is display-only metadata; clients gate controls on permissions.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -84,12 +83,11 @@ def sync(
 
      Return the current authenticated user's profile.
 
-    Includes display identity (user_id, email, role), org context
-    (organization_id, organization_name, memberships for multi-org
-    callers), and effective permission slugs after organization policy;
-    known Watcher permissions granted by built-in roles are included in
-    both WorkOS and proxy modes. The role is for display only: clients gate
-    controls on permissions, matching the backend authorization policy.
+    Includes display identity, organization context, memberships, and effective
+    permissions from the shared authentication boundary. Both sign-in modes use
+    YAML role grants after organization policy; WorkOS also passes through the
+    two supported widget grants from verified tokens. No baseline grants are
+    added. The role is display-only metadata; clients gate controls on permissions.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -112,12 +110,11 @@ async def asyncio_detailed(
 
      Return the current authenticated user's profile.
 
-    Includes display identity (user_id, email, role), org context
-    (organization_id, organization_name, memberships for multi-org
-    callers), and effective permission slugs after organization policy;
-    known Watcher permissions granted by built-in roles are included in
-    both WorkOS and proxy modes. The role is for display only: clients gate
-    controls on permissions, matching the backend authorization policy.
+    Includes display identity, organization context, memberships, and effective
+    permissions from the shared authentication boundary. Both sign-in modes use
+    YAML role grants after organization policy; WorkOS also passes through the
+    two supported widget grants from verified tokens. No baseline grants are
+    added. The role is display-only metadata; clients gate controls on permissions.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -142,12 +139,11 @@ async def asyncio(
 
      Return the current authenticated user's profile.
 
-    Includes display identity (user_id, email, role), org context
-    (organization_id, organization_name, memberships for multi-org
-    callers), and effective permission slugs after organization policy;
-    known Watcher permissions granted by built-in roles are included in
-    both WorkOS and proxy modes. The role is for display only: clients gate
-    controls on permissions, matching the backend authorization policy.
+    Includes display identity, organization context, memberships, and effective
+    permissions from the shared authentication boundary. Both sign-in modes use
+    YAML role grants after organization policy; WorkOS also passes through the
+    two supported widget grants from verified tokens. No baseline grants are
+    added. The role is display-only metadata; clients gate controls on permissions.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

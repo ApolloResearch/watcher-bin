@@ -22,6 +22,13 @@ from servers import _chat_stream, _messages_stream, _responses_stream
 
 _DENIED_FEEDBACK = "Watcher did not approve these client tool calls"
 
+Decision = Literal["allow", "deny", "escalate"]
+
+
+def _deny_first_call() -> dict[str, Decision]:
+    """The default policy: deny the first attempt's call so the scenario must recover."""
+    return {"call_0_0": "deny"}
+
 
 class RecoveryState(BaseModel):
     """Provider attempts, policy decisions and explicit gates for one recovery scenario."""
@@ -30,7 +37,7 @@ class RecoveryState(BaseModel):
 
     case_id: str = Field(default_factory=lambda: str(uuid4()))
     paths: list[list[str]] = Field(default_factory=lambda: [["blocked-a"], ["allowed-b"]])
-    decisions: dict[str, Literal["allow", "deny", "escalate"]] = Field(default_factory=lambda: {"call_0_0": "deny"})
+    decisions: dict[str, Decision] = Field(default_factory=_deny_first_call)
     provider_requests: list[dict[str, Any]] = Field(default_factory=list)
     hook_requests: list[dict[str, Any]] = Field(default_factory=list)
     graded_ids: list[str] = Field(default_factory=list)

@@ -71,7 +71,9 @@ def sync_detailed(
 ) -> Response[GraderListResponse | HTTPValidationError]:
     """List Graders Endpoint
 
-     List latest non-archived version of each grader visible to the authenticated org.
+     List the latest non-archived versions of organization and built-in graders.
+
+    Private graders are included only for their creator.
 
     Args:
         limit (int | Unset):  Default: 100.
@@ -105,7 +107,9 @@ def sync(
 ) -> GraderListResponse | HTTPValidationError | None:
     """List Graders Endpoint
 
-     List latest non-archived version of each grader visible to the authenticated org.
+     List the latest non-archived versions of organization and built-in graders.
+
+    Private graders are included only for their creator.
 
     Args:
         limit (int | Unset):  Default: 100.
@@ -134,7 +138,9 @@ async def asyncio_detailed(
 ) -> Response[GraderListResponse | HTTPValidationError]:
     """List Graders Endpoint
 
-     List latest non-archived version of each grader visible to the authenticated org.
+     List the latest non-archived versions of organization and built-in graders.
+
+    Private graders are included only for their creator.
 
     Args:
         limit (int | Unset):  Default: 100.
@@ -166,7 +172,9 @@ async def asyncio(
 ) -> GraderListResponse | HTTPValidationError | None:
     """List Graders Endpoint
 
-     List latest non-archived version of each grader visible to the authenticated org.
+     List the latest non-archived versions of organization and built-in graders.
+
+    Private graders are included only for their creator.
 
     Args:
         limit (int | Unset):  Default: 100.

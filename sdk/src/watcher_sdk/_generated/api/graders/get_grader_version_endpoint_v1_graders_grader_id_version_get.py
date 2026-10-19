@@ -65,7 +65,10 @@ def sync_detailed(
 ) -> Response[GraderDetail | HTTPValidationError]:
     """Get Grader Version Endpoint
 
-     Get a specific grader version, even if archived (for grade provenance lookups).
+     Get a specific version, including archived versions for grade provenance.
+
+    Private graders are visible only to their creator. Missing or inaccessible
+    versions return 404.
 
     Args:
         grader_id (str):
@@ -99,7 +102,10 @@ def sync(
 ) -> GraderDetail | HTTPValidationError | None:
     """Get Grader Version Endpoint
 
-     Get a specific grader version, even if archived (for grade provenance lookups).
+     Get a specific version, including archived versions for grade provenance.
+
+    Private graders are visible only to their creator. Missing or inaccessible
+    versions return 404.
 
     Args:
         grader_id (str):
@@ -128,7 +134,10 @@ async def asyncio_detailed(
 ) -> Response[GraderDetail | HTTPValidationError]:
     """Get Grader Version Endpoint
 
-     Get a specific grader version, even if archived (for grade provenance lookups).
+     Get a specific version, including archived versions for grade provenance.
+
+    Private graders are visible only to their creator. Missing or inaccessible
+    versions return 404.
 
     Args:
         grader_id (str):
@@ -160,7 +169,10 @@ async def asyncio(
 ) -> GraderDetail | HTTPValidationError | None:
     """Get Grader Version Endpoint
 
-     Get a specific grader version, even if archived (for grade provenance lookups).
+     Get a specific version, including archived versions for grade provenance.
+
+    Private graders are visible only to their creator. Missing or inaccessible
+    versions return 404.
 
     Args:
         grader_id (str):

@@ -460,6 +460,7 @@ def main() -> None:
                             final_text="Proposed tool call " + marker,
                             decision_ids=set(),
                             evidence=target,
+                            includes_branches=False,
                         )
                         sessions = json.loads((target / "sessions.json").read_text())["sessions"]
                         assert len(sessions) == 1
@@ -532,12 +533,15 @@ def main() -> None:
                 async with AsyncWatcherClient(os.environ["WATCHER_URL"], api_key="fixture-key") as client:
                     initial = root / "decision-snapshot"
                     initial.mkdir()
+                    # A refused proposal stays in the gateway, so its judgment is stored on a
+                    # proposal branch beside the conversation the client actually received.
                     await wait_for_conversation(
                         client,
                         external_ids={"other": [SESSION_PREFIX + client_session_id]},
                         final_text="Proposed tool call " + case["token"],
                         decision_ids={case["call_id"]} if case.get("grades", 1) else set(),
                         evidence=initial,
+                        includes_branches=True,
                     )
                     await wait_for_conversation(
                         client,
@@ -545,6 +549,7 @@ def main() -> None:
                         final_text=expected_final,
                         decision_ids=set(),
                         evidence=root,
+                        includes_branches=False,
                     )
                     if case.get("direct_assembly_probe"):
                         assert streamed and permitted and initial_response is not None
@@ -602,9 +607,14 @@ async def wait_for_conversation(
     final_text: str | None,
     decision_ids: set[str],
     evidence: Path,
+    includes_branches: bool,
     timeout: float = 15,
 ) -> dict[str, Any]:
     """Return one exact stored session's extended trajectory, or fail by deadline.
+
+    Only the session's latest trajectory is considered unless ``includes_branches``
+    is set; then any of its trajectories may match, such as a proposal branch the
+    gateway recorded before replacing a refused call.
 
     External ID filters must identify one native conversation. Ambiguous matches
     fail immediately. An empty decision set supports paused/transcript-only runs;
@@ -620,10 +630,13 @@ async def wait_for_conversation(
             raise AssertionError("The native identity matched multiple Watcher sessions")
         if sessions["total"] == 1:
             item = sessions["sessions"][0]
-            if item["latest_trajectory_id"] is not None:
-                response = await client.get_trajectory(
-                    item["session_id"], item["latest_trajectory_id"], view=TrajectoryView.EXTENDED
-                )
+            if includes_branches:
+                listed = await client.list_trajectories(item["session_id"])
+                trajectory_ids = [trajectory.trajectory_id for trajectory in listed.trajectories]
+            else:
+                trajectory_ids = [item["latest_trajectory_id"]] if item["latest_trajectory_id"] is not None else []
+            for trajectory_id in trajectory_ids:
+                response = await client.get_trajectory(item["session_id"], trajectory_id, view=TrajectoryView.EXTENDED)
                 stored = response.to_dict()
                 (evidence / "trajectory.json").write_text(json.dumps(stored, indent=2))
                 has_final = any(

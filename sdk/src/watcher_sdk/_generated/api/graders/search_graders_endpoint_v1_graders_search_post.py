@@ -67,7 +67,10 @@ def sync_detailed(
 ) -> Response[GraderSearchResponse | HTTPValidationError]:
     """Search Graders Endpoint
 
-     Search graders by name and header/footer content. Scoped to the authenticated org + built-in.
+     Search organization and built-in graders by name and header/footer content.
+
+    Searches the latest non-archived version of each grader. Private graders
+    are included only for their creator.
 
     Args:
         body (GraderSearchRequest): Request body for POST /v1/graders/search.
@@ -98,7 +101,10 @@ def sync(
 ) -> GraderSearchResponse | HTTPValidationError | None:
     """Search Graders Endpoint
 
-     Search graders by name and header/footer content. Scoped to the authenticated org + built-in.
+     Search organization and built-in graders by name and header/footer content.
+
+    Searches the latest non-archived version of each grader. Private graders
+    are included only for their creator.
 
     Args:
         body (GraderSearchRequest): Request body for POST /v1/graders/search.
@@ -124,7 +130,10 @@ async def asyncio_detailed(
 ) -> Response[GraderSearchResponse | HTTPValidationError]:
     """Search Graders Endpoint
 
-     Search graders by name and header/footer content. Scoped to the authenticated org + built-in.
+     Search organization and built-in graders by name and header/footer content.
+
+    Searches the latest non-archived version of each grader. Private graders
+    are included only for their creator.
 
     Args:
         body (GraderSearchRequest): Request body for POST /v1/graders/search.
@@ -153,7 +162,10 @@ async def asyncio(
 ) -> GraderSearchResponse | HTTPValidationError | None:
     """Search Graders Endpoint
 
-     Search graders by name and header/footer content. Scoped to the authenticated org + built-in.
+     Search organization and built-in graders by name and header/footer content.
+
+    Searches the latest non-archived version of each grader. Private graders
+    are included only for their creator.
 
     Args:
         body (GraderSearchRequest): Request body for POST /v1/graders/search.

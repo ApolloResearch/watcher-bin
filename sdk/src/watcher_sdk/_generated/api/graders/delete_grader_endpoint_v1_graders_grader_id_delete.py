@@ -60,7 +60,10 @@ def sync_detailed(
 ) -> Response[Any | HTTPValidationError]:
     """Delete Grader Endpoint
 
-     Archive all versions of a grader (soft delete). Only the creator may delete.
+     Archive all versions of a visible grader.
+
+    Deleting a visible grader requires ownership (403 otherwise). Built-in
+    graders are immutable (403); missing, inaccessible or archived graders return 404.
 
     Args:
         grader_id (str):
@@ -91,7 +94,10 @@ def sync(
 ) -> Any | HTTPValidationError | None:
     """Delete Grader Endpoint
 
-     Archive all versions of a grader (soft delete). Only the creator may delete.
+     Archive all versions of a visible grader.
+
+    Deleting a visible grader requires ownership (403 otherwise). Built-in
+    graders are immutable (403); missing, inaccessible or archived graders return 404.
 
     Args:
         grader_id (str):
@@ -117,7 +123,10 @@ async def asyncio_detailed(
 ) -> Response[Any | HTTPValidationError]:
     """Delete Grader Endpoint
 
-     Archive all versions of a grader (soft delete). Only the creator may delete.
+     Archive all versions of a visible grader.
+
+    Deleting a visible grader requires ownership (403 otherwise). Built-in
+    graders are immutable (403); missing, inaccessible or archived graders return 404.
 
     Args:
         grader_id (str):
@@ -146,7 +155,10 @@ async def asyncio(
 ) -> Any | HTTPValidationError | None:
     """Delete Grader Endpoint
 
-     Archive all versions of a grader (soft delete). Only the creator may delete.
+     Archive all versions of a visible grader.
+
+    Deleting a visible grader requires ownership (403 otherwise). Built-in
+    graders are immutable (403); missing, inaccessible or archived graders return 404.
 
     Args:
         grader_id (str):

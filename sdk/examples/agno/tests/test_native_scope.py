@@ -4,8 +4,10 @@ import pytest
 from agno.agent import Agent
 from agno.exceptions import AgentRunException, RetryAgentRun, StopAgentRun
 from agno.models.response import ModelResponse
+from agno.run import RunContext
 from agno.run.agent import RunOutput
 from agno.session.agent import AgentSession
+from agno.skills import Skills
 from agno.tools.function import Function
 from demo.enforce import MonitoredModel
 from watcher_agno import WatcherAgent
@@ -27,34 +29,39 @@ def knowledge_retriever(*args, **kwargs):
 
 
 @pytest.mark.parametrize(
-    "options,generated_name,rejected_option",
+    "options,generated_names,rejected_option",
     [
-        ({"read_chat_history": True}, "get_chat_history", "read_chat_history"),
-        ({"read_tool_call_history": True}, "get_tool_call_history", "read_tool_call_history"),
-        ({"search_session_history": True}, "get_previous_session_messages", "search_session_history"),
-        ({"enable_agentic_memory": True}, "update_user_memory", "enable_agentic_memory"),
-        ({"enable_agentic_culture": True}, "create_or_update_cultural_knowledge", "enable_agentic_culture"),
-        ({"enable_agentic_state": True}, "update_session_state", "enable_agentic_state"),
-        ({"knowledge": object()}, "search_knowledge_base", "search_knowledge"),
-        ({"knowledge_retriever": knowledge_retriever}, "search_knowledge_base", "search_knowledge"),
+        ({"read_chat_history": True}, ["get_chat_history"], "read_chat_history"),
+        ({"read_tool_call_history": True}, ["get_tool_call_history"], "read_tool_call_history"),
+        ({"search_session_history": True}, ["get_previous_session_messages"], "search_session_history"),
+        ({"enable_agentic_memory": True}, ["update_user_memory"], "enable_agentic_memory"),
+        ({"enable_agentic_culture": True}, ["create_or_update_cultural_knowledge"], "enable_agentic_culture"),
+        ({"enable_agentic_state": True}, ["update_session_state"], "enable_agentic_state"),
+        ({"knowledge": object()}, ["search_knowledge_base"], "search_knowledge"),
+        ({"knowledge_retriever": knowledge_retriever}, ["search_knowledge_base"], "search_knowledge"),
         (
             {"knowledge": object(), "enable_agentic_knowledge_filters": True},
-            "search_knowledge_base_with_agentic_filters",
+            ["search_knowledge_base"],
             "search_knowledge",
         ),
         (
             {"knowledge": object(), "search_knowledge": False, "update_knowledge": True},
-            "add_to_knowledge",
+            ["add_to_knowledge"],
             "update_knowledge",
         ),
         (
             {"knowledge_retriever": knowledge_retriever, "search_knowledge": False, "update_knowledge": True},
-            "add_to_knowledge",
+            ["add_to_knowledge"],
             "update_knowledge",
+        ),
+        (
+            {"skills": Skills(loaders=[])},
+            ["get_skill_instructions", "get_skill_reference", "get_skill_script"],
+            "skills",
         ),
     ],
 )
-def test_agno_generated_tools_are_refused_before_dispatch(options, generated_name, rejected_option):
+def test_agno_generated_tools_are_refused_before_dispatch(options, generated_names, rejected_option):
     """The native package really adds each rejected tool, rather than a guessed feature flag."""
     model_calls, effects = [], []
 
@@ -68,8 +75,12 @@ def test_agno_generated_tools_are_refused_before_dispatch(options, generated_nam
         return "ran"
 
     plain = Agent(model=CountedModel(id="local"), tools=[], telemetry=False, **options)
-    generated = plain.get_tools(run_response=RunOutput(), session=AgentSession(session_id="fixture"))
-    assert [tool.name if isinstance(tool, Function) else tool.__name__ for tool in generated] == [generated_name]
+    generated = plain.get_tools(
+        run_response=RunOutput(),
+        run_context=RunContext(run_id="fixture", session_id="fixture"),
+        session=AgentSession(session_id="fixture"),
+    )
+    assert [tool.name if isinstance(tool, Function) else tool.__name__ for tool in generated] == generated_names
 
     monitor = RecordingMonitor()
     with pytest.raises(TypeError, match=rejected_option):
@@ -106,7 +117,11 @@ async def test_options_that_add_no_native_tools_keep_the_registered_list(options
         telemetry=False,
         **options,
     )
-    actual = await agent.aget_tools(run_response=RunOutput(), session=AgentSession(session_id="fixture"))
+    actual = await agent.aget_tools(
+        run_response=RunOutput(),
+        run_context=RunContext(run_id="fixture", session_id="fixture"),
+        session=AgentSession(session_id="fixture"),
+    )
     assert [tool.name for tool in actual] == ["effect"]
     assert all(tool.pre_hook is not None for tool in actual)
     assert effects == []
@@ -190,3 +205,49 @@ async def test_application_retry_and_stop_reach_agno_with_messages_and_no_initia
     else:
         assert effects == [] and monitor.calls == []
         assert len(provider_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_application_pre_hook_receives_agno_run_context_and_dependencies():
+    """Application hooks keep every context argument Agno offers native pre-hooks."""
+    received, effects, provider_calls = [], [], []
+    monitor = RecordingMonitor()
+
+    def double(value: int) -> str:
+        effects.append(value)
+        return str(value * 2)
+
+    def permission(fc, run_context, dependencies):
+        assert effects == [] and monitor.calls == []
+        received.append((fc.call_id, run_context.session_id, dependencies))
+
+    class ObservedModel(MonitoredModel):
+        def invoke(self, messages, **kwargs):
+            provider_calls.append(list(messages))
+            if len(provider_calls) > 1:
+                return ModelResponse(role="assistant", content="Done")
+            return ModelResponse(
+                role="assistant",
+                tool_calls=[
+                    {
+                        "id": "only-call",
+                        "type": "function",
+                        "function": {"name": "double", "arguments": '{"value":2}'},
+                    }
+                ],
+            )
+
+    function = Function.from_callable(double)
+    function.pre_hook = permission
+    agent = WatcherAgent(
+        monitor,
+        model=ObservedModel(id="local"),
+        tools=[function],
+        telemetry=False,
+        dependencies={"tenant": "fixture"},
+    )
+    await agent.arun("Double one number", session_id="context-session")
+
+    assert received == [("only-call", "context-session", {"tenant": "fixture"})]
+    assert monitor.calls == [("only-call", "double", {"value": 2})]
+    assert effects == [2]

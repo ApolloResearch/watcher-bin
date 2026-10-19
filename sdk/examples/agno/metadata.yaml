@@ -70,7 +70,7 @@ limitations:
     It gates synchronous tool bodies before worker-thread execution; generator
     tools are refused. The constructor refuses read_chat_history,
     read_tool_call_history, search_session_history, enable_agentic_memory,
-    enable_agentic_culture and enable_agentic_state. With knowledge or
+    enable_agentic_culture, enable_agentic_state and skills. With knowledge or
     knowledge_retriever, search_knowledge and update_knowledge must be disabled;
     these options otherwise add tools outside the registered Function list.
     Changing tools, hooks or these options after construction bypasses this setup.

@@ -36,6 +36,7 @@ class AvailableToolCallListItem:
         tool_call_id (UUID):
         session_id (UUID):
         occurred_at (datetime.datetime):
+        is_flagged (bool): Whether Watcher recorded a policy block or escalation, excluding grading failures.
         tool_use_id (str): Transcript-local identifier of the tool call.
         message_ref (str): Reference of the message containing the tool call.
         tool_name (str):
@@ -59,6 +60,7 @@ class AvailableToolCallListItem:
     tool_call_id: UUID
     session_id: UUID
     occurred_at: datetime.datetime
+    is_flagged: bool
     tool_use_id: str
     message_ref: str
     tool_name: str
@@ -87,6 +89,8 @@ class AvailableToolCallListItem:
         session_id = str(self.session_id)
 
         occurred_at = self.occurred_at.isoformat()
+
+        is_flagged = self.is_flagged
 
         tool_use_id = self.tool_use_id
 
@@ -185,6 +189,7 @@ class AvailableToolCallListItem:
                 "tool_call_id": tool_call_id,
                 "session_id": session_id,
                 "occurred_at": occurred_at,
+                "is_flagged": is_flagged,
                 "tool_use_id": tool_use_id,
                 "message_ref": message_ref,
                 "tool_name": tool_name,
@@ -227,6 +232,8 @@ class AvailableToolCallListItem:
         session_id = UUID(d.pop("session_id"))
 
         occurred_at = datetime.datetime.fromisoformat(d.pop("occurred_at"))
+
+        is_flagged = d.pop("is_flagged")
 
         tool_use_id = d.pop("tool_use_id")
 
@@ -400,6 +407,7 @@ class AvailableToolCallListItem:
             tool_call_id=tool_call_id,
             session_id=session_id,
             occurred_at=occurred_at,
+            is_flagged=is_flagged,
             tool_use_id=tool_use_id,
             message_ref=message_ref,
             tool_name=tool_name,

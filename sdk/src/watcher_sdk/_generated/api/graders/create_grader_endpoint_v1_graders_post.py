@@ -67,7 +67,10 @@ def sync_detailed(
 ) -> Response[GraderDetail | HTTPValidationError]:
     """Create Grader Endpoint
 
-     Create a new grader (version 0) owned by the current organization and user.
+     Create version 0 of a grader in your organization.
+
+    Requires an authenticated user, who becomes the grader's owner. API keys
+    cannot create graders (403).
 
     Args:
         body (CreateGraderRequest): Request body for POST /v1/graders.
@@ -98,7 +101,10 @@ def sync(
 ) -> GraderDetail | HTTPValidationError | None:
     """Create Grader Endpoint
 
-     Create a new grader (version 0) owned by the current organization and user.
+     Create version 0 of a grader in your organization.
+
+    Requires an authenticated user, who becomes the grader's owner. API keys
+    cannot create graders (403).
 
     Args:
         body (CreateGraderRequest): Request body for POST /v1/graders.
@@ -124,7 +130,10 @@ async def asyncio_detailed(
 ) -> Response[GraderDetail | HTTPValidationError]:
     """Create Grader Endpoint
 
-     Create a new grader (version 0) owned by the current organization and user.
+     Create version 0 of a grader in your organization.
+
+    Requires an authenticated user, who becomes the grader's owner. API keys
+    cannot create graders (403).
 
     Args:
         body (CreateGraderRequest): Request body for POST /v1/graders.
@@ -153,7 +162,10 @@ async def asyncio(
 ) -> GraderDetail | HTTPValidationError | None:
     """Create Grader Endpoint
 
-     Create a new grader (version 0) owned by the current organization and user.
+     Create version 0 of a grader in your organization.
+
+    Requires an authenticated user, who becomes the grader's owner. API keys
+    cannot create graders (403).
 
     Args:
         body (CreateGraderRequest): Request body for POST /v1/graders.

@@ -7,7 +7,7 @@ officially supported integration.
 
 ## Install and configure
 
-Use Python 3.12 or later and `uv`. The pinned framework packages are `agno==2.2.3`.
+Use Python 3.12 or later and `uv`. The pinned framework packages are `agno==2.3.24`.
 From this example directory:
 
 ```bash
@@ -73,6 +73,7 @@ list. `WatcherAgent` rejects these configurations before any run:
 - A `knowledge` source or `knowledge_retriever` with `search_knowledge` enabled
   (the default), including `enable_agentic_knowledge_filters`, or with
   `update_knowledge` enabled.
+- Any `skills`, which add skill instruction, reference and script tools.
 
 To use a knowledge source without those built-in tools, set both
 `search_knowledge=False` and `update_knowledge=False`. To monitor such an action

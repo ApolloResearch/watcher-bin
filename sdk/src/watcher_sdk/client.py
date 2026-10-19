@@ -2121,6 +2121,9 @@ class AsyncWatcherClient:
         offset: int = 0,
         sort_by: str = "severity",
         sort_order: str = "desc",
+        *,
+        is_flagged: bool | None = None,
+        trajectory_id: str | None = None,
     ) -> ToolCallListResponse:
         """Search tool calls with filtering, pagination, and sorting.
 
@@ -2148,6 +2151,9 @@ class AsyncWatcherClient:
                 'auto_denied', 'human_allowed', 'would_denied', 'would_escalated', plus
                 'cleared' for calls Watcher allowed without asking. Routine calls match
                 none of them.
+            is_flagged: Filter by recorded risk, including observe-mode judgments.
+            trajectory_id: Restrict to this trajectory and its ancestors, or ``latest``.
+                Requires ``session_id``. Missing or scrubbed trajectories match no calls.
             limit: Maximum number of calls to return per page.
             offset: Number of calls to skip (for pagination).
             sort_by: Field to sort by: 'severity', 'decision' (interventions first),
@@ -2158,6 +2164,8 @@ class AsyncWatcherClient:
             ToolCallListResponse containing matched tool calls and total count.
         """
         filters = ToolCallSearchFilters(
+            is_flagged=is_flagged,
+            trajectory_id=trajectory_id,
             start_date=start_date,
             end_date=end_date,
             session_id=UUID(session_id) if isinstance(session_id, str) else session_id,

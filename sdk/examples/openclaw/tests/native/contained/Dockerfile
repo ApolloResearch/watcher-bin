@@ -1,4 +1,4 @@
-FROM node:24.16.0-bookworm-slim AS native
+FROM node:24.22.1-bookworm-slim AS native
 WORKDIR /opt/native
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         AvailableSessionDetailResponseMetadataType0,
     )
     from ..models.grade_result import GradeResult
+    from ..models.related_session_summary import RelatedSessionSummary
     from ..models.trajectory_summary import TrajectorySummary
 
 
@@ -52,6 +53,9 @@ class AvailableSessionDetailResponse:
         created_at (datetime.datetime):
         trajectories (list[TrajectorySummary]):
         grades (list[GradeResult]):
+        is_subagent (bool | Unset): Whether this session has a recorded parent relationship. Default: False.
+        parent_session (None | RelatedSessionSummary | Unset): Immediate parent, omitted when unknown or inaccessible to
+            this caller.
         user_id (None | Unset | UUID):
         user_first_name (None | str | Unset):
         user_last_name (None | str | Unset):
@@ -78,6 +82,8 @@ class AvailableSessionDetailResponse:
     created_at: datetime.datetime
     trajectories: list[TrajectorySummary]
     grades: list[GradeResult]
+    is_subagent: bool | Unset = False
+    parent_session: None | RelatedSessionSummary | Unset = UNSET
     user_id: None | Unset | UUID = UNSET
     user_first_name: None | str | Unset = UNSET
     user_last_name: None | str | Unset = UNSET
@@ -97,6 +103,9 @@ class AvailableSessionDetailResponse:
         )
         from ..models.available_session_detail_response_metadata_type_0 import (
             AvailableSessionDetailResponseMetadataType0,
+        )
+        from ..models.related_session_summary import (
+            RelatedSessionSummary,
         )
 
         session_id = self.session_id
@@ -124,6 +133,16 @@ class AvailableSessionDetailResponse:
         for grades_item_data in self.grades:
             grades_item = grades_item_data.to_dict()
             grades.append(grades_item)
+
+        is_subagent = self.is_subagent
+
+        parent_session: dict[str, Any] | None | Unset
+        if isinstance(self.parent_session, Unset):
+            parent_session = UNSET
+        elif isinstance(self.parent_session, RelatedSessionSummary):
+            parent_session = self.parent_session.to_dict()
+        else:
+            parent_session = self.parent_session
 
         user_id: None | str | Unset
         if isinstance(self.user_id, Unset):
@@ -206,6 +225,10 @@ class AvailableSessionDetailResponse:
                 "grades": grades,
             }
         )
+        if is_subagent is not UNSET:
+            field_dict["is_subagent"] = is_subagent
+        if parent_session is not UNSET:
+            field_dict["parent_session"] = parent_session
         if user_id is not UNSET:
             field_dict["user_id"] = user_id
         if user_first_name is not UNSET:
@@ -240,6 +263,9 @@ class AvailableSessionDetailResponse:
             AvailableSessionDetailResponseMetadataType0,
         )
         from ..models.grade_result import GradeResult
+        from ..models.related_session_summary import (
+            RelatedSessionSummary,
+        )
         from ..models.trajectory_summary import TrajectorySummary
 
         d = dict(src_dict)
@@ -272,6 +298,25 @@ class AvailableSessionDetailResponse:
             grades_item = GradeResult.from_dict(grades_item_data)
 
             grades.append(grades_item)
+
+        is_subagent = d.pop("is_subagent", UNSET)
+
+        def _parse_parent_session(data: object) -> None | RelatedSessionSummary | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                parent_session_type_0 = RelatedSessionSummary.from_dict(data)
+
+                return parent_session_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | RelatedSessionSummary | Unset, data)
+
+        parent_session = _parse_parent_session(d.pop("parent_session", UNSET))
 
         def _parse_user_id(data: object) -> None | Unset | UUID:
             if data is None:
@@ -410,6 +455,8 @@ class AvailableSessionDetailResponse:
             created_at=created_at,
             trajectories=trajectories,
             grades=grades,
+            is_subagent=is_subagent,
+            parent_session=parent_session,
             user_id=user_id,
             user_first_name=user_first_name,
             user_last_name=user_last_name,

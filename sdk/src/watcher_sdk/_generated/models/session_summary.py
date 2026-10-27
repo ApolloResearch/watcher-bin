@@ -38,6 +38,7 @@ class SessionSummary:
         message_count (int):
         started_at (datetime.datetime):
         ended_at (datetime.datetime):
+        is_subagent (bool | Unset): Whether this session has a recorded parent relationship. Default: False.
         is_content_scrubbed (bool | Unset):  Default: False.
         latest_trajectory_id (None | str | Unset):
         user_id (None | Unset | UUID):
@@ -72,6 +73,7 @@ class SessionSummary:
     message_count: int
     started_at: datetime.datetime
     ended_at: datetime.datetime
+    is_subagent: bool | Unset = False
     is_content_scrubbed: bool | Unset = False
     latest_trajectory_id: None | str | Unset = UNSET
     user_id: None | Unset | UUID = UNSET
@@ -111,6 +113,8 @@ class SessionSummary:
         started_at = self.started_at.isoformat()
 
         ended_at = self.ended_at.isoformat()
+
+        is_subagent = self.is_subagent
 
         is_content_scrubbed = self.is_content_scrubbed
 
@@ -235,6 +239,8 @@ class SessionSummary:
                 "ended_at": ended_at,
             }
         )
+        if is_subagent is not UNSET:
+            field_dict["is_subagent"] = is_subagent
         if is_content_scrubbed is not UNSET:
             field_dict["is_content_scrubbed"] = is_content_scrubbed
         if latest_trajectory_id is not UNSET:
@@ -297,6 +303,8 @@ class SessionSummary:
         started_at = datetime.datetime.fromisoformat(d.pop("started_at"))
 
         ended_at = datetime.datetime.fromisoformat(d.pop("ended_at"))
+
+        is_subagent = d.pop("is_subagent", UNSET)
 
         is_content_scrubbed = d.pop("is_content_scrubbed", UNSET)
 
@@ -511,6 +519,7 @@ class SessionSummary:
             message_count=message_count,
             started_at=started_at,
             ended_at=ended_at,
+            is_subagent=is_subagent,
             is_content_scrubbed=is_content_scrubbed,
             latest_trajectory_id=latest_trajectory_id,
             user_id=user_id,

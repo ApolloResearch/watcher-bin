@@ -24,11 +24,13 @@ class CodexEntry:
         type_ (str):
         timestamp (str):
         payload (CodexPayload | None | Unset):
+        ordinal (int | None | Unset):
     """
 
     type_: str
     timestamp: str
     payload: CodexPayload | None | Unset = UNSET
+    ordinal: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -46,6 +48,12 @@ class CodexEntry:
         else:
             payload = self.payload
 
+        ordinal: int | None | Unset
+        if isinstance(self.ordinal, Unset):
+            ordinal = UNSET
+        else:
+            ordinal = self.ordinal
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -56,6 +64,8 @@ class CodexEntry:
         )
         if payload is not UNSET:
             field_dict["payload"] = payload
+        if ordinal is not UNSET:
+            field_dict["ordinal"] = ordinal
 
         return field_dict
 
@@ -85,10 +95,20 @@ class CodexEntry:
 
         payload = _parse_payload(d.pop("payload", UNSET))
 
+        def _parse_ordinal(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        ordinal = _parse_ordinal(d.pop("ordinal", UNSET))
+
         codex_entry = cls(
             type_=type_,
             timestamp=timestamp,
             payload=payload,
+            ordinal=ordinal,
         )
 
         codex_entry.additional_properties = d

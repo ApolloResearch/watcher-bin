@@ -599,13 +599,67 @@
         "security": []
       }
     },
+    "/v1/sessions/{child_session_id}/agent-relationship": {
+      "put": {
+        "tags": [
+          "ingest"
+        ],
+        "summary": "Write Agent Relationship",
+        "description": "Create a child's original parent link or fill missing spawning-call details.\n\nBoth sessions must already exist and be writable under ingestion rules.\nIngest-only keys may link unowned sessions or native Claude/Codex conversations,\nincluding after those conversations acquire an owner. Owning the parent does\nnot authorize claiming an unowned child; users limited to their own sessions\nmust first attribute the child through ingestion. New links apply known parent ownership to the child\nand its descendants; conflicting known owners return 409 owner_conflict with\nno partial attribution. Retries and spawning-call enrichment do not propagate\nownership again. Other owned sessions require cross-user write permission.\nMissing or unauthorized sessions and missing explicit message hashes return\n404. Without a message hash, the server searches this parent\nfor the native spawning-call ID; an absent call leaves the hash null in the\nsuccessful response. Retry after ordinary ingestion to complete the link.\nDuplicate representations select the first inserted match. Invalid ancestry or\nconflicting established details return 409. Null details leave stored values\nunchanged; exact retries succeed even after transcript content is scrubbed.",
+        "operationId": "write_agent_relationship_v1_sessions__child_session_id__agent_relationship_put",
+        "parameters": [
+          {
+            "name": "child_session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Child Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRelationshipRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRelationshipResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/ingest": {
       "post": {
         "tags": [
           "ingest"
         ],
         "summary": "Ingest",
-        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nproxy-capture (Tailscale Aperture) attribution; keys carrying only\n``sessions:ingest`` write unattributed sessions.\n\nA Claude Code session id or Codex thread id names one session per\norganization. An upload attributed to a user (a signed-in user's, or one\nattributed through ``identity.login_name``) joins that session when it has\nno owner and makes the user its owner. When another user owns it, the\nrequest is rejected with 409 ``session_owner_conflict``: that trajectory\nis not stored, earlier trajectories in the request stay stored, and later\nones are not processed. An upload attributed to no user joins the session\nwhoever owns it and leaves the owner unchanged.",
+        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nproxy-capture (Tailscale Aperture) attribution; keys carrying only\n``sessions:ingest`` write unattributed sessions.\n\nA Claude Code session id or Codex thread id names one session per\norganization. An upload attributed to a user (a signed-in user's, or one\nattributed through ``identity.login_name``) joins that session when it has\nno owner and makes the user its owner, including its linked descendants.\nA conflicting known owner in its ancestry or descendants also rejects the\nattribution atomically. When another user owns it, the\nrequest is rejected with 409 ``session_owner_conflict``: that trajectory\nis not stored, earlier trajectories in the request stay stored, and later\nones are not processed. An upload attributed to no user joins the session\nwhoever owns it and leaves the owner unchanged.",
         "operationId": "ingest_v1_ingest_post",
         "requestBody": {
           "content": {
@@ -1391,6 +1445,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SessionDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/subagents": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List Session Subagents Endpoint",
+        "description": "List readable immediate children oldest-first, including sessions awaiting transcripts.\n\nParent and child access are checked independently through ownership, findings\nor content permissions, or an active session content approval. Titles require\nownership or blanket content permission, not temporary approval. Review status\nand severity require child findings access.\nThe total counts only readable children. Return 404 for an inaccessible parent.\nOrdering uses relationship creation time, then child session ID to break ties.",
+        "operationId": "list_session_subagents_endpoint_v1_sessions__session_id__subagents_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubagentListResponse"
                 }
               }
             }
@@ -3061,6 +3181,106 @@
         "title": "AdminSessionContentAccessRequestListResponse",
         "description": "A page of organization requests, ordered newest first."
       },
+      "AgentRelationshipRequest": {
+        "properties": {
+          "parent_session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Parent Session Id"
+          },
+          "spawning_tool_use_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spawning Tool Use Id"
+          },
+          "spawning_message_trajectory_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spawning Message Trajectory Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "parent_session_id"
+        ],
+        "title": "AgentRelationshipRequest",
+        "description": "Create a child's parent link or fill previously unknown spawning details.\n\nOmitted or null details leave existing values unchanged. Parent and resolved\nspawning details are immutable. A message hash requires its tool-use ID.\nWithout a hash, the server looks up the native call in the parent's stored\nmessages, selecting the first inserted match if representations repeat.\nMissing calls leave the hash unresolved; retry after ordinary ingestion.\nBoth sessions must already exist."
+      },
+      "AgentRelationshipResponse": {
+        "properties": {
+          "parent_session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Parent Session Id"
+          },
+          "spawning_tool_use_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spawning Tool Use Id"
+          },
+          "spawning_message_trajectory_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spawning Message Trajectory Hash"
+          },
+          "relationship_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Relationship Id"
+          },
+          "child_session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Child Session Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "parent_session_id",
+          "relationship_id",
+          "child_session_id",
+          "created_at"
+        ],
+        "title": "AgentRelationshipResponse",
+        "description": "The stored original spawning relationship; retries retain the same ID."
+      },
       "ApertureHookAccepted": {
         "properties": {
           "status": {
@@ -3298,6 +3518,23 @@
           "session_id": {
             "type": "string",
             "title": "Session Id"
+          },
+          "is_subagent": {
+            "type": "boolean",
+            "title": "Is Subagent",
+            "description": "Whether this session has a recorded parent relationship.",
+            "default": false
+          },
+          "parent_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelatedSessionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Immediate parent, omitted when unknown or inaccessible to this caller."
           },
           "can_read_findings": {
             "type": "boolean",
@@ -4224,6 +4461,28 @@
         "title": "ClaudeAPIMessage",
         "description": "A message from the Claude API. Accepts extra fields like 'type', 'stop_reason'."
       },
+      "ClaudeCodeAgentIdentity": {
+        "properties": {
+          "root_session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Root Session Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Agent Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "root_session_id",
+          "agent_id"
+        ],
+        "title": "ClaudeCodeAgentIdentity",
+        "description": "Identify one child independently of its root conversation and siblings.\n\nSupply this on every full and incremental child upload. The root conversation\nis Claude Code's native session ID; agent_id identifies the child transcript,\nincluding when the child's immediate parent is another child."
+      },
       "ClaudeCodeAttachment": {
         "properties": {
           "type": {
@@ -4375,6 +4634,17 @@
             "type": "boolean",
             "title": "Issidechain",
             "default": false
+          },
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agentid"
           },
           "isCompactSummary": {
             "type": "boolean",
@@ -4623,6 +4893,23 @@
             },
             "type": "array",
             "title": "Entries"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaudeCodeAgentIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolve_tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/IngestToolCallReference"
+            },
+            "type": "array",
+            "title": "Resolve Tool Calls"
           }
         },
         "type": "object",
@@ -4632,7 +4919,7 @@
           "entries"
         ],
         "title": "ClaudeCodeTrajectory",
-        "description": "A Claude Code JSONL file or delta, with a stable conversation identity.\n\n``session_id`` is the current Claude Code conversation ID, not a Watcher\nsession UUID. Send the same value on full uploads and deltas: it takes\nprecedence over historical ``sessionId`` values in copied entries. When\nomitted or empty, each parsed branch uses its first entry's ``sessionId``.\nOwnership checks still apply to the selected conversation, and hook\nappends must name the same conversation as their stored anchor."
+        "description": "A Claude Code JSONL file or delta, with a stable conversation identity.\n\n``session_id`` is the current Claude Code conversation ID, not a Watcher\nsession UUID. Send the same value on full uploads and deltas: it takes\nprecedence over historical ``sessionId`` values in copied entries. When\nomitted or empty, each parsed branch uses its first entry's ``sessionId``.\nOwnership checks still apply to the selected conversation, and hook\nappends must name the same conversation as their stored anchor.\n\nSupply ``agent`` on every child upload, including appends. Entry-level root\nsession and agent IDs must match it when present. Custom imports may omit\n``agentId`` on records containing a ``message`` or ``attachment`` only with\n``isSidechain: true``; metadata without either payload may omit both markers.\n``resolve_tool_calls`` requests message hashes for selected native calls,\nincluding duplicate uploads."
       },
       "CodexContentItem": {
         "properties": {
@@ -4714,6 +5001,17 @@
                 "type": "null"
               }
             ]
+          },
+          "ordinal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordinal"
           }
         },
         "additionalProperties": true,
@@ -5078,6 +5376,17 @@
             ],
             "title": "Name"
           },
+          "namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Namespace"
+          },
           "call_id": {
             "anyOf": [
               {
@@ -5189,6 +5498,17 @@
               }
             ],
             "title": "Id"
+          },
+          "subagent_history_start_ordinal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subagent History Start Ordinal"
           },
           "cwd": {
             "anyOf": [
@@ -5335,6 +5655,13 @@
             },
             "type": "array",
             "title": "Entries"
+          },
+          "resolve_tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/IngestToolCallReference"
+            },
+            "type": "array",
+            "title": "Resolve Tool Calls"
           }
         },
         "type": "object",
@@ -5344,7 +5671,7 @@
           "entries"
         ],
         "title": "CodexTrajectory",
-        "description": "A trajectory in Codex JSONL format (raw events from the session rollout file)."
+        "description": "One Codex thread's raw rollout events or delta.\n\nThe first session_meta identifies this thread; later metadata can belong to\ninherited parent context. resolve_tool_calls names response-item IDs and\ncall IDs in this upload, returning their stored message occurrences."
       },
       "ContentAudio": {
         "properties": {
@@ -7898,6 +8225,13 @@
                 "type": "null"
               }
             ]
+          },
+          "resolved_tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ResolvedIngestToolCall"
+            },
+            "type": "array",
+            "title": "Resolved Tool Calls"
           }
         },
         "type": "object",
@@ -7909,7 +8243,29 @@
           "skipped_count"
         ],
         "title": "IngestResponse",
-        "description": "Response from the full ingest and per-session append endpoints.\n\n``trajectory_ids`` includes newly stored leaves and echoes of existing\nleaves: empty appends, recognized append replays, and exact full-ingest\nduplicates. Successful appends return their committed or echoed endpoint\nin ``append_anchor``.\n\n``ingested_count`` and ``duplicate_count`` are in stored-leaf units, not\nuploaded files: a rewound Claude Code file stores one leaf per\nconversation branch, so one upload can produce several of either.\n\n``append_anchor`` identifies the continuation of the final nonempty parsed\ninput (the live branch of a rewound Claude Code file). Null means it has no\nusable leaf, for example because it ends inside a longer stored chain;\ndo not advance the append cursor in that case.\n\n``trajectory_ids`` still lists stored leaves in processing order for grading\nand queries. Neither its last ID nor the legacy representative ``session_id``\nselects the append anchor. Only responses from older servers that omit\n``append_anchor`` use the legacy last-ID convention."
+        "description": "Response from the full ingest and per-session append endpoints.\n\n``trajectory_ids`` includes newly stored leaves and echoes of existing\nleaves: empty appends, recognized append replays, and exact full-ingest\nduplicates. Successful appends return their committed or echoed endpoint\nin ``append_anchor``.\n\n``ingested_count`` and ``duplicate_count`` are in stored-leaf units, not\nuploaded files: a rewound Claude Code file stores one leaf per\nconversation branch, so one upload can produce several of either.\n\n``append_anchor`` identifies the continuation of the final nonempty parsed\ninput (the live branch of a rewound Claude Code file). Null means it has no\nusable leaf, for example because it ends inside a longer stored chain;\ndo not advance the append cursor in that case.\n\n``trajectory_ids`` still lists stored leaves in processing order for grading\nand queries. Neither its last ID nor the legacy representative ``session_id``\nselects the append anchor. Only responses from older servers that omit\n``append_anchor`` use the legacy last-ID convention.\n\n``resolved_tool_calls`` identifies requested native call occurrences. Relationship\nreplay has its own cursor and must not move the ordinary upload cursor."
+      },
+      "IngestToolCallReference": {
+        "properties": {
+          "message_uuid": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Message Uuid"
+          },
+          "tool_use_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Use Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message_uuid",
+          "tool_use_id"
+        ],
+        "title": "IngestToolCallReference",
+        "description": "Ask an upload to resolve a tool call in a particular native transcript item.\n\nmessage_uuid is Claude's entry UUID or Codex's response-item ID.\nThe entry must be included in this upload. Missing or filtered entries return\nno match; clients retain unresolved references for a later full upload."
       },
       "JsonValue": {},
       "JudgedDecision": {
@@ -9341,6 +9697,111 @@
         "title": "RefreshRequest",
         "description": "Request body for POST /v1/auth/refresh.\n\nThe refresh_token is optional \u2014 the backend also reads it from an\nhttpOnly cookie set during the callback flow."
       },
+      "RelatedSessionSummary": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "is_content_scrubbed": {
+            "type": "boolean",
+            "title": "Is Content Scrubbed"
+          },
+          "can_read_findings": {
+            "type": "boolean",
+            "title": "Can Read Findings"
+          },
+          "can_read_content": {
+            "type": "boolean",
+            "title": "Can Read Content"
+          },
+          "deep_review_severity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deep Review Severity"
+          },
+          "deep_review_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "reviewed",
+                  "stale",
+                  "error",
+                  "pending",
+                  "not_reviewed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deep Review Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "is_content_scrubbed",
+          "can_read_findings",
+          "can_read_content"
+        ],
+        "title": "RelatedSessionSummary",
+        "description": "Navigation metadata for one independently authorized related session.\n\nTitles require ownership or blanket content access, as in session lists.\ncan_read_content also includes temporary approvals for opening the session;\nthose approvals do not expose navigation titles. Review fields require findings access.\nA null review status means findings are restricted, not an unreviewed session.\nScrubbing removes transcripts but retains permitted summaries and findings."
+      },
+      "ResolvedIngestToolCall": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "message_uuid": {
+            "type": "string",
+            "title": "Message Uuid"
+          },
+          "tool_use_id": {
+            "type": "string",
+            "title": "Tool Use Id"
+          },
+          "message_trajectory_hash": {
+            "type": "string",
+            "title": "Message Trajectory Hash"
+          },
+          "trajectory_hash": {
+            "type": "string",
+            "title": "Trajectory Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "message_uuid",
+          "tool_use_id",
+          "message_trajectory_hash",
+          "trajectory_hash"
+        ],
+        "title": "ResolvedIngestToolCall",
+        "description": "One stored call occurrence, scoped to a session and the uploaded branch.\n\ntrajectory_hash is the end of the uploaded branch, which may now be a prefix\nof a longer stored trajectory. Select the intended branch when a reference\nhas multiple matches; the server never chooses the latest occurrence."
+      },
       "ReviewSessionContentAccessRequest": {
         "properties": {
           "status": {
@@ -9470,6 +9931,23 @@
           "session_id": {
             "type": "string",
             "title": "Session Id"
+          },
+          "is_subagent": {
+            "type": "boolean",
+            "title": "Is Subagent",
+            "description": "Whether this session has a recorded parent relationship.",
+            "default": false
+          },
+          "parent_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelatedSessionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Immediate parent, omitted when unknown or inaccessible to this caller."
           },
           "can_read_findings": {
             "type": "boolean",
@@ -10531,6 +11009,12 @@
             "type": "string",
             "title": "Session Id"
           },
+          "is_subagent": {
+            "type": "boolean",
+            "title": "Is Subagent",
+            "description": "Whether this session has a recorded parent relationship.",
+            "default": false
+          },
           "is_content_scrubbed": {
             "type": "boolean",
             "title": "Is Content Scrubbed",
@@ -10756,6 +11240,63 @@
         ],
         "title": "SessionSummary",
         "description": "Summary of a session for list responses."
+      },
+      "SpawnedSubagent": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "spawning_message_trajectory_hash": {
+            "type": "string",
+            "title": "Spawning Message Trajectory Hash"
+          },
+          "spawning_tool_use_id": {
+            "type": "string",
+            "title": "Spawning Tool Use Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "spawning_message_trajectory_hash",
+          "spawning_tool_use_id"
+        ],
+        "title": "SpawnedSubagent",
+        "description": "A readable child linked to an exact spawning call in this trajectory.\n\nMatch both the message reference and tool-use ID when rendering. The same\nnative call ID may occur on other stored branches without this association."
+      },
+      "SubagentListResponse": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedSessionSummary"
+            },
+            "type": "array",
+            "title": "Sessions"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "SubagentListResponse",
+        "description": "One page of readable immediate children; the total excludes inaccessible sessions."
       },
       "SuggestedModel": {
         "properties": {
@@ -12295,6 +12836,13 @@
             },
             "type": "object",
             "title": "Tool Call Decisions"
+          },
+          "spawned_subagents": {
+            "items": {
+              "$ref": "#/components/schemas/SpawnedSubagent"
+            },
+            "type": "array",
+            "title": "Spawned Subagents"
           },
           "metadata": {
             "additionalProperties": true,

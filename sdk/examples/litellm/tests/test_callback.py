@@ -339,9 +339,10 @@ class TestWithholding:
         assert modified is not None
         assert "function_call" not in modified["choices"][0]["message"]
 
-    def test_responses_items_are_removed_and_message_appended(self) -> None:
+    @pytest.mark.parametrize("response_id", ["resp_1", "resp_" + "a" * 236], ids=["short-id", "long-litellm-id"])
+    def test_responses_items_are_removed_and_message_appended(self, response_id: str) -> None:
         response = {
-            "id": "resp_1",
+            "id": response_id,
             "output": [
                 {"type": "reasoning", "id": "r", "summary": []},
                 {"type": "function_call", "call_id": "c1", "name": "rm", "arguments": "{}"},
@@ -352,8 +353,38 @@ class TestWithholding:
         modified = withheld_response("responses", response, decisions)
 
         assert modified is not None
-        assert [item["type"] for item in modified["output"]] == ["reasoning", "message"]
-        assert modified["output"][1]["id"] == "msg_watcher_resp_1"
+        notice_id = modified["output"][1]["id"]
+        assert notice_id.startswith("msg_")
+        assert len(notice_id) <= 64, "Responses input item IDs must fit when reused in the next request"
+        assert modified == {
+            "id": response_id,
+            "output": [
+                {"type": "reasoning", "id": "r", "summary": []},
+                {
+                    "type": "message",
+                    "id": notice_id,
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": (
+                                "Watcher withheld the proposed tool call (c1). No tool was run.\n\n"
+                                "- c1: Approval is required."
+                            ),
+                            "annotations": [],
+                        }
+                    ],
+                },
+            ],
+        }
+        assert response == {
+            "id": response_id,
+            "output": [
+                {"type": "reasoning", "id": "r", "summary": []},
+                {"type": "function_call", "call_id": "c1", "name": "rm", "arguments": "{}"},
+            ],
+        }
 
 
 def _stub_client(handler: Any) -> Any:

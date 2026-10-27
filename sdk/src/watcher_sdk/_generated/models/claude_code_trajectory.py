@@ -17,10 +17,12 @@ from typing_extensions import Self
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.claude_code_agent_identity import ClaudeCodeAgentIdentity
     from ..models.claude_code_entry import ClaudeCodeEntry
     from ..models.claude_code_trajectory_metadata_type_0 import (
         ClaudeCodeTrajectoryMetadataType0,
     )
+    from ..models.ingest_tool_call_reference import IngestToolCallReference
 
 
 T = TypeVar("T", bound="ClaudeCodeTrajectory")
@@ -37,12 +39,21 @@ class ClaudeCodeTrajectory:
     Ownership checks still apply to the selected conversation, and hook
     appends must name the same conversation as their stored anchor.
 
+    Supply ``agent`` on every child upload, including appends. Entry-level root
+    session and agent IDs must match it when present. Custom imports may omit
+    ``agentId`` on records containing a ``message`` or ``attachment`` only with
+    ``isSidechain: true``; metadata without either payload may omit both markers.
+    ``resolve_tool_calls`` requests message hashes for selected native calls,
+    including duplicate uploads.
+
         Attributes:
             timestamp (datetime.datetime):
             format_ (Literal['claude-code-jsonl']):
             entries (list[ClaudeCodeEntry]):
             session_id (None | str | Unset):
             metadata (ClaudeCodeTrajectoryMetadataType0 | None | Unset):
+            agent (ClaudeCodeAgentIdentity | None | Unset):
+            resolve_tool_calls (list[IngestToolCallReference] | Unset):
     """
 
     timestamp: datetime.datetime
@@ -50,9 +61,14 @@ class ClaudeCodeTrajectory:
     entries: list[ClaudeCodeEntry]
     session_id: None | str | Unset = UNSET
     metadata: ClaudeCodeTrajectoryMetadataType0 | None | Unset = UNSET
+    agent: ClaudeCodeAgentIdentity | None | Unset = UNSET
+    resolve_tool_calls: list[IngestToolCallReference] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.claude_code_agent_identity import (
+            ClaudeCodeAgentIdentity,
+        )
         from ..models.claude_code_trajectory_metadata_type_0 import (
             ClaudeCodeTrajectoryMetadataType0,
         )
@@ -80,6 +96,21 @@ class ClaudeCodeTrajectory:
         else:
             metadata = self.metadata
 
+        agent: dict[str, Any] | None | Unset
+        if isinstance(self.agent, Unset):
+            agent = UNSET
+        elif isinstance(self.agent, ClaudeCodeAgentIdentity):
+            agent = self.agent.to_dict()
+        else:
+            agent = self.agent
+
+        resolve_tool_calls: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.resolve_tool_calls, Unset):
+            resolve_tool_calls = []
+            for resolve_tool_calls_item_data in self.resolve_tool_calls:
+                resolve_tool_calls_item = resolve_tool_calls_item_data.to_dict()
+                resolve_tool_calls.append(resolve_tool_calls_item)
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -93,14 +124,24 @@ class ClaudeCodeTrajectory:
             field_dict["session_id"] = session_id
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
+        if agent is not UNSET:
+            field_dict["agent"] = agent
+        if resolve_tool_calls is not UNSET:
+            field_dict["resolve_tool_calls"] = resolve_tool_calls
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.claude_code_agent_identity import (
+            ClaudeCodeAgentIdentity,
+        )
         from ..models.claude_code_entry import ClaudeCodeEntry
         from ..models.claude_code_trajectory_metadata_type_0 import (
             ClaudeCodeTrajectoryMetadataType0,
+        )
+        from ..models.ingest_tool_call_reference import (
+            IngestToolCallReference,
         )
 
         d = dict(src_dict)
@@ -147,12 +188,42 @@ class ClaudeCodeTrajectory:
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
 
+        def _parse_agent(data: object) -> ClaudeCodeAgentIdentity | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                agent_type_0 = ClaudeCodeAgentIdentity.from_dict(data)
+
+                return agent_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ClaudeCodeAgentIdentity | None | Unset, data)
+
+        agent = _parse_agent(d.pop("agent", UNSET))
+
+        _resolve_tool_calls = d.pop("resolve_tool_calls", UNSET)
+        resolve_tool_calls: list[IngestToolCallReference] | Unset = UNSET
+        if _resolve_tool_calls is not UNSET:
+            resolve_tool_calls = []
+            for resolve_tool_calls_item_data in _resolve_tool_calls:
+                resolve_tool_calls_item = IngestToolCallReference.from_dict(
+                    resolve_tool_calls_item_data
+                )
+
+                resolve_tool_calls.append(resolve_tool_calls_item)
+
         claude_code_trajectory = cls(
             timestamp=timestamp,
             format_=format_,
             entries=entries,
             session_id=session_id,
             metadata=metadata,
+            agent=agent,
+            resolve_tool_calls=resolve_tool_calls,
         )
 
         claude_code_trajectory.additional_properties = d

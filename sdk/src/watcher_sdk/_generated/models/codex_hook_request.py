@@ -44,7 +44,11 @@ class CodexHookRequest:
 
         Attributes:
             format_ (Literal['codex-jsonl']):
-            messages (CodexTrajectory): A trajectory in Codex JSONL format (raw events from the session rollout file).
+            messages (CodexTrajectory): One Codex thread's raw rollout events or delta.
+
+                The first session_meta identifies this thread; later metadata can belong to
+                inherited parent context. resolve_tool_calls names response-item IDs and
+                call IDs in this upload, returning their stored message occurrences.
             append_after (HookAppendAnchor | None | Unset): Append messages after this exact stored session/trajectory
                 anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and
                 cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered

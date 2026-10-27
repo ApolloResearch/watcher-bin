@@ -10,6 +10,8 @@ from .admin_session_content_access_request import AdminSessionContentAccessReque
 from .admin_session_content_access_request_list_response import (
     AdminSessionContentAccessRequestListResponse,
 )
+from .agent_relationship_request import AgentRelationshipRequest
+from .agent_relationship_response import AgentRelationshipResponse
 from .aperture_hook_accepted import ApertureHookAccepted
 from .aperture_hook_metadata import ApertureHookMetadata
 from .aperture_hook_request import ApertureHookRequest
@@ -58,6 +60,7 @@ from .chat_message_user_metadata_type_0 import ChatMessageUserMetadataType0
 from .chat_message_user_source_type_0 import ChatMessageUserSourceType0
 from .claude_api_message import ClaudeAPIMessage
 from .claude_api_message_usage_type_0 import ClaudeAPIMessageUsageType0
+from .claude_code_agent_identity import ClaudeCodeAgentIdentity
 from .claude_code_attachment import ClaudeCodeAttachment
 from .claude_code_entry import ClaudeCodeEntry
 from .claude_code_hook_request import ClaudeCodeHookRequest
@@ -187,6 +190,7 @@ from .human_decision import HumanDecision
 from .ingest_append_request import IngestAppendRequest
 from .ingest_request import IngestRequest
 from .ingest_response import IngestResponse
+from .ingest_tool_call_reference import IngestToolCallReference
 from .judged_decision import JudgedDecision
 from .managed_settings_source import ManagedSettingsSource
 from .managed_settings_source_error_kind_type_0 import (
@@ -244,6 +248,11 @@ from .raw_pre_tool_use_hook_request_settings_overrides_type_1 import (
     RawPreToolUseHookRequestSettingsOverridesType1,
 )
 from .refresh_request import RefreshRequest
+from .related_session_summary import RelatedSessionSummary
+from .related_session_summary_deep_review_status_type_0 import (
+    RelatedSessionSummaryDeepReviewStatusType0,
+)
+from .resolved_ingest_tool_call import ResolvedIngestToolCall
 from .review_session_content_access_request import ReviewSessionContentAccessRequest
 from .review_session_content_access_request_status import (
     ReviewSessionContentAccessRequestStatus,
@@ -309,6 +318,8 @@ from .session_summary_deep_review_status import SessionSummaryDeepReviewStatus
 from .session_summary_external_ids_type_0 import SessionSummaryExternalIdsType0
 from .session_summary_ingest_kinds_item import SessionSummaryIngestKindsItem
 from .session_summary_metadata_type_0 import SessionSummaryMetadataType0
+from .spawned_subagent import SpawnedSubagent
+from .subagent_list_response import SubagentListResponse
 from .suggested_model import SuggestedModel
 from .token_response import TokenResponse
 from .token_response_user_type_0 import TokenResponseUserType0
@@ -401,6 +412,8 @@ __all__ = (
     "ActivatedMonitorsResponseDistribution",
     "AdminSessionContentAccessRequest",
     "AdminSessionContentAccessRequestListResponse",
+    "AgentRelationshipRequest",
+    "AgentRelationshipResponse",
     "ApertureHookAccepted",
     "ApertureHookMetadata",
     "ApertureHookRequest",
@@ -435,6 +448,7 @@ __all__ = (
     "ChatMessageUserSourceType0",
     "ClaudeAPIMessage",
     "ClaudeAPIMessageUsageType0",
+    "ClaudeCodeAgentIdentity",
     "ClaudeCodeAttachment",
     "ClaudeCodeEntry",
     "ClaudeCodeHookRequest",
@@ -542,6 +556,7 @@ __all__ = (
     "IngestAppendRequest",
     "IngestRequest",
     "IngestResponse",
+    "IngestToolCallReference",
     "JudgedDecision",
     "ManagedSettingsSource",
     "ManagedSettingsSourceErrorKindType0",
@@ -581,6 +596,9 @@ __all__ = (
     "RawPreToolUseHookRequestResponseBody",
     "RawPreToolUseHookRequestSettingsOverridesType1",
     "RefreshRequest",
+    "RelatedSessionSummary",
+    "RelatedSessionSummaryDeepReviewStatusType0",
+    "ResolvedIngestToolCall",
     "ReviewSessionContentAccessRequest",
     "ReviewSessionContentAccessRequestStatus",
     "RuleMatch",
@@ -620,6 +638,8 @@ __all__ = (
     "SessionSummaryExternalIdsType0",
     "SessionSummaryIngestKindsItem",
     "SessionSummaryMetadataType0",
+    "SpawnedSubagent",
+    "SubagentListResponse",
     "SuggestedModel",
     "TokenResponse",
     "TokenResponseUserType0",

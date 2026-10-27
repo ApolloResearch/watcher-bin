@@ -17,6 +17,8 @@ from watcher_sdk._generated.models.activated_monitors_response import ActivatedM
 from watcher_sdk._generated.models.admin_session_content_access_request_list_response import (
     AdminSessionContentAccessRequestListResponse,
 )
+from watcher_sdk._generated.models.agent_relationship_request import AgentRelationshipRequest
+from watcher_sdk._generated.models.agent_relationship_response import AgentRelationshipResponse
 from watcher_sdk._generated.models.aperture_hook_accepted import ApertureHookAccepted
 from watcher_sdk._generated.models.aperture_log import ApertureLog
 from watcher_sdk._generated.models.auth_client_config import AuthClientConfig
@@ -55,6 +57,7 @@ from watcher_sdk._generated.models.session_deep_review_response import SessionDe
 from watcher_sdk._generated.models.session_filter_options_response import SessionFilterOptionsResponse
 from watcher_sdk._generated.models.session_list_response import SessionListResponse
 from watcher_sdk._generated.models.session_summary import SessionSummary
+from watcher_sdk._generated.models.subagent_list_response import SubagentListResponse
 from watcher_sdk._generated.models.tool_call_detail_response import ToolCallDetailResponse
 from watcher_sdk._generated.models.tool_call_findings_response import ToolCallFindingsResponse
 from watcher_sdk._generated.models.tool_call_list_response import ToolCallListResponse
@@ -116,6 +119,9 @@ class WatcherClient:
     def ingest(
         self, source: str, trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog]
     ) -> IngestResponse: ...
+    def put_agent_relationship(
+        self, *, child_session_id: str, relationship: AgentRelationshipRequest
+    ) -> AgentRelationshipResponse: ...
     def ingest_append(
         self,
         *,
@@ -286,6 +292,7 @@ class WatcherClient:
         sort_by: str = "ended_at",
         sort_order: str = "desc",
     ) -> SessionListResponse: ...
+    def list_session_subagents(self, session_id: str, *, limit: int = 20, offset: int = 0) -> SubagentListResponse: ...
     def search_sessions(
         self,
         start_date: datetime | None = None,

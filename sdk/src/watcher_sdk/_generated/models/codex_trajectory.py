@@ -19,6 +19,7 @@ from ..types import UNSET, Unset
 if TYPE_CHECKING:
     from ..models.codex_entry import CodexEntry
     from ..models.codex_trajectory_metadata_type_0 import CodexTrajectoryMetadataType0
+    from ..models.ingest_tool_call_reference import IngestToolCallReference
 
 
 T = TypeVar("T", bound="CodexTrajectory")
@@ -26,14 +27,19 @@ T = TypeVar("T", bound="CodexTrajectory")
 
 @_attrs_define
 class CodexTrajectory:
-    """A trajectory in Codex JSONL format (raw events from the session rollout file).
+    """One Codex thread's raw rollout events or delta.
 
-    Attributes:
-        timestamp (datetime.datetime):
-        format_ (Literal['codex-jsonl']):
-        entries (list[CodexEntry]):
-        session_id (None | str | Unset):
-        metadata (CodexTrajectoryMetadataType0 | None | Unset):
+    The first session_meta identifies this thread; later metadata can belong to
+    inherited parent context. resolve_tool_calls names response-item IDs and
+    call IDs in this upload, returning their stored message occurrences.
+
+        Attributes:
+            timestamp (datetime.datetime):
+            format_ (Literal['codex-jsonl']):
+            entries (list[CodexEntry]):
+            session_id (None | str | Unset):
+            metadata (CodexTrajectoryMetadataType0 | None | Unset):
+            resolve_tool_calls (list[IngestToolCallReference] | Unset):
     """
 
     timestamp: datetime.datetime
@@ -41,6 +47,7 @@ class CodexTrajectory:
     entries: list[CodexEntry]
     session_id: None | str | Unset = UNSET
     metadata: CodexTrajectoryMetadataType0 | None | Unset = UNSET
+    resolve_tool_calls: list[IngestToolCallReference] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,6 +78,13 @@ class CodexTrajectory:
         else:
             metadata = self.metadata
 
+        resolve_tool_calls: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.resolve_tool_calls, Unset):
+            resolve_tool_calls = []
+            for resolve_tool_calls_item_data in self.resolve_tool_calls:
+                resolve_tool_calls_item = resolve_tool_calls_item_data.to_dict()
+                resolve_tool_calls.append(resolve_tool_calls_item)
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -84,6 +98,8 @@ class CodexTrajectory:
             field_dict["session_id"] = session_id
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
+        if resolve_tool_calls is not UNSET:
+            field_dict["resolve_tool_calls"] = resolve_tool_calls
 
         return field_dict
 
@@ -92,6 +108,9 @@ class CodexTrajectory:
         from ..models.codex_entry import CodexEntry
         from ..models.codex_trajectory_metadata_type_0 import (
             CodexTrajectoryMetadataType0,
+        )
+        from ..models.ingest_tool_call_reference import (
+            IngestToolCallReference,
         )
 
         d = dict(src_dict)
@@ -136,12 +155,24 @@ class CodexTrajectory:
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
 
+        _resolve_tool_calls = d.pop("resolve_tool_calls", UNSET)
+        resolve_tool_calls: list[IngestToolCallReference] | Unset = UNSET
+        if _resolve_tool_calls is not UNSET:
+            resolve_tool_calls = []
+            for resolve_tool_calls_item_data in _resolve_tool_calls:
+                resolve_tool_calls_item = IngestToolCallReference.from_dict(
+                    resolve_tool_calls_item_data
+                )
+
+                resolve_tool_calls.append(resolve_tool_calls_item)
+
         codex_trajectory = cls(
             timestamp=timestamp,
             format_=format_,
             entries=entries,
             session_id=session_id,
             metadata=metadata,
+            resolve_tool_calls=resolve_tool_calls,
         )
 
         codex_trajectory.additional_properties = d

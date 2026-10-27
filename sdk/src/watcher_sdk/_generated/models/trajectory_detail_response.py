@@ -12,6 +12,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.grade_result import GradeResult
+    from ..models.spawned_subagent import SpawnedSubagent
     from ..models.trajectory_detail_response_messages_item import (
         TrajectoryDetailResponseMessagesItem,
     )
@@ -39,6 +40,7 @@ class TrajectoryDetailResponse:
         source (str):
         created_at (datetime.datetime):
         tool_call_decisions (TrajectoryDetailResponseToolCallDecisions | Unset):
+        spawned_subagents (list[SpawnedSubagent] | Unset):
     """
 
     trajectory_id: str
@@ -49,6 +51,7 @@ class TrajectoryDetailResponse:
     source: str
     created_at: datetime.datetime
     tool_call_decisions: TrajectoryDetailResponseToolCallDecisions | Unset = UNSET
+    spawned_subagents: list[SpawnedSubagent] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -76,6 +79,13 @@ class TrajectoryDetailResponse:
         if not isinstance(self.tool_call_decisions, Unset):
             tool_call_decisions = self.tool_call_decisions.to_dict()
 
+        spawned_subagents: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.spawned_subagents, Unset):
+            spawned_subagents = []
+            for spawned_subagents_item_data in self.spawned_subagents:
+                spawned_subagents_item = spawned_subagents_item_data.to_dict()
+                spawned_subagents.append(spawned_subagents_item)
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -91,12 +101,15 @@ class TrajectoryDetailResponse:
         )
         if tool_call_decisions is not UNSET:
             field_dict["tool_call_decisions"] = tool_call_decisions
+        if spawned_subagents is not UNSET:
+            field_dict["spawned_subagents"] = spawned_subagents
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.grade_result import GradeResult
+        from ..models.spawned_subagent import SpawnedSubagent
         from ..models.trajectory_detail_response_messages_item import (
             TrajectoryDetailResponseMessagesItem,
         )
@@ -143,6 +156,17 @@ class TrajectoryDetailResponse:
                 _tool_call_decisions
             )
 
+        _spawned_subagents = d.pop("spawned_subagents", UNSET)
+        spawned_subagents: list[SpawnedSubagent] | Unset = UNSET
+        if _spawned_subagents is not UNSET:
+            spawned_subagents = []
+            for spawned_subagents_item_data in _spawned_subagents:
+                spawned_subagents_item = SpawnedSubagent.from_dict(
+                    spawned_subagents_item_data
+                )
+
+                spawned_subagents.append(spawned_subagents_item)
+
         trajectory_detail_response = cls(
             trajectory_id=trajectory_id,
             messages=messages,
@@ -152,6 +176,7 @@ class TrajectoryDetailResponse:
             source=source,
             created_at=created_at,
             tool_call_decisions=tool_call_decisions,
+            spawned_subagents=spawned_subagents,
         )
 
         trajectory_detail_response.additional_properties = d

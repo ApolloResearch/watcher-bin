@@ -1,4 +1,4 @@
-FROM node:24.11.1-bookworm-slim AS native
+FROM node:24.22.1-bookworm-slim AS native
 WORKDIR /opt/native
 COPY native-package.json ./package.json
 COPY native-package-lock.json ./package-lock.json

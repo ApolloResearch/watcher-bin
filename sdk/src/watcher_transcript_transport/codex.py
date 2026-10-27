@@ -21,10 +21,12 @@ __all__ = [
     "CALL_CLOSING_TYPES",
     "CALL_OPENING_TYPES",
     "CodexCallCycles",
+    "codex_tool_name",
     "is_assistant_output_payload",
     "is_turn_aborted_event",
     "is_turn_aborted_marker_entry",
     "is_turn_started_event",
+    "own_codex_entries",
     "pending_call_id",
     "scan_codex_call_cycles",
     "trim_incomplete_codex_tail",
@@ -314,6 +316,48 @@ _GROUPED_HOOK_NAMES = {
 }
 
 
+def codex_tool_name(name: str, namespace: str | None) -> str:
+    """Fold a native tool namespace into the identity Codex reports to its hooks.
+
+    A missing/empty namespace, default ``functions`` tools and legacy
+    ``multi_agent_v1.spawn_agent`` keep their bare name. An MCP namespace
+    ``mcp__server`` becomes ``mcp__server__tool``; other
+    groups concatenate namespace and name (``collaborationwait_agent``).
+    Shell aliases such as Bash are policy translations, not namespace rules.
+    Use this for both rollout and gateway records so grading sees the same
+    tool identity as the corresponding hook without conflating MCP tools.
+    """
+    if not namespace or namespace == "functions":
+        return name
+    if namespace.startswith("mcp__"):
+        return f"{namespace.rstrip('_')}__{name.lstrip('_')}"
+    if namespace == "multi_agent_v1" and name == "spawn_agent":
+        return name
+    return namespace + name
+
+
+def own_codex_entries(entries: list[JsonEntry]) -> list[JsonEntry]:
+    """Select records eligible for this thread's tool matching, preserving native order.
+
+    The first metadata record supplies subagent_history_start_ordinal. Earlier
+    numbered records are inherited context; keep that first metadata record so
+    repeated selection retains the boundary. Without a boundary, return the
+    original list. Use this for call matching and reconciliation only: uploads
+    and grading context must retain the inherited prefix. Do not renumber entries
+    or use filtered-list indexes as native ordinals.
+    """
+    meta = next((entry for entry in entries if entry.get("type") == "session_meta"), None)
+    payload = meta.get("payload") if meta is not None else None
+    boundary = payload.get("subagent_history_start_ordinal") if isinstance(payload, dict) else None
+    if not isinstance(boundary, int):
+        return entries
+    return [
+        entry
+        for entry in entries
+        if entry is meta or not isinstance(entry.get("ordinal"), int) or entry["ordinal"] >= boundary
+    ]
+
+
 def pending_call_id(entries: list[JsonEntry], tool_name: str, tool_input: Any) -> str | None:
     """The ``call_id`` of the one pending call in the current turn that a Codex hook reports, or ``None``.
 
@@ -325,8 +369,10 @@ def pending_call_id(entries: list[JsonEntry], tool_name: str, tool_input: Any) -
     the report: the same shell command, the same patch text, or, for any
     other tool, the same name and arguments. ``None`` when no pending call
     matches, or several distinct ones do, since guessing could judge another
-    call.
+    call. Copied parent calls before the subagent's native history boundary
+    cannot match, even when their arguments are identical to the child's.
     """
+    entries = own_codex_entries(entries)
     cycles = scan_codex_call_cycles(entries, allow_trailing_assistant_output=True)
     answered: set[str] = set()
     turn: list[dict[str, Any]] = []
@@ -360,12 +406,27 @@ def pending_call_id(entries: list[JsonEntry], tool_name: str, tool_input: Any) -
 
 
 def _reports_call(payload: dict[str, Any], tool_name: str, tool_input: Any) -> bool:
-    """Whether a hook's report (``tool_name``, ``tool_input``) is the call ``payload`` opens."""
+    """Match a hook report to a native call without discarding namespace identity.
+
+    Native shell calls match Bash by command, and apply_patch by patch text.
+    Other calls require their qualified name and identical JSON arguments.
+    Namespace-free spawn/send records also accept the existing collaboration
+    policy aliases. Explicit MCP/group namespaces never use shell/patch aliases,
+    even when their bare tool name looks like a built-in. Malformed identity or
+    arguments cannot match. This does not check whether the call is pending.
+    """
+    name = payload.get("name")
+    namespace = payload.get("namespace")
+    if payload.get("type") == "local_shell_call":
+        name, namespace = "local_shell", None
+    if not isinstance(name, str) or (namespace is not None and not isinstance(namespace, str)):
+        return False
+    recorded_name = codex_tool_name(name, namespace)
     reported = tool_input if isinstance(tool_input, dict) else {}
-    recorded_command = _shell_command(payload)
+    recorded_command = _shell_command(payload) if not namespace or namespace == "functions" else None
     if recorded_command is not None:
         return tool_name == "Bash" and recorded_command == reported.get("command")
-    if payload.get("name") == _PATCH_TOOL:
+    if recorded_name == _PATCH_TOOL:
         patch = _patch_text(payload.get("input") if payload.get("type") == "custom_tool_call" else payload)
         return tool_name == _PATCH_TOOL and patch is not None and patch == _patch_text(tool_input)
     arguments = payload.get("arguments", payload.get("input"))
@@ -375,9 +436,10 @@ def _reports_call(payload: dict[str, Any], tool_name: str, tool_input: Any) -> b
         except ValueError:
             return False
     # Compared as JSON, as the server compares them, so a boolean never equals a number.
-    return payload.get("name") == _GROUPED_HOOK_NAMES.get(tool_name, tool_name) and json.dumps(
-        arguments, sort_keys=True
-    ) == json.dumps(tool_input, sort_keys=True)
+    names_match = recorded_name == tool_name or (
+        not namespace and recorded_name == _GROUPED_HOOK_NAMES.get(tool_name, tool_name)
+    )
+    return names_match and json.dumps(arguments, sort_keys=True) == json.dumps(tool_input, sort_keys=True)
 
 
 def _shell_command(payload: dict[str, Any]) -> str | None:

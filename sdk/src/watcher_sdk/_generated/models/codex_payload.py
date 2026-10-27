@@ -40,6 +40,7 @@ class CodexPayload:
             summary (list[CodexReasoningSummaryItem] | None | Unset):
             encrypted_content (None | str | Unset):
             name (None | str | Unset):
+            namespace (None | str | Unset):
             call_id (None | str | Unset):
             arguments (CodexPayloadArgumentsType1 | None | str | Unset):
             output (list[CodexContentItem] | None | str | Unset):
@@ -49,6 +50,7 @@ class CodexPayload:
             user_instructions (None | str | Unset):
             developer_instructions (None | str | Unset):
             id (None | str | Unset):
+            subagent_history_start_ordinal (int | None | Unset):
             cwd (None | str | Unset):
             cli_version (None | str | Unset):
             originator (None | str | Unset):
@@ -63,6 +65,7 @@ class CodexPayload:
     summary: list[CodexReasoningSummaryItem] | None | Unset = UNSET
     encrypted_content: None | str | Unset = UNSET
     name: None | str | Unset = UNSET
+    namespace: None | str | Unset = UNSET
     call_id: None | str | Unset = UNSET
     arguments: CodexPayloadArgumentsType1 | None | str | Unset = UNSET
     output: list[CodexContentItem] | None | str | Unset = UNSET
@@ -72,6 +75,7 @@ class CodexPayload:
     user_instructions: None | str | Unset = UNSET
     developer_instructions: None | str | Unset = UNSET
     id: None | str | Unset = UNSET
+    subagent_history_start_ordinal: int | None | Unset = UNSET
     cwd: None | str | Unset = UNSET
     cli_version: None | str | Unset = UNSET
     originator: None | str | Unset = UNSET
@@ -135,6 +139,12 @@ class CodexPayload:
             name = UNSET
         else:
             name = self.name
+
+        namespace: None | str | Unset
+        if isinstance(self.namespace, Unset):
+            namespace = UNSET
+        else:
+            namespace = self.namespace
 
         call_id: None | str | Unset
         if isinstance(self.call_id, Unset):
@@ -202,6 +212,12 @@ class CodexPayload:
         else:
             id = self.id
 
+        subagent_history_start_ordinal: int | None | Unset
+        if isinstance(self.subagent_history_start_ordinal, Unset):
+            subagent_history_start_ordinal = UNSET
+        else:
+            subagent_history_start_ordinal = self.subagent_history_start_ordinal
+
         cwd: None | str | Unset
         if isinstance(self.cwd, Unset):
             cwd = UNSET
@@ -263,6 +279,8 @@ class CodexPayload:
             field_dict["encrypted_content"] = encrypted_content
         if name is not UNSET:
             field_dict["name"] = name
+        if namespace is not UNSET:
+            field_dict["namespace"] = namespace
         if call_id is not UNSET:
             field_dict["call_id"] = call_id
         if arguments is not UNSET:
@@ -281,6 +299,10 @@ class CodexPayload:
             field_dict["developer_instructions"] = developer_instructions
         if id is not UNSET:
             field_dict["id"] = id
+        if subagent_history_start_ordinal is not UNSET:
+            field_dict["subagent_history_start_ordinal"] = (
+                subagent_history_start_ordinal
+            )
         if cwd is not UNSET:
             field_dict["cwd"] = cwd
         if cli_version is not UNSET:
@@ -409,6 +431,15 @@ class CodexPayload:
 
         name = _parse_name(d.pop("name", UNSET))
 
+        def _parse_namespace(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        namespace = _parse_namespace(d.pop("namespace", UNSET))
+
         def _parse_call_id(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -533,6 +564,17 @@ class CodexPayload:
 
         id = _parse_id(d.pop("id", UNSET))
 
+        def _parse_subagent_history_start_ordinal(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        subagent_history_start_ordinal = _parse_subagent_history_start_ordinal(
+            d.pop("subagent_history_start_ordinal", UNSET)
+        )
+
         def _parse_cwd(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -621,6 +663,7 @@ class CodexPayload:
             summary=summary,
             encrypted_content=encrypted_content,
             name=name,
+            namespace=namespace,
             call_id=call_id,
             arguments=arguments,
             output=output,
@@ -630,6 +673,7 @@ class CodexPayload:
             user_instructions=user_instructions,
             developer_instructions=developer_instructions,
             id=id,
+            subagent_history_start_ordinal=subagent_history_start_ordinal,
             cwd=cwd,
             cli_version=cli_version,
             originator=originator,

@@ -11,6 +11,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.hook_append_anchor import HookAppendAnchor
+    from ..models.resolved_ingest_tool_call import ResolvedIngestToolCall
 
 
 T = TypeVar("T", bound="IngestResponse")
@@ -39,6 +40,9 @@ class IngestResponse:
     selects the append anchor. Only responses from older servers that omit
     ``append_anchor`` use the legacy last-ID convention.
 
+    ``resolved_tool_calls`` identifies requested native call occurrences. Relationship
+    replay has its own cursor and must not move the ordinary upload cursor.
+
         Attributes:
             session_id (str):
             trajectory_ids (list[str]):
@@ -46,6 +50,7 @@ class IngestResponse:
             duplicate_count (int):
             skipped_count (int):
             append_anchor (HookAppendAnchor | None | Unset):
+            resolved_tool_calls (list[ResolvedIngestToolCall] | Unset):
     """
 
     session_id: str
@@ -54,6 +59,7 @@ class IngestResponse:
     duplicate_count: int
     skipped_count: int
     append_anchor: HookAppendAnchor | None | Unset = UNSET
+    resolved_tool_calls: list[ResolvedIngestToolCall] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -77,6 +83,13 @@ class IngestResponse:
         else:
             append_anchor = self.append_anchor
 
+        resolved_tool_calls: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.resolved_tool_calls, Unset):
+            resolved_tool_calls = []
+            for resolved_tool_calls_item_data in self.resolved_tool_calls:
+                resolved_tool_calls_item = resolved_tool_calls_item_data.to_dict()
+                resolved_tool_calls.append(resolved_tool_calls_item)
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -90,12 +103,17 @@ class IngestResponse:
         )
         if append_anchor is not UNSET:
             field_dict["append_anchor"] = append_anchor
+        if resolved_tool_calls is not UNSET:
+            field_dict["resolved_tool_calls"] = resolved_tool_calls
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.hook_append_anchor import HookAppendAnchor
+        from ..models.resolved_ingest_tool_call import (
+            ResolvedIngestToolCall,
+        )
 
         d = dict(src_dict)
         session_id = d.pop("session_id")
@@ -125,6 +143,17 @@ class IngestResponse:
 
         append_anchor = _parse_append_anchor(d.pop("append_anchor", UNSET))
 
+        _resolved_tool_calls = d.pop("resolved_tool_calls", UNSET)
+        resolved_tool_calls: list[ResolvedIngestToolCall] | Unset = UNSET
+        if _resolved_tool_calls is not UNSET:
+            resolved_tool_calls = []
+            for resolved_tool_calls_item_data in _resolved_tool_calls:
+                resolved_tool_calls_item = ResolvedIngestToolCall.from_dict(
+                    resolved_tool_calls_item_data
+                )
+
+                resolved_tool_calls.append(resolved_tool_calls_item)
+
         ingest_response = cls(
             session_id=session_id,
             trajectory_ids=trajectory_ids,
@@ -132,6 +161,7 @@ class IngestResponse:
             duplicate_count=duplicate_count,
             skipped_count=skipped_count,
             append_anchor=append_anchor,
+            resolved_tool_calls=resolved_tool_calls,
         )
 
         ingest_response.additional_properties = d

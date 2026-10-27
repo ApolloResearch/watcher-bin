@@ -22,6 +22,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.grade_result import GradeResult
+    from ..models.related_session_summary import RelatedSessionSummary
     from ..models.scrubbed_session_detail_response_external_ids_type_0 import (
         ScrubbedSessionDetailResponseExternalIdsType0,
     )
@@ -51,6 +52,9 @@ class ScrubbedSessionDetailResponse:
         message_count (int):
         created_at (datetime.datetime):
         retained_grades (list[GradeResult]):
+        is_subagent (bool | Unset): Whether this session has a recorded parent relationship. Default: False.
+        parent_session (None | RelatedSessionSummary | Unset): Immediate parent, omitted when unknown or inaccessible to
+            this caller.
         user_id (None | Unset | UUID):
         user_first_name (None | str | Unset):
         user_last_name (None | str | Unset):
@@ -78,6 +82,8 @@ class ScrubbedSessionDetailResponse:
     message_count: int
     created_at: datetime.datetime
     retained_grades: list[GradeResult]
+    is_subagent: bool | Unset = False
+    parent_session: None | RelatedSessionSummary | Unset = UNSET
     user_id: None | Unset | UUID = UNSET
     user_first_name: None | str | Unset = UNSET
     user_last_name: None | str | Unset = UNSET
@@ -94,6 +100,7 @@ class ScrubbedSessionDetailResponse:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.related_session_summary import RelatedSessionSummary
         from ..models.scrubbed_session_detail_response_external_ids_type_0 import (
             ScrubbedSessionDetailResponseExternalIdsType0,
         )
@@ -121,6 +128,16 @@ class ScrubbedSessionDetailResponse:
         for retained_grades_item_data in self.retained_grades:
             retained_grades_item = retained_grades_item_data.to_dict()
             retained_grades.append(retained_grades_item)
+
+        is_subagent = self.is_subagent
+
+        parent_session: dict[str, Any] | None | Unset
+        if isinstance(self.parent_session, Unset):
+            parent_session = UNSET
+        elif isinstance(self.parent_session, RelatedSessionSummary):
+            parent_session = self.parent_session.to_dict()
+        else:
+            parent_session = self.parent_session
 
         user_id: None | str | Unset
         if isinstance(self.user_id, Unset):
@@ -212,6 +229,10 @@ class ScrubbedSessionDetailResponse:
                 "retained_grades": retained_grades,
             }
         )
+        if is_subagent is not UNSET:
+            field_dict["is_subagent"] = is_subagent
+        if parent_session is not UNSET:
+            field_dict["parent_session"] = parent_session
         if user_id is not UNSET:
             field_dict["user_id"] = user_id
         if user_first_name is not UNSET:
@@ -244,6 +265,9 @@ class ScrubbedSessionDetailResponse:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.grade_result import GradeResult
+        from ..models.related_session_summary import (
+            RelatedSessionSummary,
+        )
         from ..models.scrubbed_session_detail_response_external_ids_type_0 import (
             ScrubbedSessionDetailResponseExternalIdsType0,
         )
@@ -275,6 +299,25 @@ class ScrubbedSessionDetailResponse:
             retained_grades_item = GradeResult.from_dict(retained_grades_item_data)
 
             retained_grades.append(retained_grades_item)
+
+        is_subagent = d.pop("is_subagent", UNSET)
+
+        def _parse_parent_session(data: object) -> None | RelatedSessionSummary | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                parent_session_type_0 = RelatedSessionSummary.from_dict(data)
+
+                return parent_session_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | RelatedSessionSummary | Unset, data)
+
+        parent_session = _parse_parent_session(d.pop("parent_session", UNSET))
 
         def _parse_user_id(data: object) -> None | Unset | UUID:
             if data is None:
@@ -415,6 +458,8 @@ class ScrubbedSessionDetailResponse:
             message_count=message_count,
             created_at=created_at,
             retained_grades=retained_grades,
+            is_subagent=is_subagent,
+            parent_session=parent_session,
             user_id=user_id,
             user_first_name=user_first_name,
             user_last_name=user_last_name,

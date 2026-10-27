@@ -50,6 +50,13 @@ class ClaudeCodeHookRequest:
                 omitted or empty, each parsed branch uses its first entry's ``sessionId``.
                 Ownership checks still apply to the selected conversation, and hook
                 appends must name the same conversation as their stored anchor.
+
+                Supply ``agent`` on every child upload, including appends. Entry-level root
+                session and agent IDs must match it when present. Custom imports may omit
+                ``agentId`` on records containing a ``message`` or ``attachment`` only with
+                ``isSidechain: true``; metadata without either payload may omit both markers.
+                ``resolve_tool_calls`` requests message hashes for selected native calls,
+                including duplicate uploads.
             append_after (HookAppendAnchor | None | Unset): Append messages after this exact stored session/trajectory
                 anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and
                 cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered

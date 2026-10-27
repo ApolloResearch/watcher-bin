@@ -41,6 +41,7 @@ class ClaudeCodeEntry:
             version (None | str | Unset):
             user_type (None | str | Unset):
             is_sidechain (bool | Unset):  Default: False.
+            agent_id (None | str | Unset):
             is_compact_summary (bool | Unset):  Default: False.
             request_id (None | str | Unset):
             effort (None | str | Unset):
@@ -60,6 +61,7 @@ class ClaudeCodeEntry:
     version: None | str | Unset = UNSET
     user_type: None | str | Unset = UNSET
     is_sidechain: bool | Unset = False
+    agent_id: None | str | Unset = UNSET
     is_compact_summary: bool | Unset = False
     request_id: None | str | Unset = UNSET
     effort: None | str | Unset = UNSET
@@ -144,6 +146,12 @@ class ClaudeCodeEntry:
 
         is_sidechain = self.is_sidechain
 
+        agent_id: None | str | Unset
+        if isinstance(self.agent_id, Unset):
+            agent_id = UNSET
+        else:
+            agent_id = self.agent_id
+
         is_compact_summary = self.is_compact_summary
 
         request_id: None | str | Unset
@@ -204,6 +212,8 @@ class ClaudeCodeEntry:
             field_dict["userType"] = user_type
         if is_sidechain is not UNSET:
             field_dict["isSidechain"] = is_sidechain
+        if agent_id is not UNSET:
+            field_dict["agentId"] = agent_id
         if is_compact_summary is not UNSET:
             field_dict["isCompactSummary"] = is_compact_summary
         if request_id is not UNSET:
@@ -344,6 +354,15 @@ class ClaudeCodeEntry:
 
         is_sidechain = d.pop("isSidechain", UNSET)
 
+        def _parse_agent_id(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        agent_id = _parse_agent_id(d.pop("agentId", UNSET))
+
         is_compact_summary = d.pop("isCompactSummary", UNSET)
 
         def _parse_request_id(data: object) -> None | str | Unset:
@@ -415,6 +434,7 @@ class ClaudeCodeEntry:
             version=version,
             user_type=user_type,
             is_sidechain=is_sidechain,
+            agent_id=agent_id,
             is_compact_summary=is_compact_summary,
             request_id=request_id,
             effort=effort,

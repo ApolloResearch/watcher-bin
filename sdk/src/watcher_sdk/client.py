@@ -46,6 +46,7 @@ import watcher_sdk._generated.api.hooks.aperture_entire_request_hook_v1_hooks_ap
 import watcher_sdk._generated.api.hooks.pre_tool_use_hook_v1_hooks_pre_tool_use_post as _pre_tool_use_hook_api
 import watcher_sdk._generated.api.ingest.ingest_append_endpoint_v1_sessions_session_id_trajectories_trajectory_hash_append_post as _ingest_append_api
 import watcher_sdk._generated.api.ingest.ingest_v1_ingest_post as _ingest_api
+import watcher_sdk._generated.api.ingest.write_agent_relationship_v1_sessions_child_session_id_agent_relationship_put as _agent_relationship_api
 import watcher_sdk._generated.api.monitors.get_monitor_customization_v1_monitors_customization_get as _get_monitor_customization_api
 import watcher_sdk._generated.api.monitors.grade_by_monitor_v1_monitors_role_grade_post as _grade_by_monitor_api
 import watcher_sdk._generated.api.monitors.list_monitors_v1_monitors_get as _list_monitors_api
@@ -67,6 +68,7 @@ import watcher_sdk._generated.api.sessions.get_session_message_v1_sessions_sessi
 import watcher_sdk._generated.api.sessions.get_session_tool_call_decision_v1_sessions_session_id_tool_call_decision_get as _get_tool_call_decision_api
 import watcher_sdk._generated.api.sessions.get_session_tool_call_v1_sessions_session_id_tool_call_get as _get_tool_call_api
 import watcher_sdk._generated.api.sessions.get_session_trajectory_detail_v1_sessions_session_id_trajectories_trajectory_id_get as _get_trajectory_api
+import watcher_sdk._generated.api.sessions.list_session_subagents_endpoint_v1_sessions_session_id_subagents_get as _list_subagents_api
 import watcher_sdk._generated.api.sessions.list_session_trajectories_v1_sessions_session_id_trajectories_get as _list_trajectories_api
 import watcher_sdk._generated.api.sessions.list_sessions_endpoint_v1_sessions_get as _list_sessions_api
 import watcher_sdk._generated.api.sessions.request_session_deep_review_v1_sessions_session_id_deep_review_post as _request_deep_review_api
@@ -137,6 +139,7 @@ from watcher_sdk._generated.models import (
     SessionFilterOptionsResponse,
     SessionListResponse,
     SessionSummary,
+    SubagentListResponse,
     ToolCallDecisionBatchRequest,
     ToolCallDecisionBatchResponse,
     ToolCallDetailResponse,
@@ -158,6 +161,8 @@ from watcher_sdk._generated.models import (
     UserSummary,
     VersionResponse,
 )
+from watcher_sdk._generated.models.agent_relationship_request import AgentRelationshipRequest
+from watcher_sdk._generated.models.agent_relationship_response import AgentRelationshipResponse
 from watcher_sdk._generated.models.aperture_log import ApertureLog
 from watcher_sdk._generated.models.callback_request import CallbackRequest
 from watcher_sdk._generated.models.claude_code_trajectory import ClaudeCodeTrajectory
@@ -869,6 +874,31 @@ class AsyncWatcherClient:
             trajectory_hash=anchor_trajectory_hash,
             client=self._generated_client,
             body=body,
+        )
+
+    @_sdk_method
+    async def put_agent_relationship(
+        self, *, child_session_id: str, relationship: AgentRelationshipRequest
+    ) -> AgentRelationshipResponse:
+        """Create or complete a child's original parent link after uploading both sessions.
+
+        Both sessions must be writable by this credential. Send the parent's
+        spawning tool ID and, when available, its message hash from an ingest
+        response's ``resolved_tool_calls``. No graded tool-call row is needed.
+        Omitted or null details preserve existing values; established parentage
+        and spawning details cannot be replaced. Repeating a successful request
+        returns the same relationship, including after content scrubbing.
+
+        Raises:
+            WatcherAPIError: 404 for missing or unauthorized sessions or a
+                missing spawning message; retry after pending uploads finish.
+                409 for conflicting details, a mismatched call, or an ancestry
+                cycle; correct the request before retrying.
+        """
+        return await _agent_relationship_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            child_session_id=UUID(child_session_id),
+            client=self._generated_client,
+            body=relationship,
         )
 
     @_sdk_method
@@ -2006,6 +2036,24 @@ class AsyncWatcherClient:
         """
         return await _list_sessions_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
             client=self._generated_client, limit=limit, offset=offset, sort_by=sort_by, sort_order=sort_order
+        )
+
+    @_sdk_method
+    async def list_session_subagents(
+        self, session_id: str, *, limit: int = 20, offset: int = 0
+    ) -> SubagentListResponse:
+        """Page readable immediate children oldest-first, without loading descendants.
+
+        Both the parent and every child require independent read authority. Titles
+        require ownership or blanket content permission, not temporary approval.
+        Review fields require findings access. Unresolved spawning calls and
+        sessions awaiting transcripts still appear. The total
+        excludes inaccessible children. Raises WatcherNotFoundError for a missing
+        or inaccessible parent.
+        Ordering uses relationship creation time, then child session ID to break ties.
+        """
+        return await _list_subagents_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            session_id, client=self._generated_client, limit=limit, offset=offset
         )
 
     @_sdk_method

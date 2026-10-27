@@ -1,4 +1,4 @@
-FROM node:24.11.1-bookworm-slim AS native
+FROM node:24.22.1-bookworm-slim AS native
 RUN npm install --prefix /opt/native --ignore-scripts --no-audit --no-fund @qwen-code/qwen-code@0.23.4
 
 FROM python:3.12.13-slim-bookworm

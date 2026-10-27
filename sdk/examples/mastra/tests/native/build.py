@@ -18,8 +18,8 @@ import zipfile
 from pathlib import Path
 
 EXAMPLE = Path(__file__).resolve().parents[2]
-NODE_VERSION = "24.11.1"
-NODE_SHA256 = "60e3b0a8500819514aca603487c254298cd776de0698d3cd08f11dba5b8289a8"
+NODE_VERSION = "24.22.1"
+NODE_SHA256 = "6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6"
 
 
 def sha(path: Path) -> str:

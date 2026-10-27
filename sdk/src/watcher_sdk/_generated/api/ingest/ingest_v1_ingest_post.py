@@ -81,7 +81,9 @@ def sync_detailed(
     A Claude Code session id or Codex thread id names one session per
     organization. An upload attributed to a user (a signed-in user's, or one
     attributed through ``identity.login_name``) joins that session when it has
-    no owner and makes the user its owner. When another user owns it, the
+    no owner and makes the user its owner, including its linked descendants.
+    A conflicting known owner in its ancestry or descendants also rejects the
+    attribution atomically. When another user owns it, the
     request is rejected with 409 ``session_owner_conflict``: that trajectory
     is not stored, earlier trajectories in the request stay stored, and later
     ones are not processed. An upload attributed to no user joins the session
@@ -126,7 +128,9 @@ def sync(
     A Claude Code session id or Codex thread id names one session per
     organization. An upload attributed to a user (a signed-in user's, or one
     attributed through ``identity.login_name``) joins that session when it has
-    no owner and makes the user its owner. When another user owns it, the
+    no owner and makes the user its owner, including its linked descendants.
+    A conflicting known owner in its ancestry or descendants also rejects the
+    attribution atomically. When another user owns it, the
     request is rejected with 409 ``session_owner_conflict``: that trajectory
     is not stored, earlier trajectories in the request stay stored, and later
     ones are not processed. An upload attributed to no user joins the session
@@ -166,7 +170,9 @@ async def asyncio_detailed(
     A Claude Code session id or Codex thread id names one session per
     organization. An upload attributed to a user (a signed-in user's, or one
     attributed through ``identity.login_name``) joins that session when it has
-    no owner and makes the user its owner. When another user owns it, the
+    no owner and makes the user its owner, including its linked descendants.
+    A conflicting known owner in its ancestry or descendants also rejects the
+    attribution atomically. When another user owns it, the
     request is rejected with 409 ``session_owner_conflict``: that trajectory
     is not stored, earlier trajectories in the request stay stored, and later
     ones are not processed. An upload attributed to no user joins the session
@@ -209,7 +215,9 @@ async def asyncio(
     A Claude Code session id or Codex thread id names one session per
     organization. An upload attributed to a user (a signed-in user's, or one
     attributed through ``identity.login_name``) joins that session when it has
-    no owner and makes the user its owner. When another user owns it, the
+    no owner and makes the user its owner, including its linked descendants.
+    A conflicting known owner in its ancestry or descendants also rejects the
+    attribution atomically. When another user owns it, the
     request is rejected with 409 ``session_owner_conflict``: that trajectory
     is not stored, earlier trajectories in the request stay stored, and later
     ones are not processed. An upload attributed to no user joins the session

@@ -181,9 +181,9 @@ def main() -> None:
             native = extract(archive, run_dir / "upstream")
             node_archive = run_dir / "node.tar.xz"
             download(
-                "https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-x64.tar.xz",
+                "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz",
                 node_archive,
-                "60e3b0a8500819514aca603487c254298cd776de0698d3cd08f11dba5b8289a8",
+                "6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6",
             )
             node = extract(node_archive, run_dir / "node-toolchain")
             env = dict(os.environ, PATH=str(node / "bin") + os.pathsep + os.environ["PATH"])
@@ -207,7 +207,7 @@ def main() -> None:
             provenance.update(
                 upstream_versions={"portkey": json.loads((native / "package.json").read_text())["version"]},
                 upstream_revision="669825cbe89ee51569918b8f78a9db486fd69dd4",
-                runtimes={"node": "24.11.1"},
+                runtimes={"node": "24.22.1"},
                 upstream_archive_sha256=sha(archive),
                 toolchain_archive_sha256=sha(node_archive),
                 runtime_binary_sha256=sha(context / "node"),

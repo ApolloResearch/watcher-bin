@@ -1,4 +1,4 @@
-FROM node:24.11.1-bookworm-slim AS native
+FROM node:24.22.1-bookworm-slim AS native
 RUN npm install --prefix /opt/native --no-audit --no-fund @continuedev/cli@1.5.47
 FROM python:3.12.13-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends bash ca-certificates git libstdc++6 ripgrep && rm -rf /var/lib/apt/lists/*

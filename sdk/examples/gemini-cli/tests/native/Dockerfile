@@ -1,4 +1,4 @@
-FROM node:24.11.1-bookworm-slim AS native
+FROM node:24.22.1-bookworm-slim AS native
 RUN npm install --prefix /opt/native --ignore-scripts --no-audit --no-fund @google/gemini-cli@0.61.0-nightly.20260914.g9c1b0a610
 
 FROM python:3.12.13-slim-bookworm

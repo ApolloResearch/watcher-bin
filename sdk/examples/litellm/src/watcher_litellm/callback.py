@@ -40,7 +40,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import aclosing, asynccontextmanager
 from typing import Any, TypeVar, cast
 from urllib.parse import urlsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
@@ -307,7 +307,7 @@ def withheld_response(
         modified["output"].append(
             {
                 "type": "message",
-                "id": f"msg_watcher_{modified.get('id', '')}",
+                "id": f"msg_{uuid4().hex}",
                 "role": "assistant",
                 "status": "completed",
                 "content": [{"type": "output_text", "text": notice, "annotations": []}],

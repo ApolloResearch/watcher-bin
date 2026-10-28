@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..models.monitor_info_role import MonitorInfoRole
 from ..types import UNSET, Unset
@@ -52,9 +51,7 @@ class MonitorInfo:
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.model_token_budget import ModelTokenBudget
-        from ..models.monitor_context_policy import (
-            MonitorContextPolicy,
-        )
+        from ..models.monitor_context_policy import MonitorContextPolicy
 
         role = self.role.value
 
@@ -103,9 +100,7 @@ class MonitorInfo:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.model_token_budget import ModelTokenBudget
-        from ..models.monitor_context_policy import (
-            MonitorContextPolicy,
-        )
+        from ..models.monitor_context_policy import MonitorContextPolicy
 
         d = dict(src_dict)
         role = MonitorInfoRole(d.pop("role"))

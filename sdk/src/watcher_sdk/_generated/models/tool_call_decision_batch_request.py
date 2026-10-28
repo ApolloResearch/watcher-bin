@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.tool_call_decision_payload import ToolCallDecisionPayload
@@ -53,9 +52,7 @@ class ToolCallDecisionBatchRequest:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.tool_call_decision_payload import (
-            ToolCallDecisionPayload,
-        )
+        from ..models.tool_call_decision_payload import ToolCallDecisionPayload
 
         d = dict(src_dict)
         session_id = UUID(d.pop("session_id"))

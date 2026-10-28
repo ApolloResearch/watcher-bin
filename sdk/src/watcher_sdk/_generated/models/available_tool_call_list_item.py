@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from typing import (
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
@@ -12,7 +13,6 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..models.applied_decision import AppliedDecision
 from ..models.available_tool_call_list_item_coverage_state import (

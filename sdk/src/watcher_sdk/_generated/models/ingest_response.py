@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -111,9 +110,7 @@ class IngestResponse:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.hook_append_anchor import HookAppendAnchor
-        from ..models.resolved_ingest_tool_call import (
-            ResolvedIngestToolCall,
-        )
+        from ..models.resolved_ingest_tool_call import ResolvedIngestToolCall
 
         d = dict(src_dict)
         session_id = d.pop("session_id")

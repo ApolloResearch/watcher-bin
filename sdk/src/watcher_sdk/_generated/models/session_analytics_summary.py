@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -71,9 +70,7 @@ class SessionAnalyticsSummary:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.session_capture_counts import (
-            SessionCaptureCounts,
-        )
+        from ..models.session_capture_counts import SessionCaptureCounts
 
         total_sessions = self.total_sessions
 
@@ -148,9 +145,7 @@ class SessionAnalyticsSummary:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.session_capture_counts import (
-            SessionCaptureCounts,
-        )
+        from ..models.session_capture_counts import SessionCaptureCounts
 
         d = dict(src_dict)
         total_sessions = d.pop("total_sessions")

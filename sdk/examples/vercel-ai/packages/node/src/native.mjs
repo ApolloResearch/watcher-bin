@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Native Vercel AI SDK lifecycle, including tool execution and response.messages.
+// Native Vercel AI SDK lifecycle, including tool execution and responseMessages.
 import { generateText, jsonSchema, stepCountIs, tool } from "ai";
 
 let turn = 0;
 const model = {
-  specificationVersion: "v2",
+  specificationVersion: "v3",
   provider: "deterministic",
   modelId: "fixture",
   supportedUrls: {},
@@ -15,8 +15,11 @@ const model = {
         { type: "tool-call", toolCallId: "double-2", toolName: "double", input: '{"value":2}' },
         { type: "tool-call", toolCallId: "double-3", toolName: "double", input: '{"value":3}' },
       ] : [{ type: "text", text: "4 and 6" }],
-      finishReason: turn === 1 ? "tool-calls" : "stop",
-      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      finishReason: { unified: turn === 1 ? "tool-calls" : "stop", raw: undefined },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 1, text: 1, reasoning: 0 },
+      },
       warnings: [],
     };
   },
@@ -36,4 +39,4 @@ const result = await generateText({
     }),
   },
 });
-process.stdout.write(JSON.stringify([{ role: "user", content: prompt }, ...result.response.messages]));
+process.stdout.write(JSON.stringify([{ role: "user", content: prompt }, ...result.responseMessages]));

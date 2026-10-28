@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..models.tool_call_grade_kind import ToolCallGradeKind
 from ..types import UNSET, Unset
@@ -107,9 +106,7 @@ class ToolCallGradeDetail:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.tool_call_grade_detail_grades import (
-            ToolCallGradeDetailGrades,
-        )
+        from ..models.tool_call_grade_detail_grades import ToolCallGradeDetailGrades
         from ..models.tool_call_grade_detail_input_messages_item import (
             ToolCallGradeDetailInputMessagesItem,
         )

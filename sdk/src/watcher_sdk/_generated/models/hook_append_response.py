@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.hook_append_anchor import HookAppendAnchor
@@ -74,9 +73,7 @@ class HookAppendResponse:
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.hook_append_anchor import HookAppendAnchor
         from ..models.hook_call_error import HookCallError
-        from ..models.pre_tool_use_hook_response import (
-            PreToolUseHookResponse,
-        )
+        from ..models.pre_tool_use_hook_response import PreToolUseHookResponse
 
         d = dict(src_dict)
         append_after = HookAppendAnchor.from_dict(d.pop("append_after"))

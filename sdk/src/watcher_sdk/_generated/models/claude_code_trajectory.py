@@ -6,13 +6,13 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -66,9 +66,7 @@ class ClaudeCodeTrajectory:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.claude_code_agent_identity import (
-            ClaudeCodeAgentIdentity,
-        )
+        from ..models.claude_code_agent_identity import ClaudeCodeAgentIdentity
         from ..models.claude_code_trajectory_metadata_type_0 import (
             ClaudeCodeTrajectoryMetadataType0,
         )
@@ -133,16 +131,12 @@ class ClaudeCodeTrajectory:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.claude_code_agent_identity import (
-            ClaudeCodeAgentIdentity,
-        )
+        from ..models.claude_code_agent_identity import ClaudeCodeAgentIdentity
         from ..models.claude_code_entry import ClaudeCodeEntry
         from ..models.claude_code_trajectory_metadata_type_0 import (
             ClaudeCodeTrajectoryMetadataType0,
         )
-        from ..models.ingest_tool_call_reference import (
-            IngestToolCallReference,
-        )
+        from ..models.ingest_tool_call_reference import IngestToolCallReference
 
         d = dict(src_dict)
         timestamp = datetime.datetime.fromisoformat(d.pop("timestamp"))

@@ -5,12 +5,12 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
 
 from attrs import define as _attrs_define
-from typing_extensions import Self
 
 from ..models.claude_code_hook_request_mode import ClaudeCodeHookRequestMode
 from ..types import UNSET, Unset
@@ -212,9 +212,7 @@ class ClaudeCodeHookRequest:
         from ..models.claude_code_hook_request_settings_overrides_type_1 import (
             ClaudeCodeHookRequestSettingsOverridesType1,
         )
-        from ..models.claude_code_trajectory import (
-            ClaudeCodeTrajectory,
-        )
+        from ..models.claude_code_trajectory import ClaudeCodeTrajectory
         from ..models.hook_append_anchor import HookAppendAnchor
         from ..models.monitoring_input import MonitoringInput
 

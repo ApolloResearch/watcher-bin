@@ -53,8 +53,9 @@ integrations. They are included in the SDK source export. Keep the examples
 beside the SDK source when
 extracting the archive; their Python packages use the adjacent SDK.
 Each example includes setup instructions, source, tests and the limits of its
-tool blocking and test coverage. The [integration guide](https://watcher-docs.apolloresearch.ai/integrations/)
-compares the available connections.
+tool blocking and test coverage. The [integration examples guide](https://watcher-docs.apolloresearch.ai/sdk/examples/)
+compares the examples, and the [SDK overview](https://watcher-docs.apolloresearch.ai/sdk/)
+explains when to use the SDK instead of the Watcher client.
 
 The [SDK reference](https://watcher-docs.apolloresearch.ai/api/python-sdk/) covers
 authentication, ingestion, grading, sessions, error handling and pagination.

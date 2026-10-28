@@ -4,13 +4,13 @@ from collections.abc import Mapping
 from typing import (
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..models.content_video_format import ContentVideoFormat
 from ..types import UNSET, Unset

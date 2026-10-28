@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 from attrs import define as _attrs_define
-from typing_extensions import Self
 
 from ..models.tool_call_search_params_sort_by import ToolCallSearchParamsSortBy
 from ..models.tool_call_search_params_sort_order import ToolCallSearchParamsSortOrder
@@ -75,9 +74,7 @@ class ToolCallSearchParams:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.tool_call_search_filters import (
-            ToolCallSearchFilters,
-        )
+        from ..models.tool_call_search_filters import ToolCallSearchFilters
 
         d = dict(src_dict)
         limit = d.pop("limit", UNSET)

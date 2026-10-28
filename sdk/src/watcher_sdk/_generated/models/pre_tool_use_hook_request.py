@@ -5,12 +5,12 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
 
 from attrs import define as _attrs_define
-from typing_extensions import Self
 
 from ..models.pre_tool_use_hook_request_mode import PreToolUseHookRequestMode
 from ..types import UNSET, Unset
@@ -149,9 +149,7 @@ class PreToolUseHookRequest:
     ) = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.chat_message_assistant import (
-            ChatMessageAssistant,
-        )
+        from ..models.chat_message_assistant import ChatMessageAssistant
         from ..models.chat_message_system import ChatMessageSystem
         from ..models.chat_message_user import ChatMessageUser
         from ..models.hook_append_anchor import HookAppendAnchor
@@ -282,9 +280,7 @@ class PreToolUseHookRequest:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.chat_message_assistant import (
-            ChatMessageAssistant,
-        )
+        from ..models.chat_message_assistant import ChatMessageAssistant
         from ..models.chat_message_system import ChatMessageSystem
         from ..models.chat_message_tool import ChatMessageTool
         from ..models.chat_message_user import ChatMessageUser

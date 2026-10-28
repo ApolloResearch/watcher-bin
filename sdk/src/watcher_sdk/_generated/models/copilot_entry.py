@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -38,9 +37,7 @@ class CopilotEntry:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.copilot_entry_data_type_0 import (
-            CopilotEntryDataType0,
-        )
+        from ..models.copilot_entry_data_type_0 import CopilotEntryDataType0
 
         type_ = self.type_
 
@@ -98,9 +95,7 @@ class CopilotEntry:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.copilot_entry_data_type_0 import (
-            CopilotEntryDataType0,
-        )
+        from ..models.copilot_entry_data_type_0 import CopilotEntryDataType0
 
         d = dict(src_dict)
         type_ = d.pop("type")

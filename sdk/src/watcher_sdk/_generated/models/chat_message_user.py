@@ -5,13 +5,13 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..models.chat_message_user_source_type_0 import ChatMessageUserSourceType0
 from ..types import UNSET, Unset

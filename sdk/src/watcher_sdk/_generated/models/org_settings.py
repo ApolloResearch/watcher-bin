@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..models.org_settings_settings_distribution import OrgSettingsSettingsDistribution
 from ..models.org_settings_slack_alert_detail import OrgSettingsSlackAlertDetail
@@ -80,9 +79,7 @@ class OrgSettings:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.managed_settings_source import (
-            ManagedSettingsSource,
-        )
+        from ..models.managed_settings_source import ManagedSettingsSource
 
         organization_id = self.organization_id
 
@@ -185,9 +182,7 @@ class OrgSettings:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.managed_settings_source import (
-            ManagedSettingsSource,
-        )
+        from ..models.managed_settings_source import ManagedSettingsSource
 
         d = dict(src_dict)
         organization_id = d.pop("organization_id")

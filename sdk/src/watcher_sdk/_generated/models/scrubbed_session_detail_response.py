@@ -6,6 +6,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
@@ -13,7 +14,6 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..models.scrubbed_session_detail_response_ingest_kinds_item import (
     ScrubbedSessionDetailResponseIngestKindsItem,
@@ -53,6 +53,7 @@ class ScrubbedSessionDetailResponse:
         created_at (datetime.datetime):
         retained_grades (list[GradeResult]):
         is_subagent (bool | Unset): Whether this session has a recorded parent relationship. Default: False.
+        has_subagents (bool | Unset): Whether this caller can read at least one direct child session. Default: False.
         parent_session (None | RelatedSessionSummary | Unset): Immediate parent, omitted when unknown or inaccessible to
             this caller.
         user_id (None | Unset | UUID):
@@ -83,6 +84,7 @@ class ScrubbedSessionDetailResponse:
     created_at: datetime.datetime
     retained_grades: list[GradeResult]
     is_subagent: bool | Unset = False
+    has_subagents: bool | Unset = False
     parent_session: None | RelatedSessionSummary | Unset = UNSET
     user_id: None | Unset | UUID = UNSET
     user_first_name: None | str | Unset = UNSET
@@ -130,6 +132,8 @@ class ScrubbedSessionDetailResponse:
             retained_grades.append(retained_grades_item)
 
         is_subagent = self.is_subagent
+
+        has_subagents = self.has_subagents
 
         parent_session: dict[str, Any] | None | Unset
         if isinstance(self.parent_session, Unset):
@@ -231,6 +235,8 @@ class ScrubbedSessionDetailResponse:
         )
         if is_subagent is not UNSET:
             field_dict["is_subagent"] = is_subagent
+        if has_subagents is not UNSET:
+            field_dict["has_subagents"] = has_subagents
         if parent_session is not UNSET:
             field_dict["parent_session"] = parent_session
         if user_id is not UNSET:
@@ -265,9 +271,7 @@ class ScrubbedSessionDetailResponse:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.grade_result import GradeResult
-        from ..models.related_session_summary import (
-            RelatedSessionSummary,
-        )
+        from ..models.related_session_summary import RelatedSessionSummary
         from ..models.scrubbed_session_detail_response_external_ids_type_0 import (
             ScrubbedSessionDetailResponseExternalIdsType0,
         )
@@ -301,6 +305,8 @@ class ScrubbedSessionDetailResponse:
             retained_grades.append(retained_grades_item)
 
         is_subagent = d.pop("is_subagent", UNSET)
+
+        has_subagents = d.pop("has_subagents", UNSET)
 
         def _parse_parent_session(data: object) -> None | RelatedSessionSummary | Unset:
             if data is None:
@@ -459,6 +465,7 @@ class ScrubbedSessionDetailResponse:
             created_at=created_at,
             retained_grades=retained_grades,
             is_subagent=is_subagent,
+            has_subagents=has_subagents,
             parent_session=parent_session,
             user_id=user_id,
             user_first_name=user_first_name,

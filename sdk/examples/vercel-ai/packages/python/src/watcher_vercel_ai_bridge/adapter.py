@@ -37,7 +37,7 @@ def validate(messages):
 
 
 def messages_for_watcher(messages):
-    """Convert JSON from native generateText(...).response.messages.
+    """Convert JSON from native generateText(...).responseMessages.
 
     The Node/Python boundary carries Vercel's own message format. It introduces
     no alternate transcript schema and makes no direct Watcher HTTP request.

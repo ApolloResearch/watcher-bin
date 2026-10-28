@@ -5,12 +5,12 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
 
 from attrs import define as _attrs_define
-from typing_extensions import Self
 
 from ..models.copilot_hook_request_mode import CopilotHookRequestMode
 from ..types import UNSET, Unset

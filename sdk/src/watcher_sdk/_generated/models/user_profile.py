@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -116,9 +115,7 @@ class UserProfile:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.user_profile_memberships_item import (
-            UserProfileMembershipsItem,
-        )
+        from ..models.user_profile_memberships_item import UserProfileMembershipsItem
 
         d = dict(src_dict)
         user_id = d.pop("user_id")

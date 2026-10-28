@@ -6,13 +6,13 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -109,9 +109,7 @@ class CodexTrajectory:
         from ..models.codex_trajectory_metadata_type_0 import (
             CodexTrajectoryMetadataType0,
         )
-        from ..models.ingest_tool_call_reference import (
-            IngestToolCallReference,
-        )
+        from ..models.ingest_tool_call_reference import IngestToolCallReference
 
         d = dict(src_dict)
         timestamp = datetime.datetime.fromisoformat(d.pop("timestamp"))

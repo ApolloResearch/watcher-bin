@@ -7,7 +7,7 @@ setting. This is an experimental example, not an officially supported integratio
 
 ## Install and configure
 
-Use Python 3.12 or later, `uv` and Node 24.11.1. The Node package pins AI SDK 5.0.99;
+Use Python 3.12 or later, `uv` and Node 24.11.1. The Node package pins AI SDK 7.0.137;
 each component has a manifest and lockfile under `packages/`. From this directory:
 
 ```sh

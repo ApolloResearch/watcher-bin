@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -34,9 +33,7 @@ class TokenResponse:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.token_response_user_type_0 import (
-            TokenResponseUserType0,
-        )
+        from ..models.token_response_user_type_0 import TokenResponseUserType0
 
         access_token = self.access_token
 
@@ -62,9 +59,7 @@ class TokenResponse:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.token_response_user_type_0 import (
-            TokenResponseUserType0,
-        )
+        from ..models.token_response_user_type_0 import TokenResponseUserType0
 
         d = dict(src_dict)
         access_token = d.pop("access_token")

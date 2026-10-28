@@ -5,12 +5,12 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    Self,
     TypeVar,
     cast,
 )
 
 from attrs import define as _attrs_define
-from typing_extensions import Self
 
 from ..models.codex_hook_request_mode import CodexHookRequestMode
 from ..types import UNSET, Unset

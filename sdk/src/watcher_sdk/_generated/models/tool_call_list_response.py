@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.available_tool_call_list_item import AvailableToolCallListItem
@@ -33,9 +32,7 @@ class ToolCallListResponse:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.available_tool_call_list_item import (
-            AvailableToolCallListItem,
-        )
+        from ..models.available_tool_call_list_item import AvailableToolCallListItem
 
         tool_calls = []
         for tool_calls_item_data in self.tool_calls:
@@ -68,12 +65,8 @@ class ToolCallListResponse:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.available_tool_call_list_item import (
-            AvailableToolCallListItem,
-        )
-        from ..models.scrubbed_tool_call_list_item import (
-            ScrubbedToolCallListItem,
-        )
+        from ..models.available_tool_call_list_item import AvailableToolCallListItem
+        from ..models.scrubbed_tool_call_list_item import ScrubbedToolCallListItem
 
         d = dict(src_dict)
         tool_calls = []

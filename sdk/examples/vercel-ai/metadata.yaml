@@ -7,7 +7,7 @@ summary: Native generateText tool callbacks await configured Watcher policy thro
 category: agent-framework
 upstream_url: https://github.com/vercel/ai
 support_status: experimental
-updated_at: '2026-09-25'
+updated_at: '2026-10-26'
 capabilities:
   observe:
     implemented: true
@@ -103,7 +103,7 @@ limitations:
   cause: integration-scope
   kind: constraint
   description: The Node adapter requires the separately installed Python bridge, which
-    converts native response.messages JSON before calling the public SDK.
+    converts native responseMessages JSON before calling the public SDK.
 - id: asynchronous-recording
   mode: both
   cause: watcher

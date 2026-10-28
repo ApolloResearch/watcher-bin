@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..models.session_summary_deep_review_status import SessionSummaryDeepReviewStatus
 from ..models.session_summary_ingest_kinds_item import SessionSummaryIngestKindsItem
@@ -281,15 +280,11 @@ class SessionSummary:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.grade_result import GradeResult
-        from ..models.session_permission_decisions import (
-            SessionPermissionDecisions,
-        )
+        from ..models.session_permission_decisions import SessionPermissionDecisions
         from ..models.session_summary_external_ids_type_0 import (
             SessionSummaryExternalIdsType0,
         )
-        from ..models.session_summary_metadata_type_0 import (
-            SessionSummaryMetadataType0,
-        )
+        from ..models.session_summary_metadata_type_0 import SessionSummaryMetadataType0
 
         d = dict(src_dict)
         session_id = d.pop("session_id")

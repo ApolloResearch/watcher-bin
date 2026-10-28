@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Self, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.aperture_log import ApertureLog
@@ -67,9 +66,7 @@ class IngestRequest:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.aperture_log import ApertureLog
-        from ..models.claude_code_trajectory import (
-            ClaudeCodeTrajectory,
-        )
+        from ..models.claude_code_trajectory import ClaudeCodeTrajectory
         from ..models.codex_trajectory import CodexTrajectory
         from ..models.copilot_trajectory import CopilotTrajectory
 

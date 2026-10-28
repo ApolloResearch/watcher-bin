@@ -3525,6 +3525,12 @@
             "description": "Whether this session has a recorded parent relationship.",
             "default": false
           },
+          "has_subagents": {
+            "type": "boolean",
+            "title": "Has Subagents",
+            "description": "Whether this caller can read at least one direct child session.",
+            "default": false
+          },
           "parent_session": {
             "anyOf": [
               {
@@ -9936,6 +9942,12 @@
             "type": "boolean",
             "title": "Is Subagent",
             "description": "Whether this session has a recorded parent relationship.",
+            "default": false
+          },
+          "has_subagents": {
+            "type": "boolean",
+            "title": "Has Subagents",
+            "description": "Whether this caller can read at least one direct child session.",
             "default": false
           },
           "parent_session": {

@@ -27,12 +27,14 @@ test in your own environment. They are separate from the
 The table summarizes the tests recorded in each example's metadata. Dates
 identify those runs; they do not establish compatibility with changes made since
 the test. Read the example's README for the tested environment, covered paths
-and remaining limits.
+and remaining limits. **Last tested** shows Not recorded when no test run is
+recorded.
 
 | Label | Meaning |
 | --- | --- |
-| Static Tests | Adapter tests with simulated Watcher responses; some also exercise installed upstream software. |
+| Static tests | Adapter tests with simulated Watcher responses; some also exercise installed upstream software. |
 | End-to-end testing | The integration path was tested against the Watcher API and database, locally or deployed. Model output or hosted services may use fixtures; see the example's README. |
+| Not verified | The example provides this feature, but no passing test is recorded for it. Read its README before relying on it. |
 | Not available | The example does not provide this feature. |
 
 Read the example's limits before enabling tool blocking. A test result does not
@@ -47,94 +49,94 @@ and the steps needed to verify your destination.
 
 ### Coding agents
 
-| Integration | Observe | Block tools | Last tested | Support |
-| --- | --- | --- | --- | --- |
-| [Aider](aider/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Amp](amp/README.md) | Static Tests | Not available | 2026-09-26 | Example |
-| [Cline](cline/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Continue CLI](continue/README.md) | Static Tests | Not available | 2026-09-26 | Example |
-| [Cursor](cursor/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Gemini CLI](gemini-cli/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Goose](goose/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Hermes Agent](hermes/README.md) | See README | See README | Not recorded | Example |
-| [Kilo Code](kilocode/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Mistral Vibe](mistral-vibe/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [OpenCode](opencode/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [OpenHands](openhands/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Pi](pi/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Qwen Code](qwen-code/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Roo Code](roo-code/README.md) | Static Tests | Not available | 2026-09-26 | Example |
-| [Windsurf](windsurf/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
+| Integration | Observe | Block tools | Last tested |
+| --- | --- | --- | --- |
+| [Aider](aider/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Amp](amp/README.md) | Static tests | Not available | 2026-09-26 |
+| [Cline](cline/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Continue CLI](continue/README.md) | Static tests | Not available | 2026-09-26 |
+| [Cursor](cursor/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Gemini CLI](gemini-cli/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Goose](goose/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Hermes Agent](hermes/README.md) | Not verified | Not verified | Not recorded |
+| [Kilo Code](kilocode/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Mistral Vibe](mistral-vibe/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [OpenCode](opencode/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [OpenHands](openhands/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Pi](pi/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Qwen Code](qwen-code/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Roo Code](roo-code/README.md) | Static tests | Not available | 2026-09-26 |
+| [Windsurf](windsurf/README.md) | Static tests | Static tests | 2026-09-26 |
 
 ### General-purpose agents
 
-| Integration | Observe | Block tools | Last tested | Support |
-| --- | --- | --- | --- | --- |
-| [OpenClaw](openclaw/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
+| Integration | Observe | Block tools | Last tested |
+| --- | --- | --- | --- |
+| [OpenClaw](openclaw/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
 
 ### Agent frameworks
 
-| Integration | Observe | Block tools | Last tested | Support |
-| --- | --- | --- | --- | --- |
-| [Agno](agno/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [AutoGen](autogen/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [CAMEL](camel/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [CrewAI](crewai/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [DSPy](dspy/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Google ADK](google-adk/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Haystack](haystack/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [LangChain](langchain/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [LangChain4j](langchain4j/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [LangGraph](langgraph/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [LlamaIndex](llamaindex/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Mastra](mastra/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [OpenAI Agents](openai-agents/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Pydantic AI](pydantic-ai/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Semantic Kernel](semantic-kernel/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [smolagents](smolagents/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Strands Agents](strands/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Vercel AI SDK](vercel-ai/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
+| Integration | Observe | Block tools | Last tested |
+| --- | --- | --- | --- |
+| [Agno](agno/README.md) | Static tests | Static tests | 2026-09-26 |
+| [AutoGen](autogen/README.md) | Static tests | Static tests | 2026-09-26 |
+| [CAMEL](camel/README.md) | Static tests | Static tests | 2026-09-26 |
+| [CrewAI](crewai/README.md) | Static tests | Static tests | 2026-09-26 |
+| [DSPy](dspy/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Google ADK](google-adk/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Haystack](haystack/README.md) | Static tests | Static tests | 2026-09-26 |
+| [LangChain](langchain/README.md) | Static tests | Static tests | 2026-09-26 |
+| [LangChain4j](langchain4j/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [LangGraph](langgraph/README.md) | Static tests | Static tests | 2026-09-26 |
+| [LlamaIndex](llamaindex/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Mastra](mastra/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [OpenAI Agents](openai-agents/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Pydantic AI](pydantic-ai/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Semantic Kernel](semantic-kernel/README.md) | Static tests | Static tests | 2026-09-26 |
+| [smolagents](smolagents/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Strands Agents](strands/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Vercel AI SDK](vercel-ai/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
 
 ### Gateways
 
-| Integration | Observe | Block tools | Last tested | Support |
-| --- | --- | --- | --- | --- |
-| [Agent Router](agent-router/README.md) | End-to-end testing | End-to-end testing | 2026-10-06 | Example |
-| [Bifrost](bifrost/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Cloudflare AI Gateway](cloudflare-ai/README.md) | Static Tests | Not available | 2026-09-26 | Example |
-| [Helicone](helicone/README.md) | End-to-end testing | Not available | 2026-09-26 | Example |
-| [Kong AI Proxy](kong-ai/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [LiteLLM proxy](litellm/README.md) | End-to-end testing | End-to-end testing | 2026-10-01 | Example |
-| [OpenRouter](openrouter/README.md) | Static Tests | Not available | 2026-09-26 | Example |
-| [Portkey](portkey/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
+| Integration | Observe | Block tools | Last tested |
+| --- | --- | --- | --- |
+| [Agent Router](agent-router/README.md) | End-to-end testing | End-to-end testing | 2026-10-06 |
+| [Bifrost](bifrost/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Cloudflare AI Gateway](cloudflare-ai/README.md) | Static tests | Not available | 2026-09-26 |
+| [Helicone](helicone/README.md) | End-to-end testing | Not available | 2026-09-26 |
+| [Kong AI Proxy](kong-ai/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [LiteLLM proxy](litellm/README.md) | End-to-end testing | End-to-end testing | 2026-10-01 |
+| [OpenRouter](openrouter/README.md) | Static tests | Not available | 2026-09-26 |
+| [Portkey](portkey/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
 
 ### Model libraries
 
-| Integration | Observe | Block tools | Last tested | Support |
-| --- | --- | --- | --- | --- |
-| [Anthropic Messages](anthropic/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Cohere V2](cohere/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 | Example |
-| [Google Gen AI](google-genai/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Groq](groq/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Hugging Face Inference](huggingface-inference/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Mistral AI](mistralai/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [Ollama](ollama/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
-| [OpenAI Responses and Chat Completions](openai/README.md) | Static Tests | Static Tests | 2026-09-26 | Example |
+| Integration | Observe | Block tools | Last tested |
+| --- | --- | --- | --- |
+| [Anthropic Messages](anthropic/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Cohere V2](cohere/README.md) | End-to-end testing | End-to-end testing | 2026-09-26 |
+| [Google Gen AI](google-genai/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Groq](groq/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Hugging Face Inference](huggingface-inference/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Mistral AI](mistralai/README.md) | Static tests | Static tests | 2026-09-26 |
+| [Ollama](ollama/README.md) | Static tests | Static tests | 2026-09-26 |
+| [OpenAI Responses and Chat Completions](openai/README.md) | Static tests | Static tests | 2026-09-26 |
 
 ### Compliance APIs
 
-| Integration | Observe | Block tools | Last tested | Support |
-| --- | --- | --- | --- | --- |
-| [Claude Compliance API](claude-compliance/README.md) | Static Tests | Not available | 2026-09-26 | Example |
+| Integration | Observe | Block tools | Last tested |
+| --- | --- | --- | --- |
+| [Claude Compliance API](claude-compliance/README.md) | Static tests | Not available | 2026-09-26 |
 
 ### Observability and SIEM
 
-| Integration | Export | Last tested | Support |
-| --- | --- | --- | --- |
-| [Google Security Operations](google-security-operations/README.md) | Static Tests | 2026-09-26 | Example |
-| [Microsoft Sentinel](microsoft-sentinel/README.md) | Static Tests | 2026-09-26 | Example |
-| [OpenTelemetry](opentelemetry/README.md) | Static Tests | 2026-09-26 | Example |
-| [Splunk](splunk/README.md) | Static Tests | 2026-09-26 | Example |
+| Integration | Export | Last tested |
+| --- | --- | --- |
+| [Google Security Operations](google-security-operations/README.md) | Static tests | 2026-09-26 |
+| [Microsoft Sentinel](microsoft-sentinel/README.md) | Static tests | 2026-09-26 |
+| [OpenTelemetry](opentelemetry/README.md) | Static tests | 2026-09-26 |
+| [Splunk](splunk/README.md) | Static tests | 2026-09-26 |
 
 <!-- END INTEGRATIONS -->
 

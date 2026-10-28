@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -71,9 +70,7 @@ class ClaudeCodeEntry:
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.claude_api_message import ClaudeAPIMessage
-        from ..models.claude_code_attachment import (
-            ClaudeCodeAttachment,
-        )
+        from ..models.claude_code_attachment import ClaudeCodeAttachment
         from ..models.tool_use_result import ToolUseResult
 
         type_ = self.type_
@@ -230,9 +227,7 @@ class ClaudeCodeEntry:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.claude_api_message import ClaudeAPIMessage
-        from ..models.claude_code_attachment import (
-            ClaudeCodeAttachment,
-        )
+        from ..models.claude_code_attachment import ClaudeCodeAttachment
         from ..models.tool_use_result import ToolUseResult
 
         d = dict(src_dict)

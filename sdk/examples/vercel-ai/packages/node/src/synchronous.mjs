@@ -48,7 +48,7 @@ export function capturePendingModel(model) {
 }
 let turn = 0;
 const captured = capturePendingModel({
-  specificationVersion: "v2", provider: "deterministic", modelId: "fixture", supportedUrls: {},
+  specificationVersion: "v3", provider: "deterministic", modelId: "fixture", supportedUrls: {},
   doGenerate: async () => {
     turn += 1;
     return {
@@ -56,7 +56,12 @@ const captured = capturePendingModel({
         { type: "tool-call", toolCallId: "double-2", toolName: "double", input: '{"value":2}' },
         { type: "tool-call", toolCallId: "double-3", toolName: "double", input: '{"value":3}' },
       ] : [{ type: "text", text: "4 and 6" }],
-      finishReason: turn === 1 ? "tool-calls" : "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, warnings: [],
+      finishReason: { unified: turn === 1 ? "tool-calls" : "stop", raw: undefined },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 1, text: 1, reasoning: 0 },
+      },
+      warnings: [],
     };
   },
 });
@@ -73,7 +78,7 @@ try {
     }),
   } });
   process.stdout.write(JSON.stringify({ id: "complete", type: "complete",
-    messages: [{ role: "user", content: prompt }, ...result.response.messages] }) + "\n");
+    messages: [{ role: "user", content: prompt }, ...result.responseMessages] }) + "\n");
 } finally {
   input.close();
 }

@@ -499,7 +499,7 @@ dev = [
 
 [[package]]
 name = "watcher-sdk"
-version = "0.46.0"
+version = "0.46.1"
 source = { directory = "../../" }
 dependencies = [
     { name = "anyio" },

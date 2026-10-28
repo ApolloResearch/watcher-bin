@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-from typing_extensions import Self
 
 from ..types import UNSET, Unset
 
@@ -138,9 +137,7 @@ class ContentBlock:
         from ..models.content_block_content_type_1_item import (
             ContentBlockContentType1Item,
         )
-        from ..models.content_block_input_type_0 import (
-            ContentBlockInputType0,
-        )
+        from ..models.content_block_input_type_0 import ContentBlockInputType0
 
         d = dict(src_dict)
         type_ = d.pop("type")

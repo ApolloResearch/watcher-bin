@@ -19,6 +19,7 @@ from ..types import UNSET, Unset
 if TYPE_CHECKING:
     from ..models.codex_entry import CodexEntry
     from ..models.codex_trajectory_metadata_type_0 import CodexTrajectoryMetadataType0
+    from ..models.hook_append_anchor import HookAppendAnchor
     from ..models.ingest_tool_call_reference import IngestToolCallReference
 
 
@@ -39,6 +40,8 @@ class CodexTrajectory:
             entries (list[CodexEntry]):
             session_id (None | str | Unset):
             metadata (CodexTrajectoryMetadataType0 | None | Unset):
+            append_after (HookAppendAnchor | None | Unset):
+            fork (bool | Unset):  Default: False.
             resolve_tool_calls (list[IngestToolCallReference] | Unset):
     """
 
@@ -47,6 +50,8 @@ class CodexTrajectory:
     entries: list[CodexEntry]
     session_id: None | str | Unset = UNSET
     metadata: CodexTrajectoryMetadataType0 | None | Unset = UNSET
+    append_after: HookAppendAnchor | None | Unset = UNSET
+    fork: bool | Unset = False
     resolve_tool_calls: list[IngestToolCallReference] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -54,6 +59,7 @@ class CodexTrajectory:
         from ..models.codex_trajectory_metadata_type_0 import (
             CodexTrajectoryMetadataType0,
         )
+        from ..models.hook_append_anchor import HookAppendAnchor
 
         timestamp = self.timestamp.isoformat()
 
@@ -78,6 +84,16 @@ class CodexTrajectory:
         else:
             metadata = self.metadata
 
+        append_after: dict[str, Any] | None | Unset
+        if isinstance(self.append_after, Unset):
+            append_after = UNSET
+        elif isinstance(self.append_after, HookAppendAnchor):
+            append_after = self.append_after.to_dict()
+        else:
+            append_after = self.append_after
+
+        fork = self.fork
+
         resolve_tool_calls: list[dict[str, Any]] | Unset = UNSET
         if not isinstance(self.resolve_tool_calls, Unset):
             resolve_tool_calls = []
@@ -98,6 +114,10 @@ class CodexTrajectory:
             field_dict["session_id"] = session_id
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
+        if append_after is not UNSET:
+            field_dict["append_after"] = append_after
+        if fork is not UNSET:
+            field_dict["fork"] = fork
         if resolve_tool_calls is not UNSET:
             field_dict["resolve_tool_calls"] = resolve_tool_calls
 
@@ -109,6 +129,7 @@ class CodexTrajectory:
         from ..models.codex_trajectory_metadata_type_0 import (
             CodexTrajectoryMetadataType0,
         )
+        from ..models.hook_append_anchor import HookAppendAnchor
         from ..models.ingest_tool_call_reference import IngestToolCallReference
 
         d = dict(src_dict)
@@ -153,6 +174,25 @@ class CodexTrajectory:
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
 
+        def _parse_append_after(data: object) -> HookAppendAnchor | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                append_after_type_0 = HookAppendAnchor.from_dict(data)
+
+                return append_after_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(HookAppendAnchor | None | Unset, data)
+
+        append_after = _parse_append_after(d.pop("append_after", UNSET))
+
+        fork = d.pop("fork", UNSET)
+
         _resolve_tool_calls = d.pop("resolve_tool_calls", UNSET)
         resolve_tool_calls: list[IngestToolCallReference] | Unset = UNSET
         if _resolve_tool_calls is not UNSET:
@@ -170,6 +210,8 @@ class CodexTrajectory:
             entries=entries,
             session_id=session_id,
             metadata=metadata,
+            append_after=append_after,
+            fork=fork,
             resolve_tool_calls=resolve_tool_calls,
         )
 

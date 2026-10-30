@@ -8,6 +8,17 @@ Broadcast runs after a request completes. This example ingests transcripts and
 cannot withhold model responses or enforce tool permissions. It is an example,
 not an officially supported OpenRouter integration.
 
+OpenRouter documents no webhook that runs before a response is delivered; its
+Armor plugin blocks tool calls with OpenRouter's own classifier and rules, not
+with Watcher's decisions. To enforce Watcher's decisions, put one of the
+enforcing gateway examples in front of the clients:
+[LiteLLM](../litellm/README.md), [Agent Router](../agent-router/README.md),
+[Bifrost](../bifrost/README.md), [Kong AI Proxy](../kong-ai/README.md) or
+[Portkey](../portkey/README.md). In enforce mode, these examples check supported
+client-executed tool calls before delivering them and withhold calls Watcher
+refuses; buffering and supported APIs vary by example. Using OpenRouter as such
+a gateway's OpenAI-compatible upstream is not tested in these examples.
+
 ## Install the receiver
 
 Use Python 3.12 or newer and `uv`:

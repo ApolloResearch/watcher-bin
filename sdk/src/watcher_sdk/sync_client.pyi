@@ -6,6 +6,7 @@ solely for static analysis tools.
 """
 
 from collections.abc import Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import Any, Self, overload
 from uuid import UUID
@@ -82,7 +83,7 @@ from watcher_sdk.client import (
 class WatcherClient:
     _async_client: AsyncWatcherClient
     _portal: anyio.from_thread.BlockingPortal | None
-    _portal_cm: object | None
+    _portal_cm: AbstractContextManager[anyio.from_thread.BlockingPortal] | None
 
     def __init__(
         self,
@@ -116,6 +117,7 @@ class WatcherClient:
     def auth_device_authorize(self) -> DeviceAuthorizationResponse: ...
     def auth_device_token(self, device_code: str) -> DeviceTokenResponse: ...
     def check_permissions(self, permissions: list[str] | tuple[str, ...]) -> PermissionCheckResponse: ...
+    def _ingest_incremental(self, body: bytes) -> IngestResponse: ...
     def ingest(
         self, source: str, trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog]
     ) -> IngestResponse: ...

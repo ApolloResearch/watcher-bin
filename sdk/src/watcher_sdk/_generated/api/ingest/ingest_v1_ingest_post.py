@@ -73,6 +73,12 @@ def sync_detailed(
 
      Ingest one or more trajectories. Returns leaf hashes and session ID.
 
+    ``results[i]`` describes ``trajectories[i]``, including empty and duplicate
+    inputs. Each result has a chunk endpoint, live leaf, and storage status.
+    Set ``append_after`` and ``fork`` on the trajectory to continue or branch;
+    either option requires exactly one Claude Code or Codex input. Released
+    aggregate fields retain their batch semantics.
+
     User attribution: signed-in users write their own sessions. Service keys
     carrying ``sessions:write:any`` may honor ``identity.login_name`` for
     proxy-capture (Tailscale Aperture) attribution; keys carrying only
@@ -120,6 +126,12 @@ def sync(
 
      Ingest one or more trajectories. Returns leaf hashes and session ID.
 
+    ``results[i]`` describes ``trajectories[i]``, including empty and duplicate
+    inputs. Each result has a chunk endpoint, live leaf, and storage status.
+    Set ``append_after`` and ``fork`` on the trajectory to continue or branch;
+    either option requires exactly one Claude Code or Codex input. Released
+    aggregate fields retain their batch semantics.
+
     User attribution: signed-in users write their own sessions. Service keys
     carrying ``sessions:write:any`` may honor ``identity.login_name`` for
     proxy-capture (Tailscale Aperture) attribution; keys carrying only
@@ -161,6 +173,12 @@ async def asyncio_detailed(
     """Ingest
 
      Ingest one or more trajectories. Returns leaf hashes and session ID.
+
+    ``results[i]`` describes ``trajectories[i]``, including empty and duplicate
+    inputs. Each result has a chunk endpoint, live leaf, and storage status.
+    Set ``append_after`` and ``fork`` on the trajectory to continue or branch;
+    either option requires exactly one Claude Code or Codex input. Released
+    aggregate fields retain their batch semantics.
 
     User attribution: signed-in users write their own sessions. Service keys
     carrying ``sessions:write:any`` may honor ``identity.login_name`` for
@@ -206,6 +224,12 @@ async def asyncio(
     """Ingest
 
      Ingest one or more trajectories. Returns leaf hashes and session ID.
+
+    ``results[i]`` describes ``trajectories[i]``, including empty and duplicate
+    inputs. Each result has a chunk endpoint, live leaf, and storage status.
+    Set ``append_after`` and ``fork`` on the trajectory to continue or branch;
+    either option requires exactly one Claude Code or Codex input. Released
+    aggregate fields retain their batch semantics.
 
     User attribution: signed-in users write their own sessions. Service keys
     carrying ``sessions:write:any`` may honor ``identity.login_name`` for

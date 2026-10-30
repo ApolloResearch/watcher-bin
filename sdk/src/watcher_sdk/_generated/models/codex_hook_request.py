@@ -49,10 +49,7 @@ class CodexHookRequest:
                 The first session_meta identifies this thread; later metadata can belong to
                 inherited parent context. resolve_tool_calls names response-item IDs and
                 call IDs in this upload, returning their stored message occurrences.
-            append_after (HookAppendAnchor | None | Unset): Append messages after this exact stored session/trajectory
-                anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and
-                cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered
-                results. Retry once with the full transcript and without append_after on 404, 409, or 422.
+            append_after (HookAppendAnchor | None | Unset):
             input_ (list[MonitoringInput] | MonitoringInput | None | Unset):
             mode (CodexHookRequestMode | Unset):  Default: CodexHookRequestMode.FULL.
             external_ids (CodexHookRequestExternalIdsType0 | None | Unset): Distinct conversation IDs from the harness and
@@ -71,6 +68,7 @@ class CodexHookRequest:
             policy_version (None | str | Unset):
             settings_overrides (CodexHookRequestSettingsOverridesType1 | None | str | Unset): Per-request settings as YAML
                 or a JSON object; at most 65,536 characters of YAML or serialized JSON. Administrator permission locks apply.
+            fork (bool | Unset):  Default: False.
     """
 
     format_: Literal["codex-jsonl"]
@@ -87,6 +85,7 @@ class CodexHookRequest:
     settings_overrides: CodexHookRequestSettingsOverridesType1 | None | str | Unset = (
         UNSET
     )
+    fork: bool | Unset = False
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.codex_hook_request_external_ids_type_0 import (
@@ -164,6 +163,8 @@ class CodexHookRequest:
         else:
             settings_overrides = self.settings_overrides
 
+        fork = self.fork
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -192,6 +193,8 @@ class CodexHookRequest:
             field_dict["policy_version"] = policy_version
         if settings_overrides is not UNSET:
             field_dict["settings_overrides"] = settings_overrides
+        if fork is not UNSET:
+            field_dict["fork"] = fork
 
         return field_dict
 
@@ -340,6 +343,8 @@ class CodexHookRequest:
             d.pop("settings_overrides", UNSET)
         )
 
+        fork = d.pop("fork", UNSET)
+
         codex_hook_request = cls(
             format_=format_,
             messages=messages,
@@ -353,6 +358,7 @@ class CodexHookRequest:
             skip_rules=skip_rules,
             policy_version=policy_version,
             settings_overrides=settings_overrides,
+            fork=fork,
         )
 
         return codex_hook_request

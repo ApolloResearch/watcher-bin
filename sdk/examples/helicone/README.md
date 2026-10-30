@@ -10,6 +10,16 @@ response has reached the client. The receiver cannot stop tools, obtain human
 approval, or make a retrospective denial count as enforcement. It submits
 transcripts through the hook endpoint without creating applied tool decisions.
 
+Helicone's gateway documents no plugin or middleware hook that asks an external
+service before a response is delivered. To enforce Watcher's decisions, put one
+of the enforcing gateway examples in front of the clients:
+[LiteLLM](../litellm/README.md), [Agent Router](../agent-router/README.md),
+[Bifrost](../bifrost/README.md), [Kong AI Proxy](../kong-ai/README.md) or
+[Portkey](../portkey/README.md). In enforce mode, these examples check supported
+client-executed tool calls before delivering them and withhold calls Watcher
+refuses; buffering and supported APIs vary by example. Using Helicone as such a
+gateway's OpenAI-compatible upstream is not tested in these examples.
+
 ## Supported data
 
 The receiver accepts completed OpenAI Chat Completions records containing text

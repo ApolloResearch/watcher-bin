@@ -56,14 +56,15 @@ class UploadReason(Enum):
 class TranscriptSnapshot:  # noqa: B903
     """Valid JSONL entries and the cumulative fingerprint after each entry."""
 
-    __slots__ = ("entries", "prefix_hashes")
+    __slots__ = ("entries", "prefix_hashes", "retained_entries")
 
     entries: list[JsonEntry]
     prefix_hashes: list[str]
 
-    def __init__(self, entries: list[JsonEntry], prefix_hashes: list[str]) -> None:
+    def __init__(self, entries: list[JsonEntry], prefix_hashes: list[str], retained_entries: int = 0) -> None:
         self.entries = entries
         self.prefix_hashes = prefix_hashes
+        self.retained_entries = retained_entries
 
 
 class UploadCursor:  # noqa: B903

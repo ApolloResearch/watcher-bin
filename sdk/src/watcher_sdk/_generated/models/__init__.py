@@ -190,6 +190,8 @@ from .human_decision import HumanDecision
 from .ingest_append_request import IngestAppendRequest
 from .ingest_request import IngestRequest
 from .ingest_response import IngestResponse
+from .ingest_result import IngestResult
+from .ingest_result_status import IngestResultStatus
 from .ingest_tool_call_reference import IngestToolCallReference
 from .judged_decision import JudgedDecision
 from .managed_settings_source import ManagedSettingsSource
@@ -556,6 +558,8 @@ __all__ = (
     "IngestAppendRequest",
     "IngestRequest",
     "IngestResponse",
+    "IngestResult",
+    "IngestResultStatus",
     "IngestToolCallReference",
     "JudgedDecision",
     "ManagedSettingsSource",

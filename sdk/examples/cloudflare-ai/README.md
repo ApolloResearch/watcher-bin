@@ -8,6 +8,17 @@ This is post-request transcript ingestion. It cannot hold a gateway response,
 block a tool call or provide synchronous monitoring. It is an example, not an
 officially supported Cloudflare integration.
 
+AI Gateway documents no hook that calls an external service before a response is
+delivered; its Guardrails apply Cloudflare's own moderation categories. To
+enforce Watcher's decisions, put one of the enforcing gateway examples in front
+of the clients: [LiteLLM](../litellm/README.md), [Agent
+Router](../agent-router/README.md), [Bifrost](../bifrost/README.md), [Kong AI
+Proxy](../kong-ai/README.md) or [Portkey](../portkey/README.md). In enforce
+mode, these examples check supported client-executed tool calls before
+delivering them and withhold calls Watcher refuses; buffering and supported APIs
+vary by example. Using Cloudflare AI Gateway as such a gateway's
+OpenAI-compatible upstream is not tested in these examples.
+
 ## Configure gateway exports
 
 Enable logging on the gateway, generate an RSA key pair and upload its public

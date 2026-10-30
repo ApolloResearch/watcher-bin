@@ -659,7 +659,7 @@
           "ingest"
         ],
         "summary": "Ingest",
-        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nproxy-capture (Tailscale Aperture) attribution; keys carrying only\n``sessions:ingest`` write unattributed sessions.\n\nA Claude Code session id or Codex thread id names one session per\norganization. An upload attributed to a user (a signed-in user's, or one\nattributed through ``identity.login_name``) joins that session when it has\nno owner and makes the user its owner, including its linked descendants.\nA conflicting known owner in its ancestry or descendants also rejects the\nattribution atomically. When another user owns it, the\nrequest is rejected with 409 ``session_owner_conflict``: that trajectory\nis not stored, earlier trajectories in the request stay stored, and later\nones are not processed. An upload attributed to no user joins the session\nwhoever owns it and leaves the owner unchanged.",
+        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\n``results[i]`` describes ``trajectories[i]``, including empty and duplicate\ninputs. Each result has a chunk endpoint, live leaf, and storage status.\nSet ``append_after`` and ``fork`` on the trajectory to continue or branch;\neither option requires exactly one Claude Code or Codex input. Released\naggregate fields retain their batch semantics.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nproxy-capture (Tailscale Aperture) attribution; keys carrying only\n``sessions:ingest`` write unattributed sessions.\n\nA Claude Code session id or Codex thread id names one session per\norganization. An upload attributed to a user (a signed-in user's, or one\nattributed through ``identity.login_name``) joins that session when it has\nno owner and makes the user its owner, including its linked descendants.\nA conflicting known owner in its ancestry or descendants also rejects the\nattribution atomically. When another user owns it, the\nrequest is rejected with 409 ``session_owner_conflict``: that trajectory\nis not stored, earlier trajectories in the request stay stored, and later\nones are not processed. An upload attributed to no user joins the session\nwhoever owns it and leaves the owner unchanged.",
         "operationId": "ingest_v1_ingest_post",
         "requestBody": {
           "content": {
@@ -706,6 +706,7 @@
         "summary": "Ingest Append Endpoint",
         "description": "Append a delta of transcript entries to an existing session's chain.\n\n``trajectory_id`` names the anchor: the last message the client\nsuccessfully uploaded. The delta continues the chain after it, producing\nrows identical to a full re-upload of the whole transcript. Clients fall\nback to POST /v1/ingest on any 404 or 409 from this route.\n\nService keys carrying ``sessions:write:any`` may append across owners;\nthose carrying only ``sessions:ingest`` may append only to unattributed\nsessions.",
         "operationId": "ingest_append_endpoint_v1_sessions__session_id__trajectories__trajectory_hash__append_post",
+        "deprecated": true,
         "parameters": [
           {
             "name": "session_id",
@@ -4727,8 +4728,7 @@
               {
                 "type": "null"
               }
-            ],
-            "description": "Append messages after this exact stored session/trajectory anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered results. Retry once with the full transcript and without append_after on 404, 409, or 422."
+            ]
           },
           "input": {
             "anyOf": [
@@ -4839,6 +4839,11 @@
             "title": "Settings Overrides",
             "description": "Per-request settings as YAML or a JSON object; at most 65,536 characters of YAML or serialized JSON. Administrator permission locks apply."
           },
+          "fork": {
+            "type": "boolean",
+            "title": "Fork",
+            "default": false
+          },
           "format": {
             "type": "string",
             "const": "claude-code-jsonl",
@@ -4887,6 +4892,21 @@
               }
             ],
             "title": "Metadata"
+          },
+          "append_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fork": {
+            "type": "boolean",
+            "title": "Fork",
+            "default": false
           },
           "format": {
             "type": "string",
@@ -5080,8 +5100,7 @@
               {
                 "type": "null"
               }
-            ],
-            "description": "Append messages after this exact stored session/trajectory anchor. The server loads its prefix before validating or grading calls. Requires session-write authority and cannot be combined with ephemeral. Successful append responses return the committed next anchor and ordered results. Retry once with the full transcript and without append_after on 404, 409, or 422."
+            ]
           },
           "input": {
             "anyOf": [
@@ -5191,6 +5210,11 @@
             ],
             "title": "Settings Overrides",
             "description": "Per-request settings as YAML or a JSON object; at most 65,536 characters of YAML or serialized JSON. Administrator permission locks apply."
+          },
+          "fork": {
+            "type": "boolean",
+            "title": "Fork",
+            "default": false
           },
           "format": {
             "type": "string",
@@ -5650,6 +5674,21 @@
             ],
             "title": "Metadata"
           },
+          "append_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fork": {
+            "type": "boolean",
+            "title": "Fork",
+            "default": false
+          },
           "format": {
             "type": "string",
             "const": "codex-jsonl",
@@ -6058,7 +6097,7 @@
           "reasoning"
         ],
         "title": "ContentReasoning",
-        "description": "Reasoning content.\n\nSee the specification for [thinking blocks](https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#understanding-thinking-blocks) for Claude models."
+        "description": "Reasoning content.\n\nSee the specification for [thinking blocks](https://platform.claude.com/docs/en/build-with-claude/extended-thinking) for Claude models."
       },
       "ContentText": {
         "properties": {
@@ -8238,6 +8277,13 @@
             },
             "type": "array",
             "title": "Resolved Tool Calls"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/IngestResult"
+            },
+            "type": "array",
+            "title": "Results"
           }
         },
         "type": "object",
@@ -8250,6 +8296,45 @@
         ],
         "title": "IngestResponse",
         "description": "Response from the full ingest and per-session append endpoints.\n\n``trajectory_ids`` includes newly stored leaves and echoes of existing\nleaves: empty appends, recognized append replays, and exact full-ingest\nduplicates. Successful appends return their committed or echoed endpoint\nin ``append_anchor``.\n\n``ingested_count`` and ``duplicate_count`` are in stored-leaf units, not\nuploaded files: a rewound Claude Code file stores one leaf per\nconversation branch, so one upload can produce several of either.\n\n``append_anchor`` identifies the continuation of the final nonempty parsed\ninput (the live branch of a rewound Claude Code file). Null means it has no\nusable leaf, for example because it ends inside a longer stored chain;\ndo not advance the append cursor in that case.\n\n``trajectory_ids`` still lists stored leaves in processing order for grading\nand queries. Neither its last ID nor the legacy representative ``session_id``\nselects the append anchor. Only responses from older servers that omit\n``append_anchor`` use the legacy last-ID convention.\n\n``resolved_tool_calls`` identifies requested native call occurrences. Relationship\nreplay has its own cursor and must not move the ordinary upload cursor."
+      },
+      "IngestResult": {
+        "properties": {
+          "chunk_end": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leaf": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "already_stored",
+              "partially_stored"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "IngestResult",
+        "description": "Receipt for one input, in the same position as its uploaded trajectory.\n\nA null endpoint still occupies a result slot. ``chunk_end`` proves this\ninput's stored prefix; ``leaf`` describes its session's latest branch and\nmust not be substituted for the acknowledged endpoint."
       },
       "IngestToolCallReference": {
         "properties": {

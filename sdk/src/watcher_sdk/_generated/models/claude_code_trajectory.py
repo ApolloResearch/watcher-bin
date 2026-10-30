@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ..models.claude_code_trajectory_metadata_type_0 import (
         ClaudeCodeTrajectoryMetadataType0,
     )
+    from ..models.hook_append_anchor import HookAppendAnchor
     from ..models.ingest_tool_call_reference import IngestToolCallReference
 
 
@@ -52,6 +53,8 @@ class ClaudeCodeTrajectory:
             entries (list[ClaudeCodeEntry]):
             session_id (None | str | Unset):
             metadata (ClaudeCodeTrajectoryMetadataType0 | None | Unset):
+            append_after (HookAppendAnchor | None | Unset):
+            fork (bool | Unset):  Default: False.
             agent (ClaudeCodeAgentIdentity | None | Unset):
             resolve_tool_calls (list[IngestToolCallReference] | Unset):
     """
@@ -61,6 +64,8 @@ class ClaudeCodeTrajectory:
     entries: list[ClaudeCodeEntry]
     session_id: None | str | Unset = UNSET
     metadata: ClaudeCodeTrajectoryMetadataType0 | None | Unset = UNSET
+    append_after: HookAppendAnchor | None | Unset = UNSET
+    fork: bool | Unset = False
     agent: ClaudeCodeAgentIdentity | None | Unset = UNSET
     resolve_tool_calls: list[IngestToolCallReference] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -70,6 +75,7 @@ class ClaudeCodeTrajectory:
         from ..models.claude_code_trajectory_metadata_type_0 import (
             ClaudeCodeTrajectoryMetadataType0,
         )
+        from ..models.hook_append_anchor import HookAppendAnchor
 
         timestamp = self.timestamp.isoformat()
 
@@ -93,6 +99,16 @@ class ClaudeCodeTrajectory:
             metadata = self.metadata.to_dict()
         else:
             metadata = self.metadata
+
+        append_after: dict[str, Any] | None | Unset
+        if isinstance(self.append_after, Unset):
+            append_after = UNSET
+        elif isinstance(self.append_after, HookAppendAnchor):
+            append_after = self.append_after.to_dict()
+        else:
+            append_after = self.append_after
+
+        fork = self.fork
 
         agent: dict[str, Any] | None | Unset
         if isinstance(self.agent, Unset):
@@ -122,6 +138,10 @@ class ClaudeCodeTrajectory:
             field_dict["session_id"] = session_id
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
+        if append_after is not UNSET:
+            field_dict["append_after"] = append_after
+        if fork is not UNSET:
+            field_dict["fork"] = fork
         if agent is not UNSET:
             field_dict["agent"] = agent
         if resolve_tool_calls is not UNSET:
@@ -136,6 +156,7 @@ class ClaudeCodeTrajectory:
         from ..models.claude_code_trajectory_metadata_type_0 import (
             ClaudeCodeTrajectoryMetadataType0,
         )
+        from ..models.hook_append_anchor import HookAppendAnchor
         from ..models.ingest_tool_call_reference import IngestToolCallReference
 
         d = dict(src_dict)
@@ -182,6 +203,25 @@ class ClaudeCodeTrajectory:
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
 
+        def _parse_append_after(data: object) -> HookAppendAnchor | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                append_after_type_0 = HookAppendAnchor.from_dict(data)
+
+                return append_after_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(HookAppendAnchor | None | Unset, data)
+
+        append_after = _parse_append_after(d.pop("append_after", UNSET))
+
+        fork = d.pop("fork", UNSET)
+
         def _parse_agent(data: object) -> ClaudeCodeAgentIdentity | None | Unset:
             if data is None:
                 return data
@@ -216,6 +256,8 @@ class ClaudeCodeTrajectory:
             entries=entries,
             session_id=session_id,
             metadata=metadata,
+            append_after=append_after,
+            fork=fork,
             agent=agent,
             resolve_tool_calls=resolve_tool_calls,
         )

@@ -396,6 +396,14 @@ def _drop_abandoned_root_prompts(
 
 
 # Dependency-free for hook startup, like the records in ``upload``.
+class _BranchSelection:  # noqa: B903
+    """Forced rewind choices and the last base segment belonging to that version."""
+
+    def __init__(self, choices: dict[str, str], root_limit: int | None) -> None:
+        self.choices = choices
+        self.root_limit = root_limit
+
+
 class _LiveBranch:  # noqa: B903
     """The server parser's live branch of a Claude UUID tree, as the client replicates it.
 
@@ -404,14 +412,18 @@ class _LiveBranch:  # noqa: B903
     rewound branch, which the server stores as an extra conversation.
     """
 
-    __slots__ = ("abandons_branch", "order")
+    __slots__ = ("abandons_branch", "order", "visited", "alternatives")
 
     order: list[str]
     abandons_branch: bool
 
-    def __init__(self, order: list[str], abandons_branch: bool) -> None:
+    def __init__(
+        self, order: list[str], abandons_branch: bool, visited: set[str], alternatives: list[_BranchSelection]
+    ) -> None:
         self.order = order
         self.abandons_branch = abandons_branch
+        self.visited = visited
+        self.alternatives = alternatives
 
 
 def _message_order(entries: list[JsonEntry]) -> list[str] | None:
@@ -425,6 +437,10 @@ def _message_order(entries: list[JsonEntry]) -> list[str] | None:
 
 
 def _live_branch(entries: list[JsonEntry]) -> _LiveBranch | None:
+    return _walk_branch(entries, _BranchSelection({}, None))
+
+
+def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _LiveBranch | None:
     """Walk a Claude UUID tree the way the server parser walks its live branch.
 
     Besides the order (see ``_message_order``) this reports whether any rewound
@@ -434,6 +450,7 @@ def _live_branch(entries: list[JsonEntry]) -> _LiveBranch | None:
     parses to several conversations, which the append endpoint refuses.
     ``None`` means the tree cannot be ordered safely.
     """
+    choices = selection.choices
     entry_lookup = {
         entry["uuid"]: entry
         for entry in entries
@@ -451,7 +468,7 @@ def _live_branch(entries: list[JsonEntry]) -> _LiveBranch | None:
         and not entry.get("isSidechain", False)
     ]
     if not message_entries:
-        return _LiveBranch([], False)
+        return _LiveBranch([], False, set(), [])
 
     message_uuids = {entry["uuid"] for entry in message_entries}
     children: dict[str, list[JsonEntry]] = {}
@@ -489,18 +506,65 @@ def _live_branch(entries: list[JsonEntry]) -> _LiveBranch | None:
             root_groups[id(entry)] = top_ancestor if parent_uuid is None else None
 
     if not roots:
-        return _LiveBranch([entry["uuid"] for entry in _drop_redelivered_queued_commands(message_entries)], False)
+        return _LiveBranch(
+            [entry["uuid"] for entry in _drop_redelivered_queued_commands(message_entries)],
+            False,
+            set(entry_lookup),
+            [],
+        )
 
     roots.sort(key=_entry_walk_key)
     # Ownership resolves against every root (a segment can be owned by an
     # abandoned first-prompt version), so build the map before pruning roots.
     segment_back_links = _segment_back_links(roots, entry_lookup)
     segments_by_owner = _segments_by_owner(segment_back_links, entry_lookup)
-    live_roots = _drop_abandoned_root_prompts(
-        roots, [root_groups[id(root)] for root in roots], children, message_uuids, segments_by_owner
-    )
+    alternatives: list[_BranchSelection] = []
+    root_positions = {root["uuid"]: i for i, root in enumerate(roots)}
+    current_root_index = 0
+
+    def select(siblings: list[JsonEntry], survivors: list[JsonEntry], key: str) -> list[JsonEntry]:
+        if len(siblings) == len(survivors):
+            return survivors
+        candidates = [
+            sibling
+            for sibling in siblings
+            if (head := _branch_head_message(sibling, children, message_uuids)) is not None
+            and _user_entry_text_key(head)
+            and not (key.startswith("root:") and _is_compaction_segment_root(sibling))
+        ]
+        candidate_ids = {candidate["uuid"] for candidate in candidates}
+        winner = next(sibling["uuid"] for sibling in survivors if sibling["uuid"] in candidate_ids)
+        chosen = choices.get(key, winner)
+        is_root = key.startswith("root:")
+        if key not in choices and not (is_root and choices):
+            for candidate in candidates:
+                if candidate["uuid"] == chosen:
+                    continue
+                limit = root_positions[candidate["uuid"]] if is_root else current_root_index
+                if selection.root_limit is not None:
+                    limit = min(limit, selection.root_limit)
+                alternatives.append(_BranchSelection({**choices, key: candidate["uuid"]}, limit))
+        return [sibling for sibling in siblings if sibling["uuid"] not in candidate_ids or sibling["uuid"] == chosen]
+
+    live_roots = []
+    for group in dict.fromkeys(root_groups.values()):
+        grouped = [root for root in roots if root_groups[id(root)] == group]
+        survivors = _drop_abandoned_root_prompts(
+            grouped, [group] * len(grouped), children, message_uuids, segments_by_owner
+        )
+        live_roots.extend(select(grouped, survivors, f"root:{group}"))
+    live_ids = {root["uuid"] for root in live_roots}
+    live_roots = [root for root in roots if root["uuid"] in live_ids]
     abandons_branch = len(live_roots) < len(roots)
-    roots = live_roots
+    # An abandoned version ends at its fork's base segment. Later segments
+    # belong only to the live version unless an explicit back-link owns them.
+    roots = [
+        root
+        for root in live_roots
+        if selection.root_limit is None
+        or root_positions[root["uuid"]] <= selection.root_limit
+        or root["uuid"] in segment_back_links
+    ]
     chain: list[JsonEntry] = []
     visited: set[str] = set()
 
@@ -517,12 +581,17 @@ def _live_branch(entries: list[JsonEntry]) -> _LiveBranch | None:
                 chain.append(current)
             next_entries = [child for child in children.get(uuid, []) if child["uuid"] not in visited]
             next_entries.sort(key=_entry_walk_key)
-            live_entries = _drop_abandoned_rewind_branches(next_entries, children, message_uuids, segments_by_owner)
+            live_entries = select(
+                next_entries,
+                _drop_abandoned_rewind_branches(next_entries, children, message_uuids, segments_by_owner),
+                uuid,
+            )
             abandons_branch = abandons_branch or len(live_entries) < len(next_entries)
             queue.extend(live_entries)
 
     deferred: list[JsonEntry] = []
     for root in roots:
+        current_root_index = root_positions[root["uuid"]]
         owner_leaf = segment_back_links.get(root["uuid"])
         if owner_leaf is not None and owner_leaf not in visited:
             deferred.append(root)
@@ -542,13 +611,16 @@ def _live_branch(entries: list[JsonEntry]) -> _LiveBranch | None:
             if root["uuid"] in visited:
                 continue
             if segment_back_links.get(root["uuid"]) in visited:
+                current_root_index = root_positions[root["uuid"]]
                 walk_from(root)
                 progressed = True
             else:
                 remaining.append(root)
         deferred = remaining
 
-    return _LiveBranch([entry["uuid"] for entry in _drop_redelivered_queued_commands(chain)], abandons_branch)
+    return _LiveBranch(
+        [entry["uuid"] for entry in _drop_redelivered_queued_commands(chain)], abandons_branch, visited, alternatives
+    )
 
 
 class _RewindReach:  # noqa: B903
@@ -634,3 +706,50 @@ def delta_needs_full_upload(entries: list[JsonEntry], cursor: int) -> bool:
         or delta.abandons_branch
         or full.order != [*prefix.order, *delta.order]
     )
+
+
+def split_preserves_order(entries: list[JsonEntry], cursor: int) -> bool:
+    """Whether two independently parsed pieces retain the full live-branch order.
+
+    Unlike the legacy append guard, this permits multiple branches inside the
+    suffix: incremental ingestion stores them under an explicit fork flag.
+    """
+    if cursor == 0 or cursor == len(entries):
+        return True
+    prefix = _live_branch(entries[:cursor])
+    suffix = _live_branch(entries[cursor:])
+    full = _live_branch(entries)
+    return prefix is not None and suffix is not None and full is not None and full.order == prefix.order + suffix.order
+
+
+def branch_indices(entries: list[JsonEntry]) -> list[list[int]]:
+    """Return raw source positions for every Claude branch, live branch last.
+
+    Use the same rewind classification, sibling order and compaction ownership
+    as the live walk. Shared ancestors appear in each branch; the uploader can
+    reuse their acknowledged hashes instead of sending them again.
+    """
+    live = _walk_branch(entries, _BranchSelection({}, None))
+    if live is None or not live.abandons_branch:
+        return [list(range(len(entries)))]
+    lookup = {entry["uuid"]: entry for entry in entries if isinstance(entry.get("uuid"), str)}
+    pending = list(live.alternatives)
+    walks = []
+    seen: set[tuple[str, ...]] = {tuple(live.order)}
+    while pending:
+        walk = _walk_branch(entries, pending.pop())
+        if walk is None or tuple(walk.order) in seen:
+            continue
+        seen.add(tuple(walk.order))
+        walks.append(walk)
+        pending.extend(walk.alternatives)
+    result = []
+    for walk in [*walks, live]:
+        included = set(walk.visited)
+        for uid in list(included):
+            parent = lookup[uid].get("parentUuid")
+            while isinstance(parent, str) and parent in lookup and parent not in included:
+                included.add(parent)
+                parent = lookup[parent].get("parentUuid")
+        result.append([i for i, entry in enumerate(entries) if entry.get("uuid") in included or not entry.get("uuid")])
+    return result

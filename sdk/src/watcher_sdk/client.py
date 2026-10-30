@@ -238,6 +238,7 @@ from watcher_sdk.settings_schema.watcher_settings_yaml_layers import (
     merge_local_overrides,
     merge_policy_settings,
 )
+from watcher_transcript_transport.incremental import MAX_BODY_BYTES, UploadTooLarge
 
 _HookInputMapping = TypeVar("_HookInputMapping", bound=Mapping[str, Any])
 
@@ -804,6 +805,30 @@ class AsyncWatcherClient:
             client=self._generated_client,
             body=PermissionCheckRequest(permissions=list(permissions)),
         )
+
+    async def _ingest_incremental(self, body: bytes) -> IngestResponse:
+        """Send one already serialized native chunk, without automatic retries.
+
+        The 8 MiB bound covers the exact bytes transmitted. A successful
+        response returns one item in ``results`` with the committed chunk endpoint
+        and live leaf. Missing results mean an older server lacks this capability; callers
+        must not advance incremental progress from that response.
+        """
+        if len(body) > MAX_BODY_BYTES:
+            raise UploadTooLarge("Native ingest request exceeds 8 MiB")
+        try:
+            raw = await self._generated_client.get_async_httpx_client().request(
+                method="POST",
+                url="/v1/ingest",
+                content=body,
+                headers={"Content-Type": "application/json"},
+            )
+        except httpx.ConnectError as error:
+            raise WatcherConnectionError(str(error)) from error
+        except httpx.TimeoutException as error:
+            raise WatcherTimeoutError(str(error)) from error
+        _raise_for_http_error(raw.status_code, raw.content, raw.headers)
+        return IngestResponse.from_dict(raw.json())
 
     # ---- Ingest ----
 

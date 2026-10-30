@@ -224,14 +224,15 @@ class CodexCallCycles:  # noqa: B903
     boundary (abort or turn start) closed while they were still pending.
     """
 
-    __slots__ = ("complete_until", "interrupted_openings")
+    __slots__ = ("complete_until", "interrupted_openings", "boundaries")
 
     complete_until: int
     interrupted_openings: set[int]
 
-    def __init__(self, complete_until: int, interrupted_openings: set[int]) -> None:
+    def __init__(self, complete_until: int, interrupted_openings: set[int], boundaries: list[int]) -> None:
         self.complete_until = complete_until
         self.interrupted_openings = interrupted_openings
+        self.boundaries = boundaries
 
 
 def scan_codex_call_cycles(
@@ -252,19 +253,38 @@ def scan_codex_call_cycles(
     # may move the cut past them, or the stored part would end in a message the
     # finished turn writes differently.
     assistant_pending = False
+    boundaries: list[int] = []
 
     for i, entry in enumerate(entries):
+        envelope = entry.get("payload")
+        if (
+            entry.get("type") == "compacted"
+            and isinstance(envelope, dict)
+            and (envelope.get("replacement_history") is not None or envelope.get("message"))
+        ):
+            # A resetting compaction seals the preceding assistant fragment,
+            # then starts a fresh parser window without discarding its history.
+            if i and not pending_opening_idx:
+                boundaries.append(i)
+            interrupted_opening_idxs.update(pending_opening_idx.values())
+            pending_opening_idx.clear()
+            assistant_pending = False
+            last_complete_idx = i + 1
+            boundaries.append(last_complete_idx)
+            continue
         if is_turn_aborted_marker_entry(entry) or is_turn_aborted_event(entry) or is_turn_started_event(entry):
             interrupted_opening_idxs.update(pending_opening_idx.values())
             pending_opening_idx.clear()
             assistant_pending = False
             last_complete_idx = i + 1
+            boundaries.append(last_complete_idx)
             continue
 
         payload = entry.get("payload") if entry.get("type") == "response_item" else None
         if not isinstance(payload, dict):
             if not pending_opening_idx and not assistant_pending:
                 last_complete_idx = i + 1
+                boundaries.append(last_complete_idx)
             continue
 
         payload_type = payload.get("type", "")
@@ -282,6 +302,10 @@ def scan_codex_call_cycles(
         elif not pending_opening_idx:
             effect = _message_effect(payload)
             if allow_trailing_assistant_output or effect is _MessageEffect.ENDS:
+                if assistant_pending and effect is _MessageEffect.ENDS:
+                    # This item seals the preceding assistant message without
+                    # joining it, so an acknowledgement may end just before it.
+                    boundaries.append(i)
                 assistant_pending = False
                 last_complete_idx = i + 1
             elif effect is _MessageEffect.JOINS:
@@ -289,7 +313,10 @@ def scan_codex_call_cycles(
             elif not assistant_pending:
                 last_complete_idx = i + 1
 
-    return CodexCallCycles(last_complete_idx, interrupted_opening_idxs)
+        if last_complete_idx == i + 1:
+            boundaries.append(last_complete_idx)
+
+    return CodexCallCycles(last_complete_idx, interrupted_opening_idxs, boundaries)
 
 
 # Codex's function-call shell tools and the argument holding their command.

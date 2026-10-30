@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Iterator
+from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import Self
 
 import anyio.from_thread
 import httpx
 
+from watcher_sdk._generated.models.ingest_response import IngestResponse
 from watcher_sdk._generated.models.session_summary import SessionSummary
 from watcher_sdk._generated.models.user_filter import UserFilter
 from watcher_sdk.client import AsyncWatcherClient
@@ -72,13 +74,17 @@ class WatcherClient:
             manage_external_httpx_client_lifecycle=manage_external_httpx_client_lifecycle,
         )
         self._portal: anyio.from_thread.BlockingPortal | None = None
-        self._portal_cm: object | None = None
+        self._portal_cm: AbstractContextManager[anyio.from_thread.BlockingPortal] | None = None
 
     def _run(self, coro):  # pyright: ignore[reportUnknownParameterType]
         """Run an async coroutine synchronously via the blocking portal."""
         if self._portal is None:
             raise RuntimeError("Client is not open. Use 'with WatcherClient() as client:' or call client.open()")
         return self._portal.call(lambda: coro)
+
+    def _ingest_incremental(self, body: bytes) -> IngestResponse:
+        """Send an internal exact-byte upload using the sync client's portal."""
+        return self._run(self._async_client._ingest_incremental(body))
 
     def __getattr__(self, name: str):  # pyright: ignore[reportUnknownParameterType]
         """Auto-delegate API method calls to the async client.
@@ -117,7 +123,7 @@ class WatcherClient:
                 self._portal.call(lambda: self._async_client.__aexit__(None, None, None))
             finally:
                 if self._portal_cm is not None:
-                    self._portal_cm.__exit__(None, None, None)  # pyright: ignore[reportAttributeAccessIssue]
+                    self._portal_cm.__exit__(None, None, None)
                     self._portal_cm = None
                 self._portal = None
 

@@ -10,6 +10,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.hook_append_anchor import HookAppendAnchor
+    from ..models.ingest_result import IngestResult
     from ..models.resolved_ingest_tool_call import ResolvedIngestToolCall
 
 
@@ -50,6 +51,7 @@ class IngestResponse:
             skipped_count (int):
             append_anchor (HookAppendAnchor | None | Unset):
             resolved_tool_calls (list[ResolvedIngestToolCall] | Unset):
+            results (list[IngestResult] | Unset):
     """
 
     session_id: str
@@ -59,6 +61,7 @@ class IngestResponse:
     skipped_count: int
     append_anchor: HookAppendAnchor | None | Unset = UNSET
     resolved_tool_calls: list[ResolvedIngestToolCall] | Unset = UNSET
+    results: list[IngestResult] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -89,6 +92,13 @@ class IngestResponse:
                 resolved_tool_calls_item = resolved_tool_calls_item_data.to_dict()
                 resolved_tool_calls.append(resolved_tool_calls_item)
 
+        results: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.results, Unset):
+            results = []
+            for results_item_data in self.results:
+                results_item = results_item_data.to_dict()
+                results.append(results_item)
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -104,12 +114,15 @@ class IngestResponse:
             field_dict["append_anchor"] = append_anchor
         if resolved_tool_calls is not UNSET:
             field_dict["resolved_tool_calls"] = resolved_tool_calls
+        if results is not UNSET:
+            field_dict["results"] = results
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.hook_append_anchor import HookAppendAnchor
+        from ..models.ingest_result import IngestResult
         from ..models.resolved_ingest_tool_call import ResolvedIngestToolCall
 
         d = dict(src_dict)
@@ -151,6 +164,15 @@ class IngestResponse:
 
                 resolved_tool_calls.append(resolved_tool_calls_item)
 
+        _results = d.pop("results", UNSET)
+        results: list[IngestResult] | Unset = UNSET
+        if _results is not UNSET:
+            results = []
+            for results_item_data in _results:
+                results_item = IngestResult.from_dict(results_item_data)
+
+                results.append(results_item)
+
         ingest_response = cls(
             session_id=session_id,
             trajectory_ids=trajectory_ids,
@@ -159,6 +181,7 @@ class IngestResponse:
             skipped_count=skipped_count,
             append_anchor=append_anchor,
             resolved_tool_calls=resolved_tool_calls,
+            results=results,
         )
 
         ingest_response.additional_properties = d

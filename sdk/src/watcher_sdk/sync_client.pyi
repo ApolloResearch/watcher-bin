@@ -158,7 +158,12 @@ class WatcherClient:
         self,
         input: Mapping[str, Any] | list[_HookInputMapping] | None = None,
         *,
-        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        messages: Sequence[Mapping[str, Any]]
+        | Mapping[str, Any]
+        | ClaudeCodeTrajectory
+        | CodexTrajectory
+        | CopilotTrajectory
+        | None = None,
         append_after: Mapping[str, str],
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: str | None = None,
@@ -176,7 +181,12 @@ class WatcherClient:
         self,
         input: Mapping[str, Any],
         *,
-        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        messages: Sequence[Mapping[str, Any]]
+        | Mapping[str, Any]
+        | ClaudeCodeTrajectory
+        | CodexTrajectory
+        | CopilotTrajectory
+        | None = None,
         append_after: None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: str | None = None,
@@ -194,7 +204,12 @@ class WatcherClient:
         self,
         input: list[_HookInputMapping] | None = None,
         *,
-        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        messages: Sequence[Mapping[str, Any]]
+        | Mapping[str, Any]
+        | ClaudeCodeTrajectory
+        | CodexTrajectory
+        | CopilotTrajectory
+        | None = None,
         append_after: None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: None = None,
@@ -227,6 +242,8 @@ class WatcherClient:
         skip_rules: bool | None = None,
         policy_version: str | None = None,
         settings_overrides: str | dict[str, Any] | None = None,
+        withheld_tool_use_ids: list[str] | tuple[str, ...] | None = None,
+        withholds_refused_calls: bool | None = None,
     ) -> list[PreToolUseHookResponse | HookCallError]: ...
     def aperture_entire_request_hook(self, payload: Mapping[str, Any]) -> ApertureHookAccepted: ...
     @overload

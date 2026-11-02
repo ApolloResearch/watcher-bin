@@ -18,6 +18,8 @@ from importlib.metadata import version
 from typing import Any, Self, TypeVar, overload
 from uuid import UUID
 
+import anyio.to_thread
+import attrs
 import httpx
 from pydantic import BaseModel, ConfigDict
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
@@ -283,6 +285,66 @@ _LOCAL_JUDGMENTS: dict[str, str] = {
 _TRANSLATED_HARNESS_KEYS = frozenset({"claude_code", "codex", "github_copilot_cli"})
 # The coding agents' own transcript formats `pre_tool_use_hook` accepts in `messages`.
 _TRANSCRIPT_FILE_FORMATS = ("claude-code-jsonl", "codex-jsonl", "copilot-events-jsonl")
+_TRANSCRIPT_FILE_MODELS = (ClaudeCodeTrajectory, CodexTrajectory, CopilotTrajectory)
+
+
+def _json_text(value: object) -> str:
+    """One value as httpx 0.28 serializes a JSON body: compact, non-ASCII unescaped, NaN refused."""
+    return _json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+# List items serialized per `json.dumps` call by `_encode_json_body`: enough to
+# amortize the call's own setup, few enough that one call over transcript
+# entries holds the interpreter lock for milliseconds rather than seconds.
+_JSON_ITEMS_PER_CALL = 32
+
+
+def _encode_json_body(body: dict[str, Any]) -> bytes:
+    """The exact bytes ``httpx`` sends for ``json=body``, serialized a few list items at a time below the top.
+
+    `json.dumps` holds the interpreter lock for the whole call, so one call over
+    a transcript of hundreds of megabytes stalls every other thread in the
+    process (the event loop answering health checks, the server's liveness
+    pipe) for seconds. Writing the top-level mapping and the mappings directly
+    under it here, and their lists `_JSON_ITEMS_PER_CALL` items per call,
+    bounds each hold by a few transcript entries while producing the same text:
+    `json.dumps` writes a mapping as ``{"key":value,...}`` and a list as
+    ``[item,...]`` with these separators, so a slice's text without its
+    brackets is exactly its items' share of the whole list's text. Keys at
+    those two levels are the request models' field names and the trajectory's,
+    always strings; a mapping with any other key type is written by one whole
+    `json.dumps`, which coerces it.
+
+    Each piece is encoded to UTF-8 as it is written, so the whole body is never
+    held as text and bytes at once. NaN or infinity raises httpx's `ValueError`
+    from the piece that holds it. A lone surrogate fails a piece's encoding;
+    the whole body is then serialized in one call, which raises exactly the
+    `UnicodeEncodeError` httpx raises.
+    """
+    pieces: list[bytes] = []
+    try:
+        _write_json(pieces, body, 2)
+    except UnicodeEncodeError:
+        return _json_text(body).encode("utf-8")
+    return b"".join(pieces)
+
+
+def _write_json(pieces: list[bytes], value: object, depth: int) -> None:
+    if depth > 0 and type(value) is dict and all(type(key) is str for key in value):
+        pieces.append(b"{")
+        for index, (key, item) in enumerate(value.items()):
+            pieces.append(f"{',' if index else ''}{_json_text(key)}:".encode())
+            _write_json(pieces, item, depth - 1)
+        pieces.append(b"}")
+    elif depth == 0 and type(value) is list and value:
+        pieces.append(b"[")
+        for start in range(0, len(value), _JSON_ITEMS_PER_CALL):
+            if start:
+                pieces.append(b",")
+            pieces.append(_json_text(value[start : start + _JSON_ITEMS_PER_CALL])[1:-1].encode())
+        pieces.append(b"]")
+    else:
+        pieces.append(_json_text(value).encode())
 
 
 @functools.cache
@@ -1133,7 +1195,12 @@ class AsyncWatcherClient:
         self,
         input: Mapping[str, Any] | list[_HookInputMapping] | None = None,
         *,
-        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        messages: Sequence[Mapping[str, Any]]
+        | Mapping[str, Any]
+        | ClaudeCodeTrajectory
+        | CodexTrajectory
+        | CopilotTrajectory
+        | None = None,
         append_after: Mapping[str, str],
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: str | None = None,
@@ -1152,7 +1219,12 @@ class AsyncWatcherClient:
         self,
         input: Mapping[str, Any],
         *,
-        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        messages: Sequence[Mapping[str, Any]]
+        | Mapping[str, Any]
+        | ClaudeCodeTrajectory
+        | CodexTrajectory
+        | CopilotTrajectory
+        | None = None,
         append_after: None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: str | None = None,
@@ -1171,7 +1243,12 @@ class AsyncWatcherClient:
         self,
         input: list[_HookInputMapping] | None = None,
         *,
-        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        messages: Sequence[Mapping[str, Any]]
+        | Mapping[str, Any]
+        | ClaudeCodeTrajectory
+        | CodexTrajectory
+        | CopilotTrajectory
+        | None = None,
         append_after: None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: None = None,
@@ -1205,13 +1282,20 @@ class AsyncWatcherClient:
         skip_rules: bool | None = None,
         policy_version: str | None = None,
         settings_overrides: str | dict[str, Any] | None = None,
+        withheld_tool_use_ids: list[str] | tuple[str, ...] | None = None,
+        withholds_refused_calls: bool | None = None,
     ) -> list[PreToolUseHookResponse | HookCallError]: ...
 
     async def pre_tool_use_hook(
         self,
         input: Mapping[str, Any] | list[_HookInputMapping] | None = None,
         *,
-        messages: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+        messages: Sequence[Mapping[str, Any]]
+        | Mapping[str, Any]
+        | ClaudeCodeTrajectory
+        | CodexTrajectory
+        | CopilotTrajectory
+        | None = None,
         append_after: Mapping[str, str] | None = None,
         external_ids: Mapping[str, str | None] | None = None,
         tool_use_id: str | None = None,
@@ -1223,6 +1307,8 @@ class AsyncWatcherClient:
         skip_rules: bool | None = None,
         policy_version: str | None = None,
         settings_overrides: str | dict[str, Any] | None = None,
+        withheld_tool_use_ids: list[str] | tuple[str, ...] | None = None,
+        withholds_refused_calls: bool | None = None,
         request_body: Mapping[str, Any] | None = None,
         response_body: Mapping[str, Any] | None = None,
         url: str = "",
@@ -1277,6 +1363,8 @@ class AsyncWatcherClient:
         `timeout` remains the budget for the whole request. Pass a smaller
         `timeout` — or send
         `mode="triage_only"` — when the budget is tight.
+        The request is parsed and serialized on a worker thread, so a long
+        transcript does not stall the event loop while it is prepared.
 
         Pass `request_body` and `response_body` instead of `input` and
         `messages` to send a raw provider pair (the server's `format="raw"`):
@@ -1345,6 +1433,10 @@ class AsyncWatcherClient:
                   Copilot call names the ID its log's hook record gives it, under
                   Copilot's native tool name and arguments, and must match the
                   log's record of that ID exactly.
+                  The file may also be passed as its SDK model
+                  (`ClaudeCodeTrajectory`, `CodexTrajectory` or
+                  `CopilotTrajectory`), which is sent as built instead of
+                  being parsed from a mapping; the request is the same.
 
                 With `append_after`, send only what follows the anchor (chat
                 messages or file entries); an empty delta can evaluate a call
@@ -1425,6 +1517,18 @@ class AsyncWatcherClient:
                 `enforcement.mode` selects `enforce`, `observe` (evaluate with
                 a deferred applied decision), or `paused` (ingest only). Changing an admin-locked value
                 is rejected with HTTP 422; repeating the locked value is accepted.
+            withheld_tool_use_ids: For a gateway that delivers this response in place
+                of proposals it withheld: the IDs of every call it withheld (the refused
+                calls and the calls withheld with them, never a call it delivered), so
+                Watcher can show them before this response. Omit it when nothing was
+                withheld. Raw pairs only, and a non-empty list needs
+                `withholds_refused_calls=True`; servers that predate the field reject it
+                with HTTP 422.
+            withholds_refused_calls: True when the caller withholds from the client every
+                call Watcher denies or escalates in enforce mode, so Watcher records such a
+                refusal as blocked when it decides it. Leave it unset when the reply may
+                already have reached the client, as on an observation path. Raw pairs only;
+                only True is sent, and servers that predate the field reject it with HTTP 422.
 
         """
         if append_after is not None and ephemeral is True:
@@ -1436,6 +1540,8 @@ class AsyncWatcherClient:
                 raise ValueError("append_after is only supported with watcher-format messages")
             if input is not None or messages is not None or tool_use_id is not None:
                 raise ValueError("A raw pair replaces input, messages and tool_use_id; do not combine them")
+            if isinstance(withheld_tool_use_ids, str):
+                raise TypeError("withheld_tool_use_ids must be a sequence of tool-use IDs, not one string")
             raw: dict[str, object] = {
                 "format": "raw",
                 "request_body": dict(request_body),
@@ -1453,14 +1559,20 @@ class AsyncWatcherClient:
                 "skip_rules": skip_rules,
                 "policy_version": policy_version,
                 "settings_overrides": settings_overrides,
+                "withheld_tool_use_ids": list(withheld_tool_use_ids) if withheld_tool_use_ids is not None else None,
+                "withholds_refused_calls": True if withholds_refused_calls else None,
             }
             raw.update({key: value for key, value in optional.items() if value is not None})
             if force_regrade:
                 raw["force_regrade"] = True
             return await self._send_pre_tool_use_hook(
-                RawPreToolUseHookRequest.from_dict(raw),
+                lambda: RawPreToolUseHookRequest.from_dict(raw),
                 timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS,
             )
+        if withheld_tool_use_ids is not None:
+            raise ValueError("withheld_tool_use_ids is only supported with a raw pair")
+        if withholds_refused_calls is not None:
+            raise ValueError("withholds_refused_calls is only supported with a raw pair")
         if isinstance(messages, Mapping) and messages.get("format") not in _TRANSCRIPT_FILE_FORMATS:
             raise ValueError(
                 "A transcript file in messages must be claude-code-jsonl, codex-jsonl or copilot-events-jsonl"
@@ -1476,7 +1588,14 @@ class AsyncWatcherClient:
             if tool_use_id is not None:
                 hook_input["tool_use_id"] = tool_use_id
         body_dict: dict[str, object] = {"format": "watcher", "input": hook_input}
-        if isinstance(messages, Mapping):
+        trajectory: ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | None = None
+        if isinstance(messages, _TRANSCRIPT_FILE_MODELS):
+            trajectory = messages
+            body_dict["format"] = trajectory.format_
+            # Parsed in its place, then replaced by the trajectory itself (`build` below),
+            # so its entries are never converted to mappings and parsed back.
+            body_dict["messages"] = attrs.evolve(trajectory, entries=[]).to_dict()
+        elif isinstance(messages, Mapping):
             body_dict["format"] = messages["format"]
             body_dict["messages"] = dict(messages)
         elif messages is not None:
@@ -1500,31 +1619,55 @@ class AsyncWatcherClient:
         if settings_overrides is not None:
             body_dict["settings_overrides"] = settings_overrides
         input_count = max(1, len(input)) if isinstance(input, list) else 1
-        body = (
-            ClaudeCodeHookRequest.from_dict(body_dict)
-            if body_dict["format"] == "claude-code-jsonl"
-            else CodexHookRequest.from_dict(body_dict)
-            if body_dict["format"] == "codex-jsonl"
-            else CopilotHookRequest.from_dict(body_dict)
-            if body_dict["format"] == "copilot-events-jsonl"
-            else PreToolUseHookRequest.from_dict(body_dict)
-        )
+
+        def build() -> PreToolUseHookRequest | ClaudeCodeHookRequest | CodexHookRequest | CopilotHookRequest:
+            if body_dict["format"] == "claude-code-jsonl":
+                file_body = ClaudeCodeHookRequest.from_dict(body_dict)
+            elif body_dict["format"] == "codex-jsonl":
+                file_body = CodexHookRequest.from_dict(body_dict)
+            elif body_dict["format"] == "copilot-events-jsonl":
+                file_body = CopilotHookRequest.from_dict(body_dict)
+            else:
+                return PreToolUseHookRequest.from_dict(body_dict)
+            if trajectory is not None:
+                file_body.messages = trajectory  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[invalid-assignment]
+            return file_body
+
         return await self._send_pre_tool_use_hook(
-            body,
+            build,
             timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS * input_count,
         )
 
     async def _send_pre_tool_use_hook(
         self,
-        body: PreToolUseHookRequest
-        | ClaudeCodeHookRequest
-        | CodexHookRequest
-        | CopilotHookRequest
-        | RawPreToolUseHookRequest,
+        build: Callable[
+            [],
+            PreToolUseHookRequest
+            | ClaudeCodeHookRequest
+            | CodexHookRequest
+            | CopilotHookRequest
+            | RawPreToolUseHookRequest,
+        ],
         timeout: float,
     ) -> HookAppendResponse | PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
-        """POST one hook request under its own timeout, without the client's automatic retries."""
-        request_kwargs = _pre_tool_use_hook_api._get_kwargs(body=body)
+        """Build ``build()``'s request on a worker thread, then POST it under its own timeout, without retries.
+
+        Parsing a whole transcript into the request models and serializing it
+        takes seconds for a long session; on the event loop that would stall
+        every other request the process serves for as long. The thread produces
+        the exact bytes httpx would send for ``json=``, and the request models'
+        errors (an unparseable transcript, NaN, a lone surrogate) propagate
+        unchanged. A cancellation (the caller's budget running out, say, by
+        asyncio or AnyIO) returns at once; the thread finishes in the
+        background and its request is never sent.
+        """
+
+        def serialized() -> dict[str, Any]:
+            request_kwargs = _pre_tool_use_hook_api._get_kwargs(body=build())
+            request_kwargs["content"] = _encode_json_body(request_kwargs.pop("json"))
+            return request_kwargs
+
+        request_kwargs = await anyio.to_thread.run_sync(serialized, abandon_on_cancel=True)
         request_kwargs["timeout"] = timeout
         try:
             raw = await self._generated_client.get_async_httpx_client().request(**request_kwargs)

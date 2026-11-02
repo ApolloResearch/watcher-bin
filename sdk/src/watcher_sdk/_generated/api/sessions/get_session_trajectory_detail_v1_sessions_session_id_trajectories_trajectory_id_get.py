@@ -85,7 +85,9 @@ def sync_detailed(
 
     Return 404 when content is inaccessible or scrubbed. Session grades and
     tool-call decisions are included only with findings access; session summaries
-    remain available with content access alone.
+    remain available with content access alone. With findings access,
+    ``gateway_withheld_decisions`` also lists the calls a gateway named as
+    withheld in favor of a message on this trajectory.
 
     The ``view`` parameter picks the payload shape and defaults to ``truncated``,
     which caps tool outputs and user pastes and stubs out ``data`` content blocks,
@@ -156,7 +158,9 @@ def sync(
 
     Return 404 when content is inaccessible or scrubbed. Session grades and
     tool-call decisions are included only with findings access; session summaries
-    remain available with content access alone.
+    remain available with content access alone. With findings access,
+    ``gateway_withheld_decisions`` also lists the calls a gateway named as
+    withheld in favor of a message on this trajectory.
 
     The ``view`` parameter picks the payload shape and defaults to ``truncated``,
     which caps tool outputs and user pastes and stubs out ``data`` content blocks,
@@ -222,7 +226,9 @@ async def asyncio_detailed(
 
     Return 404 when content is inaccessible or scrubbed. Session grades and
     tool-call decisions are included only with findings access; session summaries
-    remain available with content access alone.
+    remain available with content access alone. With findings access,
+    ``gateway_withheld_decisions`` also lists the calls a gateway named as
+    withheld in favor of a message on this trajectory.
 
     The ``view`` parameter picks the payload shape and defaults to ``truncated``,
     which caps tool outputs and user pastes and stubs out ``data`` content blocks,
@@ -291,7 +297,9 @@ async def asyncio(
 
     Return 404 when content is inaccessible or scrubbed. Session grades and
     tool-call decisions are included only with findings access; session summaries
-    remain available with content access alone.
+    remain available with content access alone. With findings access,
+    ``gateway_withheld_decisions`` also lists the calls a gateway named as
+    withheld in favor of a message on this trajectory.
 
     The ``view`` parameter picks the payload shape and defaults to ``truncated``,
     which caps tool outputs and user pastes and stubs out ``data`` content blocks,

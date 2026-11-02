@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol, TypeVar
 
 __all__ = [
     "DEFAULT_UPLOAD_CHUNK_TARGET_BYTES",
+    "PrefixHashes",
     "UploadCursor",
     "UploadMode",
     "UploadReason",
@@ -29,8 +30,9 @@ __all__ = [
 DEFAULT_UPLOAD_CHUNK_TARGET_BYTES = 8 * 1024 * 1024
 
 JsonEntry = dict[str, Any]
+# A TypeVar rather than PEP 695 syntax: the Remote Collector runs this module on Python 3.10.
+_Entries = TypeVar("_Entries", bound=Sequence[Any])
 BoundaryCheck = Callable[[int, int, bool], bool]
-RebaselineCheck = Callable[[list[JsonEntry], int], bool]
 
 
 class UploadMode(Enum):
@@ -65,6 +67,14 @@ class TranscriptSnapshot:  # noqa: B903
         self.entries = entries
         self.prefix_hashes = prefix_hashes
         self.retained_entries = retained_entries
+
+
+class PrefixHashes(Protocol):
+    """Prefix fingerprints indexed by entry: a snapshot's list, or a view that computes them on demand."""
+
+    def __len__(self) -> int: ...
+
+    def __getitem__(self, index: int, /) -> str: ...
 
 
 class UploadCursor:  # noqa: B903
@@ -143,11 +153,11 @@ def parse_jsonl_snapshot(lines: Iterator[str]) -> TranscriptSnapshot:
     return TranscriptSnapshot(entries, prefix_hashes)
 
 
-def choose_upload(
-    entries: list[JsonEntry],
-    prefix_hashes: list[str],
+def choose_upload(  # noqa: UP047 - the Remote Collector runs this module on Python 3.10
+    entries: _Entries,
+    prefix_hashes: PrefixHashes,
     cursor: UploadCursor | None,
-    rebaseline_check: RebaselineCheck | None,
+    rebaseline_check: Callable[[_Entries, int], bool] | None,
 ) -> UploadDecision:
     """Choose full, append, or skip from one transcript snapshot and cursor.
 

@@ -23,7 +23,7 @@ NO_DIFF = object()
 # Reserved key inside ``tool_thresholds`` holding the pair for a tool nothing else covers —
 # no entry of its own, no matching glob, and no builtin default. Named for the tools it
 # applies to rather than its place in the chain, and deliberately not ``default``: that
-# word already means the builtin per-tool table (``DEFAULT_TOOL_THRESHOLDS``).
+# word already means the builtin per-tool table (``default_tool_thresholds()``).
 # It lives in the collection so it inherits the collection's lock: a fallback settable from
 # outside a locked table would auto-approve exactly the tools the lock exists to catch.
 # Deliberately not a glob — ``*`` fans out over every matching entry at merge time (see

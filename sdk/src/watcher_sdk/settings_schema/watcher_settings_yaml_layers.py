@@ -16,7 +16,7 @@ import regex as regex_module
 import yaml
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from yaml import YAMLError
-from yaml.constructor import ConstructorError
+from yaml.constructor import ConstructorError, SafeConstructor
 from yaml.nodes import MappingNode, Node
 
 from watcher_sdk.settings_schema.agent_enablement import merge_agent_enablement
@@ -84,8 +84,13 @@ _YAML_MERGE_KEY_TAG = "tag:yaml.org,2002:merge"
 _YAML_MERGE_KEY = object()
 
 
-class _UniqueKeySafeLoader(yaml.SafeLoader):
-    """Safe YAML loader that rejects duplicate keys in every mapping."""
+class _UniqueKeyConstructor(SafeConstructor):
+    """Safe YAML constructor that rejects duplicate keys in every mapping.
+
+    Mixed in ahead of a SafeLoader-family class, so ``super().construct_mapping``
+    reaches ``SafeConstructor.construct_mapping`` (merge-key flattening included)
+    whichever scanner and parser the loader uses.
+    """
 
     def construct_mapping(self, node: Node, deep: bool = False) -> dict[Hashable, object]:
         if not isinstance(node, MappingNode):
@@ -113,6 +118,39 @@ class _UniqueKeySafeLoader(yaml.SafeLoader):
         return super().construct_mapping(node, deep=deep)
 
 
+class _UniqueKeySafeLoader(_UniqueKeyConstructor, yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate keys in every mapping.
+
+    Pure Python throughout, so a parse error's message quotes the offending
+    line of the document; user and admin settings files go through this one.
+    """
+
+
+def _libyaml_unique_key_loader() -> type | None:
+    """``_UniqueKeySafeLoader``'s counterpart on libyaml, or None when PyYAML was built without it.
+
+    libyaml replaces only the C scanner and parser; construction, tag resolution
+    and the duplicate-key check stay the same Python code, so a valid document
+    constructs the same objects, several times faster. Its error messages lack
+    the quoted source line, so it is used only for packaged settings, which
+    ``test_packaged_settings_parse_identically_with_both_loaders`` pins equal
+    under both loaders.
+    """
+    c_safe_loader: Any = getattr(yaml, "CSafeLoader", None)
+    if c_safe_loader is None:
+        return None
+
+    class _UniqueKeyCSafeLoader(_UniqueKeyConstructor, c_safe_loader):
+        pass
+
+    return _UniqueKeyCSafeLoader
+
+
+# Every hook process parses the packaged settings, and the pure-Python parse is
+# one of the larger costs of starting one.
+_PACKAGED_SETTINGS_LOADER: type = _libyaml_unique_key_loader() or _UniqueKeySafeLoader
+
+
 def load_settings_yaml(yaml_text: str) -> object:
     """Safely parse settings YAML while rejecting duplicate mapping keys.
 
@@ -127,6 +165,11 @@ def load_settings_yaml(yaml_text: str) -> object:
 @lru_cache(maxsize=64)
 def _parse_settings_yaml(yaml_text: str) -> object:
     return yaml.load(yaml_text, Loader=_UniqueKeySafeLoader)
+
+
+@lru_cache(maxsize=8)
+def _parse_packaged_settings_yaml(yaml_text: str) -> object:
+    return yaml.load(yaml_text, Loader=_PACKAGED_SETTINGS_LOADER)
 
 
 class SettingsOverridesError(ValueError):
@@ -554,8 +597,9 @@ def path_fingerprint(path: Path) -> tuple[int, int] | None:
 
 
 def load_builtin_settings(resource_name: str) -> dict[str, Any]:
+    """Parse one packaged settings resource; each caller gets its own deep copy, as from ``load_settings_yaml``."""
     resource = files("watcher_sdk.settings_schema").joinpath(resource_name)
-    data = load_settings_yaml(resource.read_text(encoding="utf-8"))
+    data = deepcopy(_parse_packaged_settings_yaml(resource.read_text(encoding="utf-8")))
     if not isinstance(data, dict):
         raise ValueError(f"Builtin watcher settings must be a mapping: {resource}")
     return data

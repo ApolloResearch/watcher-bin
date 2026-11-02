@@ -44,6 +44,9 @@ from .available_tool_call_list_item_coverage_state import (
 from .available_tool_call_list_item_decision_category_type_0 import (
     AvailableToolCallListItemDecisionCategoryType0,
 )
+from .available_tool_call_list_item_ingest_kind_type_0 import (
+    AvailableToolCallListItemIngestKindType0,
+)
 from .bypass_reason import BypassReason
 from .callback_request import CallbackRequest
 from .chat_message_assistant import ChatMessageAssistant
@@ -139,7 +142,16 @@ from .document_range import DocumentRange
 from .document_range_type import DocumentRangeType
 from .enforcement_mode import EnforcementMode
 from .external_id_source import ExternalIdSource
+from .gateway_action import GatewayAction
+from .gateway_delivery import GatewayDelivery
 from .gateway_result import GatewayResult
+from .gateway_withheld_decision_detail import GatewayWithheldDecisionDetail
+from .gateway_withheld_decision_detail_ingest_kind_type_0 import (
+    GatewayWithheldDecisionDetailIngestKindType0,
+)
+from .gateway_withheld_decision_detail_raw_tool_call import (
+    GatewayWithheldDecisionDetailRawToolCall,
+)
 from .get_grading_usage_endpoint_v1_usage_grading_get_bucket import (
     GetGradingUsageEndpointV1UsageGradingGetBucket,
 )
@@ -434,6 +446,7 @@ __all__ = (
     "AvailableToolCallListItem",
     "AvailableToolCallListItemCoverageState",
     "AvailableToolCallListItemDecisionCategoryType0",
+    "AvailableToolCallListItemIngestKindType0",
     "BypassReason",
     "CallbackRequest",
     "ChatMessageAssistant",
@@ -519,7 +532,12 @@ __all__ = (
     "DocumentRangeType",
     "EnforcementMode",
     "ExternalIdSource",
+    "GatewayAction",
+    "GatewayDelivery",
     "GatewayResult",
+    "GatewayWithheldDecisionDetail",
+    "GatewayWithheldDecisionDetailIngestKindType0",
+    "GatewayWithheldDecisionDetailRawToolCall",
     "GetGradingUsageEndpointV1UsageGradingGetBucket",
     "GetGradingUsageEndpointV1UsageGradingGetKind",
     "GetOrgManagedSettingsSchemaV1OrganizationManagedSettingsPathSchemaGetResponseGetOrgManagedSettingsSchemaV1OrganizationManagedSettingsPathSchemaGet",

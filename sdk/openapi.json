@@ -1720,7 +1720,7 @@
           "sessions"
         ],
         "summary": "Get Session Trajectory Detail",
-        "description": "Get trajectory content through ownership, ``sessions:content:read:any``, or an active session content approval.\n\nReturn 404 when content is inaccessible or scrubbed. Session grades and\ntool-call decisions are included only with findings access; session summaries\nremain available with content access alone.\n\nThe ``view`` parameter picks the payload shape and defaults to ``truncated``,\nwhich caps tool outputs and user pastes and stubs out ``data`` content blocks,\nleaving marker fields (``content_truncated``, ``content_original_chars``) so\nclients can offer a full fetch. Callers that need storage-faithful message\ncontent must explicitly request ``extended``.\n\nThe literal trajectory id ``latest`` resolves server-side to the session's\nmost recent trajectory (the response carries the resolved id), so\nsession-scoped links can load a transcript in a single request. 404 when\nthe session has no trajectories.\n\nReturns at most one grade: the most recent non-errored grade recorded\nanywhere on the requested trajectory's hash chain (a grade is stored\nagainst the trajectory hash current when it ran, so earlier grades sit on\nprefix hashes). A trajectory whose chain was never graded falls back to\nthe session's most recent grade, so a graded session never presents as\nungraded; errored grades are returned only when nothing else exists.\n\nExtended-thinking signatures (opaque replay payloads inside reasoning content\nblocks) are omitted from message content to keep responses small; the readable\nreasoning text is unaffected.",
+        "description": "Get trajectory content through ownership, ``sessions:content:read:any``, or an active session content approval.\n\nReturn 404 when content is inaccessible or scrubbed. Session grades and\ntool-call decisions are included only with findings access; session summaries\nremain available with content access alone. With findings access,\n``gateway_withheld_decisions`` also lists the calls a gateway named as\nwithheld in favor of a message on this trajectory.\n\nThe ``view`` parameter picks the payload shape and defaults to ``truncated``,\nwhich caps tool outputs and user pastes and stubs out ``data`` content blocks,\nleaving marker fields (``content_truncated``, ``content_original_chars``) so\nclients can offer a full fetch. Callers that need storage-faithful message\ncontent must explicitly request ``extended``.\n\nThe literal trajectory id ``latest`` resolves server-side to the session's\nmost recent trajectory (the response carries the resolved id), so\nsession-scoped links can load a transcript in a single request. 404 when\nthe session has no trajectories.\n\nReturns at most one grade: the most recent non-errored grade recorded\nanywhere on the requested trajectory's hash chain (a grade is stored\nagainst the trajectory hash current when it ran, so earlier grades sit on\nprefix hashes). A trajectory whose chain was never graded falls back to\nthe session's most recent grade, so a graded session never presents as\nungraded; errored grades are returned only when nothing else exists.\n\nExtended-thinking signatures (opaque replay payloads inside reasoning content\nblocks) are omitted from message content to keep responses small; the readable\nreasoning text is unaffected.",
         "operationId": "get_session_trajectory_detail_v1_sessions__session_id__trajectories__trajectory_id__get",
         "parameters": [
           {
@@ -3908,6 +3908,36 @@
             ],
             "title": "Decision Summary",
             "description": "Concise title or context from the policy grade that supplied severity_score, falling back to the recorded decision summary."
+          },
+          "ingest_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "client",
+                  "gateway",
+                  "sdk",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest Kind",
+            "description": "Delivery path of the current evaluation, as on the call's decision. Null means the path was not recorded; unknown stored values report other."
+          },
+          "api_key_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Name",
+            "description": "API key name at the time of the current evaluation; null when none was recorded."
           }
         },
         "type": "object",
@@ -6967,6 +6997,41 @@
         "title": "ExternalIdSource",
         "description": "Where an external conversation id in a hook request comes from.\n\nKeys of `PreToolUseHookRequest.external_ids`. Each maps onto the external-id\nsource the matching ingest path already stores, so a hook-recorded decision\nconverges onto the session Watcher Live (`claude_code`, `codex`) or the\nTailscale Aperture log ingest (`aperture`) created for the same\nconversation; `other` is the gateway's own id and matches only other hook\ncalls. `github_copilot_cli` is GitHub Copilot CLI's own session id, which\nthe Watcher client sends for the sessions it records through this hook."
       },
+      "GatewayAction": {
+        "type": "string",
+        "enum": [
+          "blocked",
+          "cancelled"
+        ],
+        "title": "GatewayAction",
+        "description": "What a gateway did with a tool call it did not deliver to the client.\n\n``blocked``: the gateway refused the call because Watcher denied or\nescalated it. ``cancelled``: Watcher did not refuse the call, but the\ngateway dropped it with a refused call from the same proposal."
+      },
+      "GatewayDelivery": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/GatewayAction",
+            "description": "What the gateway did with the call instead of delivering it."
+          },
+          "delivered_message_ref": {
+            "type": "string",
+            "title": "Delivered Message Ref",
+            "description": "Message the gateway delivered to the client instead."
+          },
+          "proposal_message_ref": {
+            "type": "string",
+            "title": "Proposal Message Ref",
+            "description": "Message that proposed the call, on its own branch."
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "delivered_message_ref",
+          "proposal_message_ref"
+        ],
+        "title": "GatewayDelivery",
+        "description": "Where a gateway delivered another response in place of a tool call it withheld.\n\n``action`` describes delivery only; the call's decision keeps Watcher's own\nverdict. Both refs are ``message_ref`` values of messages stored in the\ncall's session."
+      },
       "GatewayResult": {
         "properties": {
           "score": {
@@ -7029,6 +7094,302 @@
         "type": "object",
         "title": "GatewayResult",
         "description": "The gateway monitor's verdict on the gated call.\n\n`failure_mode` is the monitor's label for the kind of risk it scored\n(its vocabulary is the monitor's own, not an enum of this contract)."
+      },
+      "GatewayWithheldDecisionDetail": {
+        "properties": {
+          "tool_use_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Use Id"
+          },
+          "tool_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Tool Name"
+          },
+          "raw_tool_call": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Raw Tool Call"
+          },
+          "policy_decision": {
+            "$ref": "#/components/schemas/PolicyDecision"
+          },
+          "tool_status": {
+            "$ref": "#/components/schemas/ToolStatus"
+          },
+          "decision_source": {
+            "$ref": "#/components/schemas/DecisionSource"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "flag_threshold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flag Threshold"
+          },
+          "deny_threshold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deny Threshold"
+          },
+          "triage_max_allow_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triage Max Allow Score"
+          },
+          "rule_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Label"
+          },
+          "rule_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Pattern"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "decision_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Context"
+          },
+          "human_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HumanDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "human_decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Human Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecidedBy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who settled the call after Watcher handed it on: `person` (a person answered the permission prompt), `agent_review` (the agent's automated approval reviewer answered it, so there is no `human_decision` and `tool_status` holds the outcome) or `interrupt` (the person interrupted the turn before the call was answered, including while Watcher was still reviewing it). Null when the call is unsettled or the sender does not know who answered. Meaningful for escalations; other decisions may carry a value beside Watcher's own verdict."
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "applied_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppliedDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "judged_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JudgedDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enforcement_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnforcementMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bypass_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BypassReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_call_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tool Call Id"
+          },
+          "tool_call_decision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tool Call Decision Id"
+          },
+          "ingest_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "client",
+                  "gateway",
+                  "sdk",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest Kind",
+            "description": "Delivery path of the current evaluation. Null means the path was not recorded; unknown stored values report other. Outcome-only updates preserve this attribution."
+          },
+          "api_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Id",
+            "description": "ID of the API key that authenticated the current evaluation."
+          },
+          "api_key_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Name",
+            "description": "API key name at the time of the current evaluation."
+          },
+          "tool_call_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Tool Call Created At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "grades": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallGradeDetail"
+            },
+            "type": "array",
+            "title": "Grades"
+          },
+          "gateway_delivery": {
+            "$ref": "#/components/schemas/GatewayDelivery",
+            "description": "Where the gateway delivered another response instead of this call."
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_use_id",
+          "tool_name",
+          "raw_tool_call",
+          "policy_decision",
+          "tool_status",
+          "decision_source",
+          "tool_call_id",
+          "tool_call_decision_id",
+          "tool_call_created_at",
+          "created_at",
+          "updated_at",
+          "gateway_delivery"
+        ],
+        "title": "GatewayWithheldDecisionDetail",
+        "description": "Persisted decision for a call a gateway withheld in favor of a message on the displayed trajectory.\n\nOnly a trajectory's ``gateway_withheld_decisions`` lists this shape; every\nother decision read returns the base decision detail, which has no\n``gateway_delivery``."
       },
       "GradeRequest": {
         "properties": {
@@ -9747,6 +10108,29 @@
               }
             ],
             "title": "Settings Overrides"
+          },
+          "withheld_tool_use_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withheld Tool Use Ids",
+            "description": "Optional. Tool-use IDs of the calls a gateway withheld from the client in favor of the response this request records: the refused calls and the calls withheld with them in the same proposal, never a call delivered to the client. Omit it when nothing was withheld. The recorded response is response_body's message, or the last request message when that is empty. Watcher shows each named call that it evaluated in the same session before this response; unknown IDs are ignored, and so is the field on ephemeral requests. A non-empty list requires withholds_refused_calls to be true. At most 4,096 IDs; duplicates are removed. Older servers reject the field with HTTP 422."
+          },
+          "withholds_refused_calls": {
+            "type": "boolean",
+            "title": "Withholds Refused Calls",
+            "description": "Optional. True when the caller withholds from the client every call Watcher denies or escalates in enforce mode, so Watcher records such a refusal's execution status as blocked when it decides it. Leave it false when the reply may already have reached the client, as on an observation path. Older servers reject the field with HTTP 422.",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -12743,7 +13127,7 @@
               }
             ],
             "title": "Trajectory Id",
-            "description": "Restrict calls to this trajectory and its ancestors. Requires session_id. Use latest for the session's latest trajectory. Missing or scrubbed trajectories match no calls."
+            "description": "Restrict calls to this trajectory and its ancestors, plus calls a gateway withheld or cancelled in favor of one of its messages and that Watcher evaluated, whose message_ref names the branch that proposed them. Requires session_id. Use latest for the session's latest trajectory. Missing or scrubbed trajectories match no calls."
           },
           "is_flagged": {
             "anyOf": [
@@ -12933,6 +13317,14 @@
             },
             "type": "object",
             "title": "Tool Call Decisions"
+          },
+          "gateway_withheld_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/GatewayWithheldDecisionDetail"
+            },
+            "type": "array",
+            "title": "Gateway Withheld Decisions",
+            "description": "Decisions for calls a gateway withheld in favor of a message on this trajectory, as named by withheld_tool_use_ids on the raw-format hook request that recorded that message. A call is listed when it is stored in this session with a Watcher evaluation and this trajectory does not show it. Each entry's gateway_delivery names the delivered message it belongs before. Ordered by the proposing message's index, then its storage order (internal message ID), then the call's position in that message's tool calls, then tool-use ID. Empty without findings access."
           },
           "spawned_subagents": {
             "items": {

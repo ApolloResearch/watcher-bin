@@ -21,6 +21,9 @@ from ..models.available_tool_call_list_item_coverage_state import (
 from ..models.available_tool_call_list_item_decision_category_type_0 import (
     AvailableToolCallListItemDecisionCategoryType0,
 )
+from ..models.available_tool_call_list_item_ingest_kind_type_0 import (
+    AvailableToolCallListItemIngestKindType0,
+)
 from ..models.enforcement_mode import EnforcementMode
 from ..models.judged_decision import JudgedDecision
 from ..types import UNSET, Unset
@@ -55,6 +58,10 @@ class AvailableToolCallListItem:
         tool_input_preview (None | str | Unset): Raw tool-argument preview; null without content access to the session.
         decision_summary (None | str | Unset): Concise title or context from the policy grade that supplied
             severity_score, falling back to the recorded decision summary.
+        ingest_kind (AvailableToolCallListItemIngestKindType0 | None | Unset): Delivery path of the current evaluation,
+            as on the call's decision. Null means the path was not recorded; unknown stored values report other.
+        api_key_name (None | str | Unset): API key name at the time of the current evaluation; null when none was
+            recorded.
     """
 
     tool_call_id: UUID
@@ -81,6 +88,8 @@ class AvailableToolCallListItem:
     content_state: Literal["available"] | Unset = "available"
     tool_input_preview: None | str | Unset = UNSET
     decision_summary: None | str | Unset = UNSET
+    ingest_kind: AvailableToolCallListItemIngestKindType0 | None | Unset = UNSET
+    api_key_name: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -182,6 +191,20 @@ class AvailableToolCallListItem:
         else:
             decision_summary = self.decision_summary
 
+        ingest_kind: None | str | Unset
+        if isinstance(self.ingest_kind, Unset):
+            ingest_kind = UNSET
+        elif isinstance(self.ingest_kind, AvailableToolCallListItemIngestKindType0):
+            ingest_kind = self.ingest_kind.value
+        else:
+            ingest_kind = self.ingest_kind
+
+        api_key_name: None | str | Unset
+        if isinstance(self.api_key_name, Unset):
+            api_key_name = UNSET
+        else:
+            api_key_name = self.api_key_name
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -221,6 +244,10 @@ class AvailableToolCallListItem:
             field_dict["tool_input_preview"] = tool_input_preview
         if decision_summary is not UNSET:
             field_dict["decision_summary"] = decision_summary
+        if ingest_kind is not UNSET:
+            field_dict["ingest_kind"] = ingest_kind
+        if api_key_name is not UNSET:
+            field_dict["api_key_name"] = api_key_name
 
         return field_dict
 
@@ -403,6 +430,34 @@ class AvailableToolCallListItem:
 
         decision_summary = _parse_decision_summary(d.pop("decision_summary", UNSET))
 
+        def _parse_ingest_kind(
+            data: object,
+        ) -> AvailableToolCallListItemIngestKindType0 | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                ingest_kind_type_0 = AvailableToolCallListItemIngestKindType0(data)
+
+                return ingest_kind_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(AvailableToolCallListItemIngestKindType0 | None | Unset, data)
+
+        ingest_kind = _parse_ingest_kind(d.pop("ingest_kind", UNSET))
+
+        def _parse_api_key_name(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        api_key_name = _parse_api_key_name(d.pop("api_key_name", UNSET))
+
         available_tool_call_list_item = cls(
             tool_call_id=tool_call_id,
             session_id=session_id,
@@ -424,6 +479,8 @@ class AvailableToolCallListItem:
             content_state=content_state,
             tool_input_preview=tool_input_preview,
             decision_summary=decision_summary,
+            ingest_kind=ingest_kind,
+            api_key_name=api_key_name,
         )
 
         available_tool_call_list_item.additional_properties = d

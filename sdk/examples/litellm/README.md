@@ -84,11 +84,27 @@ text and any calls already approved and released. A timeout, malformed
 proposal or Watcher error ends with an error instead. The callback does not
 generate alternatives for missing or failed Watcher decisions.
 
+Every request the callback sends to Watcher sets `withholds_refused_calls`,
+so Watcher records each refused call as `blocked` when it decides it.
+When the client receives a response in place of refused proposals, the
+callback's recording of that response names the calls it withheld in
+`withheld_tool_use_ids`: each refused call and the calls withheld with it from
+the same proposal. It never names a call already released to the client.
+Watcher uses the IDs to show those calls before the delivered response. It
+skips any call it never evaluated, such as one from a proposal the callback
+refused as a repeat without asking Watcher.
+
 ## Prerequisites
 
 - Python 3.12 or later and `uv`.
 - A Watcher server and an API key that can monitor tool calls and write
-  sessions. The server must accept the pre-tool-use hook's raw format.
+  sessions. The server must accept the pre-tool-use hook's raw format. A
+  server released before the `withheld_tool_use_ids` and
+  `withholds_refused_calls` fields existed rejects them with HTTP 422. The
+  callback then logs a warning and sends the same request again without them.
+  That server still evaluates every call and records the delivered response.
+  It records refused calls as `pending` rather than `blocked`, and does not
+  show the withheld calls before the delivered response.
 - Provider credentials for LiteLLM.
 
 ## Install and configure
@@ -214,8 +230,9 @@ the SDK's 420-second raw-hook default and applies a total deadline in addition
 to its HTTP timeout. Watcher may finish and record grading, including its
 usage, after the callback times out or the client disconnects.
 
-The callback never retries a Watcher request, because a retry can repeat billed
-LLM grading.
+The callback does not retry a Watcher request that failed or timed out, because
+a retry can repeat billed LLM grading. Its one re-send follows an older server's
+HTTP 422 rejection of the newer fields, which happens before any grading.
 
 ## Limits
 
@@ -273,7 +290,8 @@ uv run pytest tests/test_incremental_proxy.py tests/test_recovery_proxy.py \
 The tests start isolated HTTP provider and Watcher fixtures on free loopback
 ports. They check text arriving before evaluation, withholding during grading,
 release before the next evaluation, interleaved calls, keepalives, streamed
-alternatives after denial or escalation, retry limits, timeouts and disconnects.
+alternatives after denial or escalation, retry limits, timeouts, disconnects
+and the withheld calls named when the delivered response is recorded.
 The XML's `timing_seconds`, `timeout_seconds`,
 `keepalive_count` and `wire` properties retain client-observed timing and SSE
 frames; the temporary directory also contains the proxy log. The fast suite

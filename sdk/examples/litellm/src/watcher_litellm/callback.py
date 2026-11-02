@@ -15,7 +15,14 @@ client request. Alternatives stream through the same gates. Already released
 calls retain their approval; internal recovery receipts state that their real
 execution results are unknown. Repeated denied or released calls cannot escape
 the prior decision merely by changing their IDs. Non-streamed proposals remain
-atomic until an entire allowed alternative can be returned.
+atomic until an entire allowed alternative can be returned. Every Watcher
+request declares that refused calls are withheld (``withholds_refused_calls``),
+so Watcher records them as blocked, except when it re-sends an exchange to an
+older Watcher that rejects the newer fields. The recording of
+the delivered response names every call withheld from a refused proposal
+(``withheld_tool_use_ids``), so Watcher can show those calls before it; released
+calls are never named. Watcher skips a named call it never evaluated, such as
+one from a proposal refused locally as a repeat.
 
 Each evaluation has a 300-second default deadline. After a refusal, its remaining
 budget also bounds draining that proposal, replacement generation and evaluation.
@@ -46,10 +53,10 @@ from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
 from openai._streaming import SSEDecoder
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from watcher_litellm.delivery import StreamDelivery, compose_nonstream
-from watcher_litellm.incremental import PROVIDER_ITEMS, IncrementalStream, PendingEvent
+from watcher_litellm.incremental import PROVIDER_ITEMS, Evaluation, IncrementalStream, PendingEvent
 from watcher_litellm.replan import (
     ToolCall,
     ToolDenial,
@@ -92,11 +99,22 @@ class _Recovery(BaseModel):
     Once a call is refused, its evaluation's deadline also bounds draining that
     proposal, generating alternatives, and evaluating them. The operation map
     prevents a fresh call ID from retrying a denied or already released action.
+    ``withheld`` holds the IDs of every call withheld from a refused proposal,
+    which the delivered response's recording names for Watcher.
     """
 
     deadline: float | None = None
     forbidden: dict[str, ToolDenial] = Field(default_factory=dict)
     released: list[ToolCall] = Field(default_factory=list)
+    withheld: list[str] = Field(default_factory=list)
+
+    def withheld_ids(self) -> list[str] | None:
+        """The withheld calls to name on the delivered response's recording, or None when there are none.
+
+        A released call is never named, even if a later proposal reused its ID.
+        """
+        released = {call.tool_use_id for call in self.released}
+        return [call_id for call_id in self.withheld if call_id not in released] or None
 
 
 class _Attempt(BaseModel):
@@ -195,6 +213,34 @@ _TRANSIENT_WATCHER_STATUSES = frozenset({408, 409, 425, 429})
 def _client_status(watcher_status: int) -> int:
     """The proxy's status for a Watcher error: 503 when a retry could succeed, else 422."""
     return 503 if watcher_status >= 500 or watcher_status in _TRANSIENT_WATCHER_STATUSES else 422
+
+
+# Raw-format request fields newer than some Watcher servers this example may
+# run against. Those servers forbid unknown fields, so they answer HTTP 422 with
+# an ``extra_forbidden`` validation error located at the field.
+_GATEWAY_FIELDS = frozenset({"withheld_tool_use_ids", "withholds_refused_calls"})
+
+
+class _ValidationError(BaseModel):
+    loc: list[str | int]
+    type: str
+
+
+class _ValidationErrors(BaseModel):
+    detail: list[_ValidationError]
+
+
+def _predates_gateway_fields(error: WatcherAPIError) -> bool:
+    """Whether Watcher rejected the exchange as an older server that does not know the gateway fields."""
+    if error.status_code != 422:
+        return False
+    try:
+        errors = _ValidationErrors.model_validate(error.body)
+    except ValidationError:
+        return False
+    return any(
+        item.type == "extra_forbidden" and item.loc and item.loc[-1] in _GATEWAY_FIELDS for item in errors.detail
+    )
 
 
 # Responses output items the provider runs itself. Every other ``*_call`` item
@@ -372,34 +418,54 @@ class WatcherCallback(CustomLogger):
         return data
 
     async def _decide(
-        self, api: API, data: dict[str, Any], response: dict[str, Any], user: UserAPIKeyAuth
+        self,
+        api: API,
+        data: dict[str, Any],
+        response: dict[str, Any],
+        user: UserAPIKeyAuth,
+        withheld_ids: list[str] | None = None,
     ) -> list[ToolDenial]:
         """Bound the entire Watcher exchange, including setup and reading, by one deadline."""
         try:
             async with asyncio.timeout(self.timeout_seconds):
-                return await self._request_decision(api, data, response, user)
+                return await self._request_decision(api, data, response, user, withheld_ids)
         except TimeoutError:
             raise HTTPException(504, "Watcher evaluation timed out; the pending tool call was withheld") from None
 
     async def _request_decision(
-        self, api: API, data: dict[str, Any], response: dict[str, Any], user: UserAPIKeyAuth
+        self,
+        api: API,
+        data: dict[str, Any],
+        response: dict[str, Any],
+        user: UserAPIKeyAuth,
+        withheld_ids: list[str] | None,
     ) -> list[ToolDenial]:
-        """Return matched policy refusals; missing, ambiguous or failed decisions are errors."""
-        original = data["proxy_server_request"]
-        headers = {key.lower(): value for key, value in (original.get("headers") or {}).items()}
-        session_id = session_identity(data)
+        """Return matched policy refusals; missing, ambiguous or failed decisions are errors.
+
+        ``withheld_ids`` names the calls withheld in favor of ``response`` and is
+        sent only when there are some. A Watcher server older than this example
+        rejects that field and ``withholds_refused_calls``; the exchange is then
+        sent once more without them, so it is still evaluated and recorded.
+        """
         try:
             async with self._client() as client:
-                outputs = await client.pre_tool_use_hook(
-                    request_body=client_body(api, original["body"]),
-                    response_body=response,
-                    url=urlsplit(original["url"]).path,
-                    provider=f"litellm/{data.get('model', 'unknown')}",
-                    user_agent=headers.get("user-agent"),
-                    external_ids={"other": session_id} if session_id else None,
-                    user=user.user_email or None,
-                    timeout=self.timeout_seconds,
-                )
+                try:
+                    outputs = await self._send_exchange(
+                        client, api, data, response, user, withheld_ids=withheld_ids, withholds_refused_calls=True
+                    )
+                except WatcherAPIError as error:
+                    if not _predates_gateway_fields(error):
+                        raise
+                    dropped = [*(["withheld_tool_use_ids"] if withheld_ids else []), "withholds_refused_calls"]
+                    logger.warning(
+                        "Watcher is older than this example and rejected %s; sending the %s exchange again without %s",
+                        ", ".join(dropped),
+                        api,
+                        "them" if len(dropped) > 1 else "it",
+                    )
+                    outputs = await self._send_exchange(
+                        client, api, data, response, user, withheld_ids=None, withholds_refused_calls=False
+                    )
         except WatcherAPIError as error:
             logger.warning("Watcher rejected a %s exchange with HTTP %s", api, error.status_code)
             raise HTTPException(_client_status(error.status_code), "Watcher could not evaluate this response") from None
@@ -447,6 +513,33 @@ class WatcherCallback(CustomLogger):
             )
         return denials
 
+    async def _send_exchange(
+        self,
+        client: AsyncWatcherClient,
+        api: API,
+        data: dict[str, Any],
+        response: dict[str, Any],
+        user: UserAPIKeyAuth,
+        *,
+        withheld_ids: list[str] | None,
+        withholds_refused_calls: bool,
+    ) -> list[PreToolUseHookResponse | HookCallError]:
+        original = data["proxy_server_request"]
+        headers = {key.lower(): value for key, value in (original.get("headers") or {}).items()}
+        session_id = session_identity(data)
+        return await client.pre_tool_use_hook(
+            request_body=client_body(api, original["body"]),
+            response_body=response,
+            url=urlsplit(original["url"]).path,
+            provider=f"litellm/{data.get('model', 'unknown')}",
+            user_agent=headers.get("user-agent"),
+            external_ids={"other": session_id} if session_id else None,
+            user=user.user_email or None,
+            timeout=self.timeout_seconds,
+            withheld_tool_use_ids=withheld_ids,
+            withholds_refused_calls=withholds_refused_calls,
+        )
+
     async def async_post_call_success_hook(
         self, data: dict[str, Any], user_api_key_dict: UserAPIKeyAuth, response: Any
     ) -> Any:
@@ -485,10 +578,12 @@ class WatcherCallback(CustomLogger):
         notices: list[str] = []
         replacement: dict[str, Any] | None = None
         for attempt in range(_MAX_PROPOSALS):
+            calls = client_tool_details(api, candidate)
             refused = {denial.tool_use_id for denial in denials}
-            cancelled = [call for call in client_tool_details(api, candidate) if call.tool_use_id not in refused]
+            cancelled = [call for call in calls if call.tool_use_id not in refused]
             notices.append(denial_notice(denials, cancelled=cancelled))
             self._remember_denials(recovery, denials)
+            recovery.withheld.extend(call.tool_use_id for call in calls)
             if attempt == _MAX_PROPOSALS - 1:
                 notices.append("Watcher stopped after three blocked proposals.")
                 break
@@ -502,7 +597,7 @@ class WatcherCallback(CustomLogger):
                 replacement = candidate
                 break
         delivered = compose_nonstream(api, original, replacement, "\n\n".join(notices))
-        self._start_recording(api, data, delivered, user)
+        self._start_recording(api, data, delivered, user, recovery.withheld_ids())
         if isinstance(response, BaseModel):
             return type(response).model_validate(delivered)
         return delivered
@@ -640,29 +735,57 @@ class WatcherCallback(CustomLogger):
         return repeated if repeated else await self._decide(api, data, response, user)
 
     async def _record_stream_tail(
-        self, api: API, data: dict[str, Any], response: dict[str, Any], user: UserAPIKeyAuth
+        self,
+        api: API,
+        data: dict[str, Any],
+        response: dict[str, Any],
+        user: UserAPIKeyAuth,
+        withheld_ids: list[str] | None,
     ) -> None:
         """Record text after all executable content was evaluated, without delaying delivery."""
         try:
-            await self._decide(api, data, response, user)
+            await self._decide(api, data, response, user, withheld_ids)
         except HTTPException:
             logger.warning("Watcher could not record a %s stream tail", api)
 
-    def _start_recording(self, api: API, data: dict[str, Any], delivered: dict[str, Any], user: UserAPIKeyAuth) -> None:
-        """Record the actual client-visible history without selecting approved calls again."""
-        state = IncrementalStream(api)
-        state.body = delivered
-        for path, _ in client_calls(api, delivered):
+    def _start_recording(
+        self,
+        api: API,
+        data: dict[str, Any],
+        delivered: dict[str, Any],
+        user: UserAPIKeyAuth,
+        withheld_ids: list[str] | None,
+    ) -> None:
+        """Record the actual client-visible history without selecting approved calls again.
+
+        ``withheld_ids`` names the calls withheld in favor of ``delivered``, so
+        Watcher can show them before it.
+        """
+        request = client_body(api, data["proxy_server_request"]["body"])
+        if api == "messages" and client_calls(api, delivered):
+            # An Anthropic client sends this reply back next turn as one assistant
+            # message, released calls and later text together. Watcher must store
+            # it as that one message, or the next turn would branch away from it
+            # and lose its withheld calls, so the whole reply goes into history
+            # with an empty response after it.
+            reply = as_dict(delivered)
+            history = as_dict(request)
+            history["messages"] = [*(history.get("messages") or []), {"role": "assistant", "content": reply["content"]}]
+            tail = Evaluation(request=history, response={**reply, "content": []})
+        else:
+            state = IncrementalStream(api)
+            state.body = delivered
+            for path, _ in client_calls(api, delivered):
+                if api == "chat_completions":
+                    index = 0 if path[-1] == "function_call" else int(path[4])
+                else:
+                    index = int(path[1])
+                state.allowed.add(index)
             if api == "chat_completions":
-                index = 0 if path[-1] == "function_call" else int(path[4])
-            else:
-                index = int(path[1])
-            state.allowed.add(index)
-        if api == "chat_completions":
-            state.chat_legacy = delivered["choices"][0]["message"].get("function_call")
-        tail = state.evaluation(client_body(api, data["proxy_server_request"]["body"]), None)
+                state.chat_legacy = delivered["choices"][0]["message"].get("function_call")
+            tail = state.evaluation(request, None)
         recording = asyncio.create_task(
-            self._record_stream_tail(api, _request_with_body(data, tail.request), tail.response, user)
+            self._record_stream_tail(api, _request_with_body(data, tail.request), tail.response, user, withheld_ids)
         )
         self._recordings.add(recording)
         recording.add_done_callback(self._recordings.discard)
@@ -740,7 +863,7 @@ class WatcherCallback(CustomLogger):
                     delivery.checkpoint(state)
                     final = delivery.finish(state)
                     if api != "chat_completions":
-                        self._start_recording(api, original_data, delivery.response, user)
+                        self._start_recording(api, original_data, delivery.response, user, recovery.withheld_ids())
                     for event in final:
                         yield event
                     finished = True
@@ -751,7 +874,7 @@ class WatcherCallback(CustomLogger):
                 state.finish()
             delivery.checkpoint(state)
             if finished and api == "chat_completions":
-                self._start_recording(api, original_data, delivery.response, user)
+                self._start_recording(api, original_data, delivery.response, user, recovery.withheld_ids())
 
     async def _gated_stream(
         self, api: API, data: dict[str, Any], response: Any, user: UserAPIKeyAuth, delivery: StreamDelivery
@@ -772,11 +895,11 @@ class WatcherCallback(CustomLogger):
                 return
             released_ids = {call.tool_use_id for call in attempt.released}
             refused_ids = {denial.tool_use_id for denial in attempt.denials}
-            cancelled = [
-                call
-                for call in client_tool_details(api, attempt.stream.body)
-                if call.tool_use_id not in released_ids | refused_ids
+            withheld = [
+                call for call in client_tool_details(api, attempt.stream.body) if call.tool_use_id not in released_ids
             ]
+            cancelled = [call for call in withheld if call.tool_use_id not in refused_ids]
+            recovery.withheld.extend(call.tool_use_id for call in withheld)
             self._remember_denials(recovery, attempt.denials)
             for event in delivery.notice(denial_notice(attempt.denials, cancelled=cancelled)):
                 yield event
@@ -784,7 +907,7 @@ class WatcherCallback(CustomLogger):
                 for event in delivery.notice("Watcher stopped after three blocked proposals."):
                     yield event
                 final = delivery.finish(attempt.stream)
-                self._start_recording(api, data, delivery.response, user)
+                self._start_recording(api, data, delivery.response, user, recovery.withheld_ids())
                 for event in final:
                     yield event
                 return

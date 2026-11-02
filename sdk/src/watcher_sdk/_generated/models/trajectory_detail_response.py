@@ -10,6 +10,7 @@ from attrs import field as _attrs_field
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.gateway_withheld_decision_detail import GatewayWithheldDecisionDetail
     from ..models.grade_result import GradeResult
     from ..models.spawned_subagent import SpawnedSubagent
     from ..models.trajectory_detail_response_messages_item import (
@@ -39,6 +40,12 @@ class TrajectoryDetailResponse:
         source (str):
         created_at (datetime.datetime):
         tool_call_decisions (TrajectoryDetailResponseToolCallDecisions | Unset):
+        gateway_withheld_decisions (list[GatewayWithheldDecisionDetail] | Unset): Decisions for calls a gateway withheld
+            in favor of a message on this trajectory, as named by withheld_tool_use_ids on the raw-format hook request that
+            recorded that message. A call is listed when it is stored in this session with a Watcher evaluation and this
+            trajectory does not show it. Each entry's gateway_delivery names the delivered message it belongs before.
+            Ordered by the proposing message's index, then its storage order (internal message ID), then the call's position
+            in that message's tool calls, then tool-use ID. Empty without findings access.
         spawned_subagents (list[SpawnedSubagent] | Unset):
     """
 
@@ -50,6 +57,7 @@ class TrajectoryDetailResponse:
     source: str
     created_at: datetime.datetime
     tool_call_decisions: TrajectoryDetailResponseToolCallDecisions | Unset = UNSET
+    gateway_withheld_decisions: list[GatewayWithheldDecisionDetail] | Unset = UNSET
     spawned_subagents: list[SpawnedSubagent] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -78,6 +86,15 @@ class TrajectoryDetailResponse:
         if not isinstance(self.tool_call_decisions, Unset):
             tool_call_decisions = self.tool_call_decisions.to_dict()
 
+        gateway_withheld_decisions: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.gateway_withheld_decisions, Unset):
+            gateway_withheld_decisions = []
+            for gateway_withheld_decisions_item_data in self.gateway_withheld_decisions:
+                gateway_withheld_decisions_item = (
+                    gateway_withheld_decisions_item_data.to_dict()
+                )
+                gateway_withheld_decisions.append(gateway_withheld_decisions_item)
+
         spawned_subagents: list[dict[str, Any]] | Unset = UNSET
         if not isinstance(self.spawned_subagents, Unset):
             spawned_subagents = []
@@ -100,6 +117,8 @@ class TrajectoryDetailResponse:
         )
         if tool_call_decisions is not UNSET:
             field_dict["tool_call_decisions"] = tool_call_decisions
+        if gateway_withheld_decisions is not UNSET:
+            field_dict["gateway_withheld_decisions"] = gateway_withheld_decisions
         if spawned_subagents is not UNSET:
             field_dict["spawned_subagents"] = spawned_subagents
 
@@ -107,6 +126,9 @@ class TrajectoryDetailResponse:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.gateway_withheld_decision_detail import (
+            GatewayWithheldDecisionDetail,
+        )
         from ..models.grade_result import GradeResult
         from ..models.spawned_subagent import SpawnedSubagent
         from ..models.trajectory_detail_response_messages_item import (
@@ -155,6 +177,19 @@ class TrajectoryDetailResponse:
                 _tool_call_decisions
             )
 
+        _gateway_withheld_decisions = d.pop("gateway_withheld_decisions", UNSET)
+        gateway_withheld_decisions: list[GatewayWithheldDecisionDetail] | Unset = UNSET
+        if _gateway_withheld_decisions is not UNSET:
+            gateway_withheld_decisions = []
+            for gateway_withheld_decisions_item_data in _gateway_withheld_decisions:
+                gateway_withheld_decisions_item = (
+                    GatewayWithheldDecisionDetail.from_dict(
+                        gateway_withheld_decisions_item_data
+                    )
+                )
+
+                gateway_withheld_decisions.append(gateway_withheld_decisions_item)
+
         _spawned_subagents = d.pop("spawned_subagents", UNSET)
         spawned_subagents: list[SpawnedSubagent] | Unset = UNSET
         if _spawned_subagents is not UNSET:
@@ -175,6 +210,7 @@ class TrajectoryDetailResponse:
             source=source,
             created_at=created_at,
             tool_call_decisions=tool_call_decisions,
+            gateway_withheld_decisions=gateway_withheld_decisions,
             spawned_subagents=spawned_subagents,
         )
 

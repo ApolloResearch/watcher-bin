@@ -7,7 +7,8 @@ the real SDK client.
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
@@ -395,6 +396,34 @@ def _stub_client(handler: Any) -> Any:
     return factory
 
 
+_GATEWAY_FIELDS = ("withheld_tool_use_ids", "withholds_refused_calls")
+
+
+def _older_watcher(sent: list[dict[str, Any]], deny: str | None = None) -> Callable[[httpx.Request], httpx.Response]:
+    """A Watcher released before the gateway fields, rejecting them as its raw request model does.
+
+    Calls are allowed except ``deny``. The 422 body is what FastAPI returns for an unknown field on the
+    raw variant of the pre-tool-use request.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        sent.append(body)
+        unknown = [field for field in _GATEWAY_FIELDS if field in body]
+        if unknown:
+            errors = [
+                {"loc": ["body", "raw", field], "msg": "Extra inputs are not permitted", "type": "extra_forbidden"}
+                for field in unknown
+            ]
+            return httpx.Response(422, json={"detail": errors, "request_id": "r-1"})
+        calls = client_calls("chat_completions", body["response_body"])
+        return httpx.Response(
+            200, json=[_outcome("deny" if call_id == deny else "allow", call_id) for _, call_id in calls]
+        )
+
+    return handler
+
+
 class _SentConversation(BaseModel):
     external_ids: dict[str, str] | None = None
 
@@ -428,6 +457,7 @@ class TestHooks:
             "dev@example.com",
         )
         assert body["provider"] == "litellm/m"
+        assert body["withholds_refused_calls"] is True
 
     @pytest.mark.parametrize("headers", [None, {"X-Watcher-Session-Id": ""}], ids=["absent", "empty"])
     async def test_requests_without_a_session_header_send_no_conversation_id(
@@ -536,6 +566,105 @@ class TestHooks:
                 _proxy_data("/v1/chat/completions", {}), USER, _chat_response("rm")
             )
         assert refused.value.status_code == expected
+
+    async def test_an_older_watcher_gets_the_exchange_again_without_the_flag(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        sent: list[dict[str, Any]] = []
+        callback = WatcherCallback(_stub_client(_older_watcher(sent)))
+        response = litellm.ModelResponse(**_chat_response("read"))
+
+        with caplog.at_level(logging.WARNING, logger="watcher_litellm.callback"):
+            released = await callback.async_post_call_success_hook(
+                _proxy_data("/v1/chat/completions", {"model": "m", "messages": []}), USER, response
+            )
+
+        assert released is response
+        assert [body.get("withholds_refused_calls") for body in sent] == [True, None]
+        assert [record.getMessage() for record in caplog.records] == [
+            "Watcher is older than this example and rejected withholds_refused_calls; "
+            "sending the chat_completions exchange again without it"
+        ]
+
+    async def test_an_older_watcher_still_records_the_delivered_reply(
+        self, text_only_replan: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        sent: list[dict[str, Any]] = []
+        callback = WatcherCallback(_stub_client(_older_watcher(sent, deny="call_0")))
+
+        with caplog.at_level(logging.WARNING, logger="watcher_litellm.callback"):
+            await callback.async_post_call_success_hook(
+                _proxy_data("/v1/chat/completions", {"model": "m", "messages": []}),
+                USER,
+                litellm.ModelResponse(**_chat_response("rm")),
+            )
+            await asyncio.gather(*callback._recordings)
+
+        recording = sent[-2:]
+        assert [(body.get("withheld_tool_use_ids"), body.get("withholds_refused_calls")) for body in recording] == [
+            (["call_0"], True),
+            (None, None),
+        ]
+        assert recording[0]["response_body"] == recording[1]["response_body"]
+        assert caplog.records[-1].getMessage() == (
+            "Watcher is older than this example and rejected withheld_tool_use_ids, withholds_refused_calls; "
+            "sending the chat_completions exchange again without them"
+        )
+        assert not any("could not record" in record.getMessage() for record in caplog.records)
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            {
+                "loc": ["body", "raw", "unknown_field"],
+                "msg": "Extra inputs are not permitted",
+                "type": "extra_forbidden",
+            },
+            {
+                "loc": ["body", "raw", "withheld_tool_use_ids"],
+                "msg": "List should have at most 4096 items",
+                "type": "too_long",
+            },
+            {"loc": ["body"], "msg": "malformed_exchange", "type": "value_error"},
+            {
+                "loc": ["body", "raw"],
+                "msg": "Value error, withheld_tool_use_ids requires withholds_refused_calls to be true",
+                "type": "value_error",
+            },
+        ],
+        ids=["another_unknown_field", "invalid_withheld_ids", "malformed_exchange", "withheld_ids_without_flag"],
+    )
+    async def test_other_validation_errors_are_not_sent_again(self, error: dict[str, list[str] | str]) -> None:
+        sent: list[dict[str, Any]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(json.loads(request.content))
+            return httpx.Response(422, json={"detail": [error]})
+
+        with pytest.raises(HTTPException) as refused:
+            await WatcherCallback(_stub_client(handler)).async_post_call_success_hook(
+                _proxy_data("/v1/chat/completions", {}), USER, _chat_response("rm")
+            )
+
+        assert refused.value.status_code == 422
+        assert len(sent) == 1
+
+    async def test_a_failure_after_dropping_the_fields_withholds_the_response(self) -> None:
+        sent: list[dict[str, Any]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(json.loads(request.content))
+            if len(sent) == 1:
+                return _older_watcher([])(request)
+            return httpx.Response(500, json={"detail": "no"})
+
+        with pytest.raises(HTTPException) as refused:
+            await WatcherCallback(_stub_client(handler)).async_post_call_success_hook(
+                _proxy_data("/v1/chat/completions", {}), USER, _chat_response("rm")
+            )
+
+        assert refused.value.status_code == 503
+        assert len(sent) == 2
 
     async def test_unreachable_watcher_withholds_the_response(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

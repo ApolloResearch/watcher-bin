@@ -12,7 +12,7 @@ from typing import Any
 
 from watcher_transcript_transport.upload import JsonEntry
 
-__all__ = ["delta_needs_full_upload", "trim_incomplete_tail"]
+__all__ = ["TailTrimScan", "delta_needs_full_upload", "trim_incomplete_tail"]
 
 
 def trim_incomplete_tail(
@@ -29,14 +29,53 @@ def trim_incomplete_tail(
     if not entries:
         return entries
 
-    pending_tool_use_ids: set[str] = set()
-    last_complete_idx = 0
+    scan = TailTrimScan(allow_trailing_assistant_text=allow_trailing_assistant_text)
+    for entry in entries:
+        scan.feed(entry)
+    if scan.complete_until >= len(entries):
+        return entries
+    return entries[: scan.complete_until]
 
-    for index, entry in enumerate(entries):
+
+class TailTrimScan:
+    """`trim_incomplete_tail`'s scan as a fold that can resume where it stopped.
+
+    Feed entries in file order; ``complete_until`` is then the length of the
+    prefix `trim_incomplete_tail` would keep from the entries fed so far. A
+    reader that only appends to a transcript can keep one scan and feed it new
+    entries instead of rescanning the file, and `copy` lets it try entries it
+    may not keep (an unterminated last line) without disturbing the original.
+    """
+
+    __slots__ = ("allow_trailing_assistant_text", "complete_until", "count", "pending_tool_use_ids")
+
+    allow_trailing_assistant_text: bool
+    complete_until: int
+    count: int
+    pending_tool_use_ids: set[str]
+
+    def __init__(self, *, allow_trailing_assistant_text: bool) -> None:
+        self.allow_trailing_assistant_text = allow_trailing_assistant_text
+        self.complete_until = 0
+        self.count = 0
+        self.pending_tool_use_ids = set()
+
+    def copy(self) -> TailTrimScan:
+        """An independent scan at the same position."""
+        other = TailTrimScan(allow_trailing_assistant_text=self.allow_trailing_assistant_text)
+        other.complete_until = self.complete_until
+        other.count = self.count
+        other.pending_tool_use_ids = set(self.pending_tool_use_ids)
+        return other
+
+    def feed(self, entry: JsonEntry) -> None:
+        """Advance past one entry."""
+        index = self.count
+        self.count += 1
         message_type = entry.get("type", "")
 
         if message_type in ("progress", "file-history-snapshot"):
-            continue
+            return
 
         if message_type == "assistant":
             message = entry.get("message", {})
@@ -44,10 +83,10 @@ def trim_incomplete_tail(
             if isinstance(content, list):
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "tool_use":
-                        pending_tool_use_ids.add(block.get("id", ""))
-            if allow_trailing_assistant_text and not pending_tool_use_ids:
-                last_complete_idx = index + 1
-            continue
+                        self.pending_tool_use_ids.add(block.get("id", ""))
+            if self.allow_trailing_assistant_text and not self.pending_tool_use_ids:
+                self.complete_until = index + 1
+            return
 
         if message_type == "user":
             message = entry.get("message", {})
@@ -55,14 +94,10 @@ def trim_incomplete_tail(
             if isinstance(content, list):
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "tool_result":
-                        pending_tool_use_ids.discard(block.get("tool_use_id", ""))
+                        self.pending_tool_use_ids.discard(block.get("tool_use_id", ""))
 
-        if not pending_tool_use_ids:
-            last_complete_idx = index + 1
-
-    if last_complete_idx >= len(entries):
-        return entries
-    return entries[:last_complete_idx]
+        if not self.pending_tool_use_ids:
+            self.complete_until = index + 1
 
 
 def _queued_command_prompt(entry: JsonEntry) -> str | list[JsonEntry] | None:
@@ -449,6 +484,11 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
     branch as its own conversation, so a delta whose own walk abandons one
     parses to several conversations, which the append endpoint refuses.
     ``None`` means the tree cannot be ordered safely.
+
+    The Watcher client's transcript index walks reduced copies of entries that
+    keep only the fields read here (``walk_view`` in
+    ``apollo_monitor.agent_integrations.claude_code.transcript_index``), so
+    reading another field needs the same change there.
     """
     choices = selection.choices
     entry_lookup = {
@@ -693,6 +733,11 @@ def delta_needs_full_upload(entries: list[JsonEntry], cursor: int) -> bool:
     conversation, which the append endpoint refuses even when the live branch
     order would line up. Chunked uploads use this as their boundary guard too,
     so a rewind always lands in a full-ingest chunk rather than an append.
+
+    The Watcher client's transcript index reproduces this check from walks of
+    reduced entries (``ClaudeTranscriptIndexer._needs_full_upload`` in
+    ``apollo_monitor.agent_integrations.claude_code.transcript_index``), so a
+    change here needs the same change there.
     """
     if cursor <= _last_cursor_before_a_rewind(entries):
         return True

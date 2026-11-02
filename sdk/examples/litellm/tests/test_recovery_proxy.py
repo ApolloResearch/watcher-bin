@@ -6,6 +6,7 @@ separate Watcher endpoint supplies deterministic policy decisions.
 """
 
 import json
+import time
 from collections.abc import Iterator
 from typing import Any, Literal
 
@@ -13,7 +14,7 @@ import anthropic
 import openai
 import pytest
 from harness import litellm_proxy, serve_in_thread
-from incremental_servers import API
+from incremental_servers import API, call_ids
 from pydantic import BaseModel
 from recovery_servers import RecoveryHolder, RecoveryState, provider_app, tool_feedback, watcher_app
 from test_incremental_proxy import APIS, Frame, is_error, read_stream
@@ -452,3 +453,137 @@ def test_nonstream_provider_recovery_failure_returns_a_sanitized_502(
     assert "private provider diagnostic" not in str(error.value)
     assert recovery.graded_ids == ["call_0_0"]
     assert len(recovery.provider_requests) == 2
+
+
+def delivered_recording(state: RecoveryState) -> dict[str, Any]:
+    """The background recording of the delivered reply: the hook request that selects no calls."""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        recordings = [body for body in state.hook_requests if not call_ids(body)]
+        if recordings:
+            assert len(recordings) == 1, "the delivered reply was recorded more than once"
+            return recordings[0]
+        time.sleep(0.02)
+    raise AssertionError("the delivered reply was never recorded")
+
+
+@pytest.mark.parametrize("api", APIS)
+@pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])
+def test_the_delivered_recording_names_the_refused_call_and_its_cancelled_sibling(
+    recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool
+) -> None:
+    recovery.paths = [["blocked-a", "sibling-x"], ["allowed-b"]]
+
+    reply = request_reply(recovery_proxy, api, stream, recovery.case_id)
+
+    assert reply.call_ids == ["call_1_0"]
+    recording = delivered_recording(recovery)
+    assert recording["withheld_tool_use_ids"] == ["call_0_0", "call_0_1"]
+
+
+@pytest.mark.parametrize("api", APIS)
+@pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])
+def test_a_notice_only_reply_names_every_refused_proposal(
+    recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool
+) -> None:
+    recovery.paths = [["blocked-a"], ["blocked-b", "sibling-x"], ["blocked-c"]]
+    recovery.decisions = {"call_0_0": "deny", "call_1_0": "escalate", "call_2_0": "deny"}
+
+    reply = request_reply(recovery_proxy, api, stream, recovery.case_id)
+
+    assert reply.call_ids == []
+    assert delivered_recording(recovery)["withheld_tool_use_ids"] == ["call_0_0", "call_1_0", "call_1_1", "call_2_0"]
+
+
+@pytest.mark.parametrize("api", APIS)
+def test_a_call_released_before_a_streamed_refusal_is_never_named(
+    recovery_proxy: str, recovery: RecoveryState, api: API
+) -> None:
+    recovery.paths = [["allowed-a", "blocked-b", "after-c"], ["allowed-d"]]
+    recovery.decisions = {"call_0_1": "deny"}
+
+    reply = request_reply(recovery_proxy, api, True, recovery.case_id)
+
+    assert reply.call_ids == ["call_0_0", "call_1_0"]
+    assert delivered_recording(recovery)["withheld_tool_use_ids"] == ["call_0_1", "call_0_2"]
+
+
+@pytest.mark.parametrize("api", APIS)
+@pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])
+def test_a_proposal_refused_as_a_repeat_is_named_too(
+    recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool
+) -> None:
+    """Watcher never evaluated the repeat and skips it on read, so the callback names it like any withheld call."""
+    recovery.paths = [["blocked-a"], ["blocked-a"], ["allowed-c"]]
+
+    reply = request_reply(recovery_proxy, api, stream, recovery.case_id)
+
+    assert reply.call_ids == ["call_2_0"]
+    assert recovery.graded_ids == ["call_0_0", "call_2_0"]
+    assert delivered_recording(recovery)["withheld_tool_use_ids"] == ["call_0_0", "call_1_0"]
+
+
+@pytest.mark.parametrize("api", APIS)
+@pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])
+def test_a_reply_that_withheld_nothing_sends_no_withheld_ids(
+    recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool
+) -> None:
+    recovery.paths = [["allowed-a"]]
+    recovery.decisions = {}
+
+    reply = request_reply(recovery_proxy, api, stream, recovery.case_id)
+
+    assert reply.call_ids == ["call_0_0"]
+    if stream:
+        delivered_recording(recovery)
+    assert all("withheld_tool_use_ids" not in body for body in recovery.hook_requests)
+
+
+@pytest.mark.parametrize(
+    ("stream", "paths", "decisions"),
+    [
+        (True, [["allowed-a", "blocked-b"], []], {"call_0_1": "deny"}),
+        (False, [["blocked-a"], ["allowed-b"]], {"call_0_0": "deny"}),
+    ],
+    ids=["released_then_refused_stream", "allowed_alternative_json"],
+)
+def test_an_anthropic_reply_with_a_released_call_is_recorded_as_one_message(
+    recovery_proxy: str,
+    recovery: RecoveryState,
+    stream: bool,
+    paths: list[list[str]],
+    decisions: dict[str, Literal["allow", "deny", "escalate"]],
+) -> None:
+    """The client echoes the delivered reply as one assistant message, so the recording must store it as one."""
+    recovery.paths = paths
+    recovery.decisions = decisions
+
+    reply = request_reply(recovery_proxy, "messages", stream, recovery.case_id)
+
+    recording = delivered_recording(recovery)
+    *history, delivered = recording["request_body"]["messages"]
+    assert history == [{"role": "user", "content": "Read a file."}]
+    assert delivered["role"] == "assistant"
+    assert [block["id"] for block in delivered["content"] if block["type"] == "tool_use"] == reply.call_ids
+    assert "".join(block["text"] for block in delivered["content"] if block["type"] == "text") == reply.text
+    assert recording["response_body"]["content"] == []
+
+
+def test_a_streamed_anthropic_reply_with_only_released_calls_is_recorded_as_one_message(
+    recovery_proxy: str, recovery: RecoveryState
+) -> None:
+    """With no refusal, the delivered reply is still recorded whole, as history with an empty response."""
+    recovery.paths = [["allowed-a", "allowed-b"]]
+    recovery.decisions = {}
+
+    reply = request_reply(recovery_proxy, "messages", True, recovery.case_id)
+
+    assert reply.call_ids == ["call_0_0", "call_0_1"]
+    recording = delivered_recording(recovery)
+    *history, delivered = recording["request_body"]["messages"]
+    assert history == [{"role": "user", "content": "Read a file."}]
+    assert delivered["role"] == "assistant"
+    assert [block["id"] for block in delivered["content"] if block["type"] == "tool_use"] == reply.call_ids
+    assert "".join(block["text"] for block in delivered["content"] if block["type"] == "text") == reply.text
+    assert recording["response_body"]["content"] == []
+    assert "withheld_tool_use_ids" not in recording

@@ -83,6 +83,17 @@ class RawPreToolUseHookRequest:
             skip_rules (bool | Unset):  Default: False.
             policy_version (None | str | Unset):
             settings_overrides (None | RawPreToolUseHookRequestSettingsOverridesType1 | str | Unset):
+            withheld_tool_use_ids (list[str] | None | Unset): Optional. Tool-use IDs of the calls a gateway withheld from
+                the client in favor of the response this request records: the refused calls and the calls withheld with them in
+                the same proposal, never a call delivered to the client. Omit it when nothing was withheld. The recorded
+                response is response_body's message, or the last request message when that is empty. Watcher shows each named
+                call that it evaluated in the same session before this response; unknown IDs are ignored, and so is the field on
+                ephemeral requests. A non-empty list requires withholds_refused_calls to be true. At most 4,096 IDs; duplicates
+                are removed. Older servers reject the field with HTTP 422.
+            withholds_refused_calls (bool | Unset): Optional. True when the caller withholds from the client every call
+                Watcher denies or escalates in enforce mode, so Watcher records such a refusal's execution status as blocked
+                when it decides it. Leave it false when the reply may already have reached the client, as on an observation
+                path. Older servers reject the field with HTTP 422. Default: False.
     """
 
     format_: Literal["raw"]
@@ -102,6 +113,8 @@ class RawPreToolUseHookRequest:
     settings_overrides: (
         None | RawPreToolUseHookRequestSettingsOverridesType1 | str | Unset
     ) = UNSET
+    withheld_tool_use_ids: list[str] | None | Unset = UNSET
+    withholds_refused_calls: bool | Unset = False
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.raw_pre_tool_use_hook_request_external_ids_type_0 import (
@@ -177,6 +190,17 @@ class RawPreToolUseHookRequest:
         else:
             settings_overrides = self.settings_overrides
 
+        withheld_tool_use_ids: list[str] | None | Unset
+        if isinstance(self.withheld_tool_use_ids, Unset):
+            withheld_tool_use_ids = UNSET
+        elif isinstance(self.withheld_tool_use_ids, list):
+            withheld_tool_use_ids = self.withheld_tool_use_ids
+
+        else:
+            withheld_tool_use_ids = self.withheld_tool_use_ids
+
+        withholds_refused_calls = self.withholds_refused_calls
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -210,6 +234,10 @@ class RawPreToolUseHookRequest:
             field_dict["policy_version"] = policy_version
         if settings_overrides is not UNSET:
             field_dict["settings_overrides"] = settings_overrides
+        if withheld_tool_use_ids is not UNSET:
+            field_dict["withheld_tool_use_ids"] = withheld_tool_use_ids
+        if withholds_refused_calls is not UNSET:
+            field_dict["withholds_refused_calls"] = withholds_refused_calls
 
         return field_dict
 
@@ -348,6 +376,27 @@ class RawPreToolUseHookRequest:
             d.pop("settings_overrides", UNSET)
         )
 
+        def _parse_withheld_tool_use_ids(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                withheld_tool_use_ids_type_0 = cast(list[str], data)
+
+                return withheld_tool_use_ids_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        withheld_tool_use_ids = _parse_withheld_tool_use_ids(
+            d.pop("withheld_tool_use_ids", UNSET)
+        )
+
+        withholds_refused_calls = d.pop("withholds_refused_calls", UNSET)
+
         raw_pre_tool_use_hook_request = cls(
             format_=format_,
             request_body=request_body,
@@ -364,6 +413,8 @@ class RawPreToolUseHookRequest:
             skip_rules=skip_rules,
             policy_version=policy_version,
             settings_overrides=settings_overrides,
+            withheld_tool_use_ids=withheld_tool_use_ids,
+            withholds_refused_calls=withholds_refused_calls,
         )
 
         return raw_pre_tool_use_hook_request

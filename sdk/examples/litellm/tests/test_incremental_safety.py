@@ -291,7 +291,7 @@ async def test_interleaved_chat_denial_never_releases_second_call(text_only_repl
     assert [call["id"] for call in calls if call.get("id")] == ["call_0"]
     assert json.loads("".join(call["function"]["arguments"] for call in calls)) == {"path": "first.txt"}
     assert '"finish_reason": "tool_calls"' in wire
-    assert "Watcher did not approve" in wire
+    assert "WATCHER NOTICE (added by Watcher" in wire
     assert "after" not in wire
 
 

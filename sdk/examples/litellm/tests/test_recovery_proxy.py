@@ -18,6 +18,7 @@ from incremental_servers import API, call_ids
 from pydantic import BaseModel
 from recovery_servers import RecoveryHolder, RecoveryState, provider_app, tool_feedback, watcher_app
 from test_incremental_proxy import APIS, Frame, is_error, read_stream
+from watcher_litellm.system_notice import SYSTEM_NOTICE
 
 
 class Reply(BaseModel):
@@ -162,31 +163,86 @@ def delivered_ids(api: API, frames: list[Frame]) -> list[str]:
 
 @pytest.mark.parametrize("api", APIS)
 @pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])
-@pytest.mark.parametrize("decision", ["deny", "escalate"])
 def test_blocked_call_is_replaced_with_one_allowed_alternative(
-    recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool, decision: Literal["deny", "escalate"]
+    recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool
 ) -> None:
-    recovery.decisions = {"call_0_0": decision}
-
     reply = request_reply(recovery_proxy, api, stream, recovery.case_id)
 
     assert reply.call_ids == ["call_1_0"], reply.model_dump()
     assert reply.arguments == [{"path": "allowed-b"}]
-    assert "read_file" in reply.text
-    assert "blocked-a" in reply.text
+    assert (
+        'WATCHER NOTICE (added by Watcher, not written by the assistant): Watcher blocked `read_file {"path": "blocked-a"}`'
+        in reply.text
+    )
     assert "Fixture blocks call_0_0." in reply.text
     assert len(recovery.provider_requests) == 2
     assert recovery.graded_ids == ["call_0_0", "call_1_0"]
     feedback = tool_feedback(api, recovery.provider_requests[1])
-    assert "call_0_0" in feedback
-    assert "in this proposal; the gateway withheld them" in feedback["call_0_0"]
+    assert feedback["call_0_0"].startswith(
+        "WATCHER NOTICE: Watcher blocked this call. Reason: Fixture blocks call_0_0."
+    )
+    assert "Continue the user's task another way" in feedback["call_0_0"]
+    # The fixed notice reaches the provider, its replacement generation and Watcher's view of both.
+    for body in [*recovery.provider_requests, *recovery.hook_requests]:
+        assert SYSTEM_NOTICE in json.dumps(body, ensure_ascii=False)
+
+
+@pytest.mark.parametrize("api", APIS)
+@pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])
+@pytest.mark.parametrize(
+    ("source", "ask"),
+    [
+        ("policy_gateway", "The user can approve it: stop and ask the user whether to allow it"),
+        ("rule", "A. skip it, B. do something else, C. ask an administrator to change the policy."),
+    ],
+)
+def test_escalation_ends_with_the_models_own_question_and_no_alternative(
+    recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool, source: str, ask: str
+) -> None:
+    recovery.paths = [["blocked-a"], []]
+    recovery.decisions = {"call_0_0": "escalate"}
+    recovery.decision_source = source
+
+    reply = request_reply(recovery_proxy, api, stream, recovery.case_id)
+
+    assert reply.call_ids == []
+    assert "WATCHER ESCALATION (added by Watcher, not written by the assistant)" in reply.text
+    assert "prefix-1" in reply.text
+    assert "Reply A to allow" not in reply.text
+    assert len(recovery.provider_requests) == 2
+    assert recovery.graded_ids == ["call_0_0"]
+    feedback = tool_feedback(api, recovery.provider_requests[1])
+    assert feedback["call_0_0"].startswith("WATCHER ESCALATION:")
+    assert ask in feedback["call_0_0"]
+    assert ("cannot be approved in this conversation" in reply.text) is (source == "rule")
+
+
+@pytest.mark.parametrize("api", APIS)
+@pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])
+@pytest.mark.parametrize(
+    ("source", "question"),
+    [("triage", "Reply A to allow the escalated call"), ("threshold", "Reply A to skip it")],
+)
+def test_calls_proposed_after_an_escalation_are_withheld_without_evaluation(
+    recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool, source: str, question: str
+) -> None:
+    recovery.decisions = {"call_0_0": "escalate"}
+    recovery.decision_source = source
+
+    reply = request_reply(recovery_proxy, api, stream, recovery.case_id)
+
+    assert reply.call_ids == []
+    assert "allowed-b" not in reply.text
+    assert question in reply.text
+    assert len(recovery.provider_requests) == 2
+    assert recovery.graded_ids == ["call_0_0"]
 
 
 @pytest.mark.parametrize(
     ("stream", "start", "end"),
     [
-        (False, "prefix-0\n\nWatcher did not approve", "\n\nprefix-1"),
-        (True, "prefix-0 \n\nWatcher did not approve", "\n\nprefix-1 "),
+        (False, "prefix-0\n\nWATCHER NOTICE (added by Watcher", "\n\nprefix-1"),
+        (True, "prefix-0 \n\nWATCHER NOTICE (added by Watcher", "\n\nprefix-1 "),
     ],
     ids=["json", "stream"],
 )
@@ -228,11 +284,14 @@ def test_recovery_preserves_forced_tool_selection(
         recovery_proxy, api, stream, recovery.case_id, extra_body={"tools": tools, "tool_choice": choice}
     )
 
-    assert reply.call_ids == ["call_1_0"]
-    assert reply.arguments == [{"path": "allowed-b"}]
+    # An alternative keeps the forced choice; an escalation's final generation may
+    # not call a tool, and the call this fixture returns anyway is withheld.
+    assert reply.call_ids == (["call_1_0"] if decision == "deny" else [])
+    assert ("allowed-b" in json.dumps(reply.arguments)) is (decision == "deny")
     assert len(recovery.provider_requests) == 2
     assert recovery.provider_requests[0]["tool_choice"] == choice
-    assert recovery.provider_requests[1]["tool_choice"] == choice
+    no_call = {"type": "none"} if api == "messages" else "none"
+    assert recovery.provider_requests[1]["tool_choice"] == (choice if decision == "deny" else no_call)
     assert recovery.provider_requests[1]["tools"] == recovery.provider_requests[0]["tools"]
 
 
@@ -254,21 +313,27 @@ def test_second_alternative_is_allowed_after_two_distinct_denials(
 
 
 @pytest.mark.parametrize("api", APIS)
-def test_third_blocked_attempt_finishes_normally_without_a_fourth_request(
-    recovery_proxy: str, recovery: RecoveryState, api: API
+@pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])
+@pytest.mark.parametrize("final_call", [False, True], ids=["text", "call"])
+def test_third_blocked_attempt_ends_with_one_text_only_generation(
+    recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool, final_call: bool
 ) -> None:
-    recovery.paths = [["blocked-a"], ["blocked-b"], ["blocked-c"]]
-    recovery.decisions = {"call_0_0": "deny", "call_1_0": "escalate", "call_2_0": "deny"}
+    recovery.paths = [["blocked-a"], ["blocked-b"], ["blocked-c"], ["allowed-d"] if final_call else []]
+    recovery.decisions = {"call_0_0": "deny", "call_1_0": "deny", "call_2_0": "deny"}
 
-    reply = request_reply(recovery_proxy, api, True, recovery.case_id)
+    reply = request_reply(recovery_proxy, api, stream, recovery.case_id)
 
     assert reply.call_ids == []
-    assert len(recovery.provider_requests) == 3
-    assert "blocked-a" in reply.text
-    assert "blocked-b" in reply.text
-    assert "blocked-c" in reply.text
-    assert "read_file" in reply.text
-    assert "Fixture blocks call_2_0." in reply.text
+    assert len(recovery.provider_requests) == 4
+    assert recovery.graded_ids == ["call_0_0", "call_1_0", "call_2_0"]
+    for path in ["blocked-a", "blocked-b", "blocked-c"]:
+        assert f'Watcher blocked `read_file {{"path": "{path}"}}`' in reply.text
+    assert "prefix-3" in reply.text
+    assert "allowed-d" not in reply.text
+    assert ("Watcher blocked three proposals in a row" in reply.text) is final_call
+    feedback = tool_feedback(api, recovery.provider_requests[3])
+    assert "Continue the user's task another way" in feedback["call_1_0"]
+    assert feedback["call_2_0"].endswith("tell the user what was blocked and ask how to proceed.")
 
 
 @pytest.mark.parametrize("api", APIS)
@@ -291,12 +356,10 @@ def test_later_denial_does_not_repeat_or_claim_cancellation_of_an_allowed_call(
 
 
 @pytest.mark.parametrize("api", APIS)
-@pytest.mark.parametrize("decision", ["deny", "escalate"])
 def test_denied_operation_cannot_be_released_under_a_fresh_call_id(
-    recovery_proxy: str, recovery: RecoveryState, api: API, decision: Literal["deny", "escalate"]
+    recovery_proxy: str, recovery: RecoveryState, api: API
 ) -> None:
     recovery.paths = [["blocked-a"], ["blocked-a"], ["allowed-c"]]
-    recovery.decisions["call_0_0"] = decision
 
     reply = request_reply(recovery_proxy, api, True, recovery.case_id)
 
@@ -305,17 +368,14 @@ def test_denied_operation_cannot_be_released_under_a_fresh_call_id(
     assert recovery.graded_ids == ["call_0_0", "call_2_0"]
     assert len(recovery.provider_requests) == 3
     repeated_feedback = tool_feedback(api, recovery.provider_requests[2])["call_1_0"]
-    assert f'"is_escalation": {str(decision == "escalate").lower()}' in repeated_feedback
-    assert "in this proposal; the gateway withheld them" in repeated_feedback
+    assert repeated_feedback.startswith("WATCHER NOTICE: Watcher blocked this call. Reason: Fixture blocks call_0_0.")
 
 
 @pytest.mark.parametrize("api", APIS)
-@pytest.mark.parametrize("decision", ["deny", "escalate"])
 def test_recovery_withholds_a_duplicate_within_one_streamed_alternative(
-    recovery_proxy: str, recovery: RecoveryState, api: API, decision: Literal["deny", "escalate"]
+    recovery_proxy: str, recovery: RecoveryState, api: API
 ) -> None:
     recovery.paths = [["blocked-a"], ["allowed-b", "allowed-b"], ["allowed-c"]]
-    recovery.decisions = {"call_0_0": decision}
 
     reply = request_reply(recovery_proxy, api, True, recovery.case_id)
 
@@ -486,13 +546,15 @@ def test_the_delivered_recording_names_the_refused_call_and_its_cancelled_siblin
 def test_a_notice_only_reply_names_every_refused_proposal(
     recovery_proxy: str, recovery: RecoveryState, api: API, stream: bool
 ) -> None:
+    """The escalation ends recovery; the final reply's call is withheld unevaluated, so it is not named."""
     recovery.paths = [["blocked-a"], ["blocked-b", "sibling-x"], ["blocked-c"]]
-    recovery.decisions = {"call_0_0": "deny", "call_1_0": "escalate", "call_2_0": "deny"}
+    recovery.decisions = {"call_0_0": "deny", "call_1_0": "escalate"}
 
     reply = request_reply(recovery_proxy, api, stream, recovery.case_id)
 
     assert reply.call_ids == []
-    assert delivered_recording(recovery)["withheld_tool_use_ids"] == ["call_0_0", "call_1_0", "call_1_1", "call_2_0"]
+    assert "call_2_0" not in recovery.graded_ids
+    assert delivered_recording(recovery)["withheld_tool_use_ids"] == ["call_0_0", "call_1_0", "call_1_1"]
 
 
 @pytest.mark.parametrize("api", APIS)
@@ -506,6 +568,24 @@ def test_a_call_released_before_a_streamed_refusal_is_never_named(
 
     assert reply.call_ids == ["call_0_0", "call_1_0"]
     assert delivered_recording(recovery)["withheld_tool_use_ids"] == ["call_0_1", "call_0_2"]
+
+
+@pytest.mark.parametrize("api", APIS)
+def test_a_failed_final_generation_still_names_the_withheld_calls(
+    recovery_proxy: str, recovery: RecoveryState, api: API
+) -> None:
+    """The fixed question replaces the failed final reply; the recording names only the unreleased calls."""
+    recovery.paths = [["allowed-a", "blocked-b", "after-c"]]
+    recovery.decisions = {"call_0_1": "escalate"}
+    recovery.reject_replacements = True
+
+    reply = request_reply(recovery_proxy, api, True, recovery.case_id)
+
+    assert reply.call_ids == ["call_0_0"]
+    assert reply.text.endswith("ask an administrator to change the policy.")
+    assert len(recovery.provider_requests) == 2
+    assert delivered_recording(recovery)["withheld_tool_use_ids"] == ["call_0_1", "call_0_2"]
+    assert recovery.graded_ids == ["call_0_0", "call_0_1"]
 
 
 @pytest.mark.parametrize("api", APIS)

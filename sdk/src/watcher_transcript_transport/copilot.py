@@ -36,6 +36,7 @@ from typing import Any, NoReturn
 from watcher_transcript_transport.upload import JsonEntry, TranscriptSnapshot
 
 __all__ = [
+    "CopilotSplitIndex",
     "MAX_EVENT_BYTES",
     "UNREADABLE_EVENT",
     "closes_open_calls",
@@ -366,13 +367,17 @@ def complete_until(stored: Sequence[JsonEntry]) -> int:
     ahead of the first prompt, which would reorder the start of the stored
     history. A later event never moves the result back.
     """
+    return max(_complete_boundaries(stored), default=0)
+
+
+def _complete_boundaries(stored: Sequence[JsonEntry]) -> Iterator[int]:
+    """Yield every boundary at which this conversation has replied and nothing remains pending."""
     replied = False
     # The agentId on this conversation's own replies: None for the parent.
     speaker: str | None = None
     calls: set[str] = set()
     commands: set[str] = set()
     skills: set[str] = set()
-    complete = 0
     for index, event in enumerate(stored):
         kind = event.get("type")
         data = _data(event)
@@ -403,8 +408,7 @@ def complete_until(stored: Sequence[JsonEntry]) -> int:
             if kind in _CLOSES_EVERYTHING or kind == "session.resume":
                 commands.clear()
         if replied and not (calls or commands or skills):
-            complete = index + 1
-    return complete
+            yield index + 1
 
 
 def closes_open_calls(event: Mapping[str, Any], speaker: str | None) -> bool:
@@ -452,7 +456,7 @@ def is_refusal(code: object, message: str) -> bool:
 
 
 def delta_entries(stored: Sequence[JsonEntry], cursor: int) -> list[JsonEntry]:
-    """Build an append's payload: ``stored[cursor:]`` led by the log's own ``session.start``.
+    """Build an append payload with identity and referenced skill content before ``stored[cursor:]``.
 
     The server parses a delta on its own. The seed tells that parse which
     session it belongs to, without adding a message. Only the first
@@ -462,11 +466,10 @@ def delta_entries(stored: Sequence[JsonEntry], cursor: int) -> list[JsonEntry]:
     """
     if cursor <= 0:
         return list(stored)
-    suffix = list(stored[cursor:])
-    start = next((event for event in stored[:cursor] if event.get("type") == "session.start"), None)
-    if not suffix or start is None:
-        return suffix
-    return [start, *suffix]
+    if cursor >= len(stored):
+        return []
+    entries = list(stored)
+    return [*CopilotSplitIndex(entries).seed_entries(cursor, len(entries)), *entries[cursor:]]
 
 
 def delta_needs_full_upload(stored: Sequence[JsonEntry], cursor: int) -> bool:
@@ -476,9 +479,9 @@ def delta_needs_full_upload(stored: Sequence[JsonEntry], cursor: int) -> bool:
     knows nothing earlier. That breaks when no reply comes before the cursor.
     It also breaks when the delta has a result for a call or user command opened
     before the cursor, including a call an abort already closed. Reusing an
-    earlier call ID breaks it, and so does delivering a skill invoked only
-    before the cursor. A skill delivered with no invocation at all parses the
-    same either way. A cursor that `complete_until` would not stop at, such as
+    earlier call ID breaks it. Skill references can cross the cursor because
+    `delta_entries` seeds the referenced invocation without adding a message.
+    A cursor that `complete_until` would not stop at, such as
     an upload of a conversation whose process died inside a call, breaks it too:
     whatever later closes that call (a resume's interrupted result, or the real
     result) belongs to it. False for cursor 0 and for an empty delta.
@@ -488,7 +491,6 @@ def delta_needs_full_upload(stored: Sequence[JsonEntry], cursor: int) -> bool:
     if complete_until(stored[:cursor]) < cursor:
         return True
     earlier_calls: set[str] = set()
-    earlier_skills: set[str] = set()
     replied = False
     for event in stored[:cursor]:
         kind = event.get("type")
@@ -498,11 +500,8 @@ def delta_needs_full_upload(stored: Sequence[JsonEntry], cursor: int) -> bool:
             earlier_calls.update(_call_ids(data))
         elif kind == "tool.user_requested" and isinstance(data.get("toolCallId"), str):
             earlier_calls.add(data["toolCallId"])
-        elif kind == "skill.invoked" and isinstance(data.get("content"), str):
-            earlier_skills.add(skill_content_id(data["content"]))
     if not replied:
         return True
-    delta_skills: set[str] = set()
     for event in stored[cursor:]:
         kind = event.get("type")
         data = _data(event)
@@ -510,13 +509,98 @@ def delta_needs_full_upload(stored: Sequence[JsonEntry], cursor: int) -> bool:
             return True
         if kind == "tool.execution_complete" and data.get("toolCallId") in earlier_calls:
             return True
-        if kind == "skill.invoked" and isinstance(data.get("content"), str):
-            delta_skills.add(skill_content_id(data["content"]))
-        elif kind == "skill.context_delivered_ref":
-            content_id = data.get("contentId")
-            if content_id in earlier_skills and content_id not in delta_skills:
-                return True
     return False
+
+
+class CopilotSplitIndex:
+    """Index independently parseable boundaries for one immutable conversation snapshot.
+
+    Repeatedly asking ``delta_needs_full_upload`` about candidate cuts rescans
+    the whole conversation. This index obtains the same answers in linear work:
+
+    1. Mark cuts where the prefix has replied and has no pending work.
+    2. Mark ranges crossed by a call definition and a later use of its ID.
+       Index each skill reference's invocation so resumed chunks can seed its
+       content without replaying the messages between them.
+    3. Remove crossed cuts. Keep the terminal cut even for an interrupted tail,
+       since callers may retain that tail after a process exits.
+
+    Each dependency blocks a half-open range of cut positions::
+
+        definition        later use
+            |-----------------|
+        cuts     [unsafe........]
+
+    ``entries`` must not change after construction. ``covers`` checks identity
+    so the upload plan can safely reuse the index for its snapshot.
+    """
+
+    def __init__(self, entries: list[JsonEntry]) -> None:
+        self.entries = entries
+        self.safe_ends = bytearray(len(entries) + 1)
+        for end in _complete_boundaries(entries):
+            self.safe_ends[end] = 1
+        self.safe_ends[0] = self.safe_ends[-1] = 1
+        self.session_start_index = next(
+            (position for position, event in enumerate(entries) if event.get("type") == "session.start"), len(entries)
+        )
+        self.session_start = entries[self.session_start_index] if self.session_start_index < len(entries) else None
+
+        crossings = [0] * (len(entries) + 1)
+        first_calls: dict[str, int] = {}
+        latest_skills: dict[str, int] = {}
+        self.skill_sources: dict[int, int] = {}
+        for position, event in enumerate(entries):
+            kind = event.get("type")
+            data = _data(event)
+            if kind == "assistant.message":
+                for call_id in _call_ids(data):
+                    first = first_calls.setdefault(call_id, position)
+                    crossings[first + 1] += 1
+                    crossings[position + 1] -= 1
+            elif kind == "tool.user_requested" and isinstance(data.get("toolCallId"), str):
+                first_calls.setdefault(data["toolCallId"], position)
+            elif kind == "tool.execution_complete":
+                call_id = data.get("toolCallId")
+                if isinstance(call_id, str) and call_id in first_calls:
+                    crossings[first_calls[call_id] + 1] += 1
+                    crossings[position + 1] -= 1
+            elif kind == "skill.invoked" and isinstance(data.get("content"), str):
+                latest_skills[skill_content_id(data["content"])] = position
+            elif kind == "skill.context_delivered_ref":
+                content_id = data.get("contentId")
+                if isinstance(content_id, str) and content_id in latest_skills:
+                    self.skill_sources[position] = latest_skills[content_id]
+        active = 0
+        for end, change in enumerate(crossings):
+            active += change
+            if active:
+                self.safe_ends[end] = 0
+
+    def seed_entries(self, start: int, end: int) -> list[JsonEntry]:
+        """Identity and skill content needed to parse ``entries[start:end]`` on its own.
+
+        A skill invocation only caches content on the server; its delivery
+        reference creates the message. Repeating the invocation before a
+        resumed chunk therefore restores context without duplicating messages.
+        Only references within this chunk need seeds, and a chunk-local
+        invocation already supplies its own content.
+        """
+        sources = {
+            source
+            for position in range(start, end)
+            if (source := self.skill_sources.get(position)) is not None and source < start
+        }
+        seeds = [self.session_start] if self.session_start_index < start and self.session_start is not None else []
+        return [*seeds, *(self.entries[source] for source in sorted(sources))]
+
+    def covers(self, entries: list[JsonEntry]) -> bool:
+        """Whether this index was built for exactly ``entries``."""
+        return entries is self.entries
+
+    def is_safe(self, end: int) -> bool:
+        """Whether appending after ``end`` preserves the full conversation's parse."""
+        return bool(self.safe_ends[end])
 
 
 def snapshot(stored: Sequence[JsonEntry]) -> TranscriptSnapshot:

@@ -7,7 +7,7 @@ summary: Monitor client-facing requests and gate generated function calls from t
 category: gateway
 upstream_url: https://github.com/maximhq/bifrost
 support_status: experimental
-updated_at: '2026-10-01'
+updated_at: '2026-10-28'
 capabilities:
   observe:
     implemented: true
@@ -18,15 +18,19 @@ capabilities:
   enforce:
     implemented: true
     scope: Withholds generated client function calls at the gateway until Watcher
-      returns an applied allow or deferred decision.
+      returns an applied allow or deferred decision. After a deny or escalation, the
+      bridge asks the model for an alternative through the same Bifrost route (at most
+      three checked proposals, then one text-only question to the user) and delivers
+      Watcher's notices with any approved alternative as an ordinary completion.
     example: gateway/main.go
     boundary: gateway-response
     context: conversation
     recording: optional
     failure_behavior: mixed
-    failure_details: Transport errors and missing outcomes withhold responses; applied
-      grading-failure decisions follow organization policy. Hook replies do not acknowledge
-      durable recording.
+    failure_details: Transport errors and missing outcomes for the client's proposal
+      withhold responses; failures while seeking an alternative deliver the notices with
+      a fixed explanation, a fixed question to the user and no calls. Applied grading-failure decisions follow
+      organization policy. Hook replies do not acknowledge durable recording.
     timeout_seconds: 420
 manifests:
 - pyproject.toml
@@ -95,6 +99,14 @@ limitations:
   kind: constraint
   description: Streams are buffered and re-encoded after evaluation, losing incremental
     delivery; other Bifrost routes must not be exposed to monitored clients.
+- id: alternative-requests
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: Alternatives are requested from WATCHER_GATEWAY_URL with the client's
+    authentication and key-selection headers, so each refusal can add up to three model calls billed
+    to that client. The marker on those requests is single-use per bridge process and
+    is blanked, not removed, before Bifrost builds the provider request.
 verification_plan:
   watcher_test_target: fixture-http
   observe:

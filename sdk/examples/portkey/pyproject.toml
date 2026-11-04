@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Experimental Portkey observation and synchronous monitoring"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["watcher-sdk>=0.1,<1", "httpx==0.28.1", "typer==0.24.1"]
+dependencies = ["watcher-sdk>=0.1,<1", "httpx==0.28.1", "structlog==26.1.0", "typer==0.24.1"]
 
 [dependency-groups]
 dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0"]

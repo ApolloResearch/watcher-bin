@@ -12,7 +12,6 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
-import regex as regex_module
 import yaml
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from yaml import YAMLError
@@ -192,14 +191,14 @@ def _reject_unprojectable_override_rules(data: dict[str, Any], merged: dict[str,
     validation yet still be skipped by `command_rules_from_tree` — a new
     rule missing `category`, a non-string `regex`, a non-int `priority`
     — leaving the caller believing a rule is in force that never evaluates.
-    A rule that projects but whose pattern does not compile is refused for
-    the same reason: the evaluator treats an uncompilable pattern as "no
-    match", so the rule would be accepted and never fire. Judged on the
+    A rule that projects but whose pattern the evaluator refuses
+    (`rule_pattern_error`) is refused for the same reason: the rule would be
+    accepted and never fire. Judged on the
     *merged* form so a partial update to an existing complete rule stays
     legal; a rule whose merged `decision` is `off` is a deliberate
     disable, not a projection failure.
     """
-    from watcher_sdk.settings_schema.command_rules_eval import command_rules_from_tree
+    from watcher_sdk.settings_schema.command_rules_eval import command_rules_from_tree, rule_pattern_error
 
     rules = unwrap(get_path_or_none(data, ("command_rules", "rules")))
     if not isinstance(rules, list) or not rules:
@@ -210,14 +209,8 @@ def _reject_unprojectable_override_rules(data: dict[str, Any], merged: dict[str,
     for projected_rule in projected_rules:
         if projected_rule.id not in touched:
             continue
-        try:
-            # The evaluator's engine and flags (see command_rules_eval._valid_rules),
-            # where an uncompilable active pattern suppresses every allow rule.
-            regex_module.compile(projected_rule.pattern, regex_module.IGNORECASE)
-        except regex_module.error as e:
-            raise SettingsOverridesError(
-                f"settings_overrides rule '{projected_rule.id}' has a regex that does not compile: {e}"
-            ) from e
+        if error := rule_pattern_error(projected_rule.pattern):
+            raise SettingsOverridesError(f"settings_overrides rule '{projected_rule.id}': {error}")
     merged_rules = unwrap(get_path_or_none(merged, ("command_rules", "rules")))
     if not isinstance(merged_rules, list):
         merged_rules = []

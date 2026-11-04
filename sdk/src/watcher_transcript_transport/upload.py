@@ -113,7 +113,16 @@ class UploadDecision:  # noqa: B903
 
 
 def _parse_jsonl(lines: Iterator[str], prefix_hashes: list[str] | None) -> list[JsonEntry]:
-    """Parse valid JSONL lines, optionally fingerprinting accepted prefixes."""
+    """Parse valid JSONL lines, optionally fingerprinting accepted prefixes.
+
+    Entries come back with very large tool outputs capped, as the server caps
+    them (`watcher_transcript_transport.elision`), so no single entry is too
+    large for a bounded upload; the fingerprints still cover the raw lines.
+    """
+    # Imported on first parse, not with this module: hooks import this module at
+    # startup and are held to a module-count budget (`test_hook_import_budget`).
+    from watcher_transcript_transport.elision import elide_entry
+
     entries: list[JsonEntry] = []
     digest = None
     for line in lines:
@@ -124,7 +133,7 @@ def _parse_jsonl(lines: Iterator[str], prefix_hashes: list[str] | None) -> list[
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-        entries.append(entry)
+        entries.append(elide_entry(entry) if isinstance(entry, dict) else entry)
         if prefix_hashes is not None:
             if digest is None:
                 digest = hashlib.sha256()

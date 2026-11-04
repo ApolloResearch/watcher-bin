@@ -7,7 +7,7 @@ officially supported integration.
 
 ## Install and configure
 
-Use Python 3.12 or later and `uv`. The pinned framework packages are `semantic-kernel==1.37.0`, `azure-ai-agents==1.2.0b6`.
+Use Python 3.12 or later and `uv`. The pinned framework packages are `semantic-kernel==1.45.0`, `azure-ai-agents==1.2.0b6`.
 From this example directory:
 
 ```bash

@@ -7,7 +7,6 @@ decision for its unique native ID.
 """
 
 import json
-from copy import deepcopy
 from typing import Any
 
 from pydantic import BaseModel
@@ -151,6 +150,11 @@ class Denial(BaseModel):
     tool_input: object
     reason: str
     is_escalation: bool
+    # Whether the user's answer can lead to approval of an escalation. Only
+    # Watcher's graders read the conversation; a rule, a threshold or the
+    # grading-failure policy decides again without it, so offering "allow"
+    # there would escalate the same call in a loop.
+    user_can_approve: bool = False
 
 
 class Evaluation(BaseModel):
@@ -210,6 +214,8 @@ def refused(value: dict) -> bool:
 
 
 _DECIDING_SOURCES = {"threshold", "rule", "triage", "policy_gateway", "grading_error"}
+# Decision sources that read the conversation, so a user's approval can change their next decision.
+_GRADED_SOURCES = {"triage", "policy_gateway"}
 
 
 def _reason(value: dict) -> str:
@@ -282,6 +288,7 @@ async def evaluate(
                     tool_input=call["input"],
                     reason=_reason(value),
                     is_escalation=value["decision"] == "escalate",
+                    user_can_approve=value["decision"] == "escalate" and value["decision_source"] in _GRADED_SOURCES,
                 )
             )
         elif not releasable(value):
@@ -289,82 +296,11 @@ async def evaluate(
     return Evaluation(verified=decided == expected, denials=denials)
 
 
-# The notice echoes each refused call so the model can see what was withheld,
-# but it must stay small: the rewritten response replaces the provider's within
-# the same size budget (MAX_BODY in processor.py).
-_ECHO_LIMIT = 4096
-_ID_LIMIT = 256
-_NOTICE_LIMIT = 64 * 1024
-
-
-def _echo(denial: Denial) -> dict:
-    """One refused call as shown in the notice, with long arguments and reasons shortened."""
-    shown = denial.model_dump(mode="json")
-    arguments = json.dumps(shown["tool_input"], ensure_ascii=False, sort_keys=True)
-    if len(arguments) > _ECHO_LIMIT:
-        shown["tool_input"] = {"truncated_arguments": arguments[:_ECHO_LIMIT]}
-    shown["reason"] = shown["reason"][:_ECHO_LIMIT]
-    shown["tool_use_id"] = shown["tool_use_id"][:_ID_LIMIT]
-    shown["tool_name"] = shown["tool_name"][:_ID_LIMIT]
-    return shown
-
-
-def denial_notice(denials: list[Denial], cancelled: list[str]) -> str:
-    """Describe withheld calls as ordinary assistant text with their IDs, arguments and public reasons.
-
-    ``cancelled`` names the calls Watcher allowed that were withheld because
-    another call in the same response was refused; none of them were run.
-    Long arguments and reasons are shortened, and once the notice reaches
-    its size limit the remaining calls are only counted.
-    """
-    shown: list[dict] = []
-    size = 0
-    for denial in denials:
-        echo = _echo(denial)
-        size += len(json.dumps(echo, ensure_ascii=False))
-        if shown and size > _NOTICE_LIMIT:
-            break
-        shown.append(echo)
-    notice = "Watcher did not approve these tool calls, so the gateway withheld them:\n\n" + json.dumps(
-        shown, ensure_ascii=False, sort_keys=True
-    )
-    if len(shown) < len(denials):
-        notice += f"\n\n{len(denials) - len(shown)} more refused tool calls were withheld."
-    if cancelled:
-        listed = json.dumps([identifier[:_ID_LIMIT] for identifier in cancelled[:100]], ensure_ascii=False)
-        notice += (
-            "\n\nThese other tool calls were withheld because a call in the same response was refused; "
-            f"they were not run: {listed}"
-        )
-        if len(cancelled) > 100:
-            notice += f" and {len(cancelled) - 100} more."
-    return notice
-
-
-def withheld_notice(response: dict, evaluation: Evaluation, compact: bool = False) -> str:
-    """The explanation for a response's refused calls and the siblings withheld with them.
-
-    ``compact`` gives a short count-only notice, for when the full one would
-    push the rewritten response past its size budget.
-    """
-    denied = {denial.tool_use_id for denial in evaluation.denials}
-    calls = response["choices"][0]["message"].get("tool_calls") or []
-    cancelled = [call["id"] for call in calls if call["id"] not in denied]
-    if compact:
-        return (
-            f"Watcher did not approve {len(evaluation.denials)} tool calls, so the gateway withheld them"
-            f" and {len(cancelled)} other calls from the same response. None of them were run."
-        )
-    return denial_notice(evaluation.denials, cancelled)
-
-
 # Message fields an alternative may carry. Any other populated field could not
 # be merged into the delivered message without losing or misplacing it.
 _ALTERNATIVE_FIELDS = {"role", "content", "tool_calls", "refusal", "reasoning_content"}
 # Fields providers routinely send empty, which carry nothing to merge.
 _EMPTY_DEFAULTS: dict[str, list] = {"annotations": [[]]}
-RETRY_INSTRUCTION = "Choose an alternative consistent with this result, or explain why you cannot continue."
-_CANCELLED_RESULT = "This tool call was not run because another call in the same response was refused. "
 
 
 def alternative_message(response: dict) -> dict:
@@ -426,30 +362,3 @@ def compose(response: dict, notice: str, alternative: dict | None) -> dict:
 def operation_key(tool_name: str, tool_input: object) -> str:
     """Identify an operation independently of its call ID, keeping JSON's distinction between true and 1."""
     return json.dumps([tool_name, tool_input], ensure_ascii=False, sort_keys=True)
-
-
-def continuation(request: dict, response: dict, evaluation: Evaluation) -> dict:
-    """The request that asks the model for an alternative to a refused proposal.
-
-    Appends the proposal and one tool result per call to a copy of the
-    request: refused calls get Watcher's explanation, their siblings say they
-    were not run. Nothing in the proposal reached the client, so no result
-    describes an execution. Tools, tool choice and other options are kept, so
-    an alternative cannot use a tool the client excluded. The request is
-    buffered (``stream`` false) whatever the client asked for.
-    """
-    result = deepcopy(request)
-    result.pop("stream_options", None)
-    result["stream"] = False
-    message = deepcopy(response["choices"][0]["message"])
-    result["messages"].append(message)
-    denials = {denial.tool_use_id: denial for denial in evaluation.denials}
-    for call in message.get("tool_calls") or []:
-        denial = denials.get(call["id"])
-        content = (
-            denial_notice([denial], []) + "\n\n" + RETRY_INSTRUCTION
-            if denial is not None
-            else _CANCELLED_RESULT + RETRY_INSTRUCTION
-        )
-        result["messages"].append({"role": "tool", "tool_call_id": call["id"], "content": content})
-    return result

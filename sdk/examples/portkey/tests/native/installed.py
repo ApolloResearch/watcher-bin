@@ -83,6 +83,8 @@ def main() -> None:
             "-o",
             "asyncio_mode=auto",
             "/opt/tests/test_bridge.py",
+            "/opt/tests/test_decision_identity.py",
+            "/opt/tests/test_continuation.py",
             "-q",
             "--junitxml=" + str(reports / "python.xml"),
         ],

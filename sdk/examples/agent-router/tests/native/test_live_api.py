@@ -85,7 +85,7 @@ async def test_live_delivery_matches_the_stored_decision(live_stack: dict) -> No
     message = raw.parse().choices[0].message
     delivered = bool(message.tool_calls)
     if not delivered:
-        assert message.content.startswith("Watcher did not approve")
+        assert message.content.startswith(("WATCHER NOTICE (added by Watcher", "WATCHER ESCALATION (added by Watcher"))
     _session, trajectory = await _stored(live_stack, conversation, "call-danger")
     decision = trajectory["tool_call_decisions"]["call-danger"]
     assert decision["raw_tool_call"]["tool_input"] == {"command": DANGEROUS}

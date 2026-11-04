@@ -191,7 +191,7 @@ async def test_chat_provider_error_drops_unfinished_call_and_buffered_text() -> 
             "type": "response.function_call_arguments.done",
             "output_index": 0,
             "item_id": "fc_held_call",
-            "arguments": "hidden",
+            "arguments": None,
         },
         {
             "type": "response.function_call_arguments.done",

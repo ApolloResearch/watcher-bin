@@ -76,7 +76,7 @@ def sync_detailed(
     ``results[i]`` describes ``trajectories[i]``, including empty and duplicate
     inputs. Each result has a chunk endpoint, live leaf, and storage status.
     Set ``append_after`` and ``fork`` on the trajectory to continue or branch;
-    either option requires exactly one Claude Code or Codex input. Released
+    either option requires exactly one Claude Code, Codex, or Copilot input. Released
     aggregate fields retain their batch semantics.
 
     User attribution: signed-in users write their own sessions. Service keys
@@ -129,7 +129,7 @@ def sync(
     ``results[i]`` describes ``trajectories[i]``, including empty and duplicate
     inputs. Each result has a chunk endpoint, live leaf, and storage status.
     Set ``append_after`` and ``fork`` on the trajectory to continue or branch;
-    either option requires exactly one Claude Code or Codex input. Released
+    either option requires exactly one Claude Code, Codex, or Copilot input. Released
     aggregate fields retain their batch semantics.
 
     User attribution: signed-in users write their own sessions. Service keys
@@ -177,7 +177,7 @@ async def asyncio_detailed(
     ``results[i]`` describes ``trajectories[i]``, including empty and duplicate
     inputs. Each result has a chunk endpoint, live leaf, and storage status.
     Set ``append_after`` and ``fork`` on the trajectory to continue or branch;
-    either option requires exactly one Claude Code or Codex input. Released
+    either option requires exactly one Claude Code, Codex, or Copilot input. Released
     aggregate fields retain their batch semantics.
 
     User attribution: signed-in users write their own sessions. Service keys
@@ -228,7 +228,7 @@ async def asyncio(
     ``results[i]`` describes ``trajectories[i]``, including empty and duplicate
     inputs. Each result has a chunk endpoint, live leaf, and storage status.
     Set ``append_after`` and ``fork`` on the trajectory to continue or branch;
-    either option requires exactly one Claude Code or Codex input. Released
+    either option requires exactly one Claude Code, Codex, or Copilot input. Released
     aggregate fields retain their batch semantics.
 
     User attribution: signed-in users write their own sessions. Service keys

@@ -18,7 +18,9 @@ capabilities:
     implemented: true
     scope: Hold the gateway response, or a streamed response from its first tool call,
       until Watcher decides; refused proposals are removed and explained in an ordinary
-      completion, followed by up to two graded alternatives when a gateway URL is configured.
+      completion with Watcher-attributed notices. With a gateway URL, a denial is followed
+      by up to two graded alternatives, and an escalation or third refusal by one final
+      tool-free reply asking the user. Every request carries a fixed Watcher system notice.
     example: gateway/agent-router.yaml
     boundary: gateway-response-delivery
     context: complete exchange snapshot
@@ -74,9 +76,11 @@ limitations:
   mode: enforce
   cause: integration-scope
   description: Denials and escalations remove the proposal's calls and explain them in
-    the response text. This example has no human approval interface or resume mechanism.
-    Same-request alternatives need GATEWAY_URL; a failed alternative ends the response
-    with the notices rather than an error.
+    the response text. This example has no human approval interface or resume mechanism;
+    an escalation ends with the model asking the user, and only grader escalations offer
+    approval in the conversation. Same-request alternatives and the final reply need
+    GATEWAY_URL; a failed generation ends the response with the notices rather than an
+    error.
 - id: alternative-sessions
   mode: both
   cause: integration-scope

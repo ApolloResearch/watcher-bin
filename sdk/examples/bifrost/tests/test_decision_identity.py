@@ -74,7 +74,7 @@ async def test_id_only_decisions_cover_every_delivered_call(case):
                 await evaluate(watcher, request, response, conversation_id="bifrost:fixture-exchange")
             assert sent == []
         else:
-            assert await evaluate(watcher, request, response, conversation_id="bifrost:fixture-exchange") is (
-                case == "reverse"
-            )
+            assessment = await evaluate(watcher, request, response, conversation_id="bifrost:fixture-exchange")
+            assert assessment.released is (case == "reverse")
+            assert not assessment.denials
             assert len(sent) == 1

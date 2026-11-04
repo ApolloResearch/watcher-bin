@@ -13,7 +13,7 @@ exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for 
 exclude-newer-span = "P7D"
 
 [manifest]
-overrides = [{ name = "pillow", specifier = ">=12.1.1" }]
+overrides = [{ name = "pillow", specifier = "==12.3.0" }]
 
 [[package]]
 name = "annotated-types"
@@ -1355,7 +1355,7 @@ dev = [
 
 [[package]]
 name = "watcher-sdk"
-version = "0.47.0"
+version = "0.48.2"
 source = { directory = "../../" }
 dependencies = [
     { name = "anyio" },

@@ -9,13 +9,19 @@ and preserves prior approved content as history without grading it again.
 
 Streams forward non-tool content immediately and hold each tool plus subsequent
 events until it has an allow (or observe-mode deferred) decision. All output is
-re-encoded from validated events. Denials and escalations become ordinary text
-notices plus gateway-generated alternatives, with at most three proposals per
-client request. Alternatives stream through the same gates. Already released
-calls retain their approval; internal recovery receipts state that their real
-execution results are unknown. Repeated denied or released calls cannot escape
-the prior decision merely by changing their IDs. Non-streamed proposals remain
-atomic until an entire allowed alternative can be returned. Every Watcher
+re-encoded from validated events. Refused calls become ordinary text notices.
+After a denial the model is asked for another approach, with at most three
+proposals per client request; alternatives stream through the same gates. After
+an escalation, or a third blocked proposal, one last generation asks the model
+to stop and put the question to the user, and any call it proposes is withheld.
+A fixed question replaces that reply when it fails or times out, and follows
+it when it has no text or was cut off.
+Already released calls retain their approval; internal recovery receipts state
+that their real execution results are unknown. Repeated denied or released
+calls cannot escape the prior decision merely by changing their IDs.
+Non-streamed proposals remain atomic until an entire allowed alternative can be
+returned. Every request also carries a fixed system notice explaining Watcher's
+notices (``system_notice``). Every Watcher
 request declares that refused calls are withheld (``withholds_refused_calls``),
 so Watcher records them as blocked, except when it re-sends an exchange to an
 older Watcher that rejects the newer fields. The recording of
@@ -26,6 +32,8 @@ one from a proposal refused locally as a repeat.
 
 Each evaluation has a 300-second default deadline. After a refusal, its remaining
 budget also bounds draining that proposal, replacement generation and evaluation.
+Running out of it ends the response with an error, except during the last
+generation, which falls back to the fixed question.
 SSE comments keep every API alive without inventing model content; final text-only
 recording never holds delivery. Transport failures remain explicit stream errors.
 
@@ -64,6 +72,7 @@ from watcher_litellm.replan import (
     client_tool_details,
     complete_replan,
     denial_notice,
+    stop_notice,
 )
 from watcher_litellm.streams import (
     API,
@@ -71,6 +80,7 @@ from watcher_litellm.streams import (
     UnsupportedStream,
     as_dict,
 )
+from watcher_litellm.system_notice import system_notice_fields
 from watcher_sdk import AsyncWatcherClient, WatcherAPIError, WatcherError
 from watcher_sdk._generated.models import HookCallError, PreToolUseHookResponse
 
@@ -82,6 +92,9 @@ _ROUTES: dict[str, API] = {
     "/messages": "messages",
 }
 _RELEASED = {"allow", "deferred"}
+# Decision sources that read the conversation, so a user's approval can change
+# their next decision. Rules, thresholds and grading-failure policy do not.
+_GRADED = {"policy_gateway", "triage"}
 # Watcher stores each client's x-watcher-session-id under this prefix. Watcher
 # labels sessions whose ID carries a registered gateway prefix as Gateway, and
 # the prefix keeps client-chosen IDs apart from IDs other integrations send. A
@@ -118,13 +131,31 @@ class _Recovery(BaseModel):
 
 
 class _Attempt(BaseModel):
-    """A provider attempt's parser and decisions, filled by the streaming driver."""
+    """A provider attempt's parser and decisions, filled by the streaming driver.
+
+    ``final`` marks the generation that was asked to stop and ask the user:
+    its calls are withheld without being sent to Watcher.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     stream: IncrementalStream
+    final: bool = False
     denials: list[ToolDenial] = Field(default_factory=list)
     released: list[ToolCall] = Field(default_factory=list)
+
+
+def _stops(denials: list[ToolDenial], number: int) -> bool:
+    """Whether refusing proposal ``number`` (from 0) ends recovery with a final, text-only generation."""
+    return number == _MAX_PROPOSALS - 1 or any(denial.is_escalation for denial in denials)
+
+
+def _withheld_unevaluated(calls: list[ToolCall]) -> list[ToolDenial]:
+    """Refusals for calls the final generation proposed after it was asked to stop."""
+    return [
+        ToolDenial(**call.model_dump(), reason="Proposed after the assistant was asked to stop.", is_escalation=False)
+        for call in calls
+    ]
 
 
 def _operation_key(call: ToolCall) -> str:
@@ -280,6 +311,98 @@ def _path_order(path: list[str | int]) -> list[tuple[int, int | str]]:
     return [(0, key) if isinstance(key, int) else (1, key) for key in path]
 
 
+def without_client_calls(api: API, response: dict[str, Any]) -> dict[str, Any]:
+    """A detached copy of ``response`` with every client-executable call removed and its stop reason ended.
+
+    Text, reasoning and provider-run tools are kept. Calls are deleted by their
+    location, highest index first so the remaining locations stay valid.
+    """
+    calls = client_calls(api, response)
+    modified = as_dict(response)
+    for path, _ in sorted(calls, key=lambda call: _path_order(call[0]), reverse=True):
+        container: Any = modified
+        for key in path[:-1]:
+            container = container[key]
+        del container[path[-1]]
+    if api == "chat_completions":
+        for index in {int(path[1]) for path, _ in calls}:
+            choice = modified["choices"][index]
+            if choice["message"].get("tool_calls") == []:
+                del choice["message"]["tool_calls"]
+            choice["finish_reason"] = "stop"
+    elif api == "messages" and calls:
+        modified["stop_reason"] = "end_turn"
+    return modified
+
+
+def _append_text(api: API, response: dict[str, Any], text: str, choice: int = 0) -> None:
+    """Add ``text`` as the last assistant text of ``response``, in place; Chat joins it to ``choice``'s content."""
+    if api == "chat_completions":
+        message = response["choices"][choice]["message"]
+        message["content"] = "\n\n".join(part for part in (message.get("content"), text) if part)
+    elif api == "messages":
+        response["content"].append({"type": "text", "text": text})
+    else:
+        response["output"].append(
+            {
+                "type": "message",
+                "id": f"msg_{uuid4().hex}",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": text, "annotations": []}],
+            }
+        )
+
+
+def _mark_ended(api: API, response: dict[str, Any]) -> None:
+    """Give a reply that now ends with a complete question an ordinary end, in place.
+
+    A token-limit or content-filter stop would tell clients the reply was cut
+    off, and some continue it automatically instead of showing the question.
+    """
+    if api == "chat_completions":
+        response["choices"][0]["finish_reason"] = "stop"
+    elif api == "messages":
+        response.update(stop_reason="end_turn", stop_sequence=None)
+        response.pop("stop_details", None)
+    else:
+        response.update(status="completed", incomplete_details=None)
+
+
+def _asks_user(api: API, response: dict[str, Any]) -> bool:
+    """Whether a final reply can stand alone as the question to the user.
+
+    It must propose no client call, contain text of its own and have ended
+    normally rather than at a token limit, a content filter or a paused
+    provider-run tool.
+    """
+    if client_calls(api, response):
+        return False
+    if api == "chat_completions":
+        choice = response["choices"][0]
+        texts = [choice["message"].get("content")]
+        ended = choice.get("finish_reason") in {"stop", "tool_calls", "function_call"}
+    elif api == "messages":
+        texts = [block.get("text") for block in response["content"] if block["type"] == "text"]
+        ended = response.get("stop_reason") in {"end_turn", "stop_sequence", "tool_use"}
+    else:
+        texts = [
+            part.get("text")
+            for item in response["output"]
+            if item["type"] == "message"
+            for part in item.get("content") or []
+            if part.get("type") == "output_text"
+        ]
+        ended = response.get("status") == "completed"
+    return ended and any(isinstance(text, str) and text.strip() for text in texts)
+
+
+async def _replay(chunks: list[Any]) -> AsyncGenerator[Any]:
+    """Serve a buffered provider stream to the stream parser again."""
+    for chunk in chunks:
+        yield chunk
+
+
 def withheld_response(
     api: API, response: dict[str, Any], outputs: list[PreToolUseHookResponse | HookCallError]
 ) -> dict[str, Any] | None:
@@ -292,8 +415,6 @@ def withheld_response(
     Watcher returned no decision for (for example one the converter treated as
     superseded context) counts as refused. ``outputs`` are the hook's raw-format
     outputs; for these three APIs each ``tool_use_id`` is the provider's call ID.
-    Calls are deleted by their location in ``response``, highest index first so
-    the remaining locations stay valid.
     """
     calls = client_calls(api, response)
     call_ids = [call_id for _, call_id in calls]
@@ -330,35 +451,14 @@ def withheld_response(
     ]
     names = ", ".join(call_id for _, call_id in calls) or ", ".join(str(output.tool_use_id) for output in refused)
     notice = _NOTICE.format(plural="s" if len(calls) > 1 else "", names=names, reasons="\n".join(reasons))
-    modified = as_dict(response)
-    paths = [path for path, _ in calls]
-    for path in sorted(paths, key=_path_order, reverse=True):
-        container: Any = modified
-        for key in path[:-1]:
-            container = container[key]
-        del container[path[-1]]
+    modified = without_client_calls(api, response)
     if api == "chat_completions":
-        for choice in modified["choices"]:
-            if choice["message"].get("tool_calls") == []:
-                del choice["message"]["tool_calls"]
+        paths = [path for path, _ in calls]
         candidate = next((path[1] for path in paths if len(path) > 1 and path[0] == "choices"), 0)
-        choice = modified["choices"][candidate]
-        message = choice["message"]
-        message["content"] = "\n\n".join(part for part in (message.get("content"), notice) if part)
-        choice["finish_reason"] = "stop"
-    elif api == "messages":
-        modified["content"].append({"type": "text", "text": notice})
-        modified["stop_reason"] = "end_turn"
+        _append_text(api, modified, notice, int(candidate))
+        modified["choices"][candidate]["finish_reason"] = "stop"
     else:
-        modified["output"].append(
-            {
-                "type": "message",
-                "id": f"msg_{uuid4().hex}",
-                "role": "assistant",
-                "status": "completed",
-                "content": [{"type": "output_text", "text": notice, "annotations": []}],
-            }
-        )
+        _append_text(api, modified, notice)
     return modified
 
 
@@ -405,16 +505,27 @@ class WatcherCallback(CustomLogger):
     async def async_pre_call_hook(
         self, user_api_key_dict: UserAPIKeyAuth, cache: Any, data: dict[str, Any], call_type: str
     ) -> dict[str, Any]:
-        """Refuse request options Watcher cannot evaluate before the provider runs anything."""
+        """Refuse request options Watcher cannot evaluate, then add the fixed system notice.
+
+        The notice goes into both the provider arguments and the proxy's
+        request snapshot, which the callback sends to Watcher and extends for
+        replacement generations, so all three see the same conversation.
+        """
         api = route(data)
-        if api is not None and (problem := _unsupported_request(api, data["proxy_server_request"]["body"])):
+        if api is None:
+            return data
+        if problem := _unsupported_request(api, data["proxy_server_request"]["body"]):
             raise HTTPException(400, problem)
-        if api is not None and session_identity(data) is None:
+        if session_identity(data) is None:
             raise HTTPException(
                 400,
                 "Watcher requires x-watcher-session-id or native Claude/Codex session metadata "
                 "to keep incremental decisions in one conversation",
             )
+        fields = system_notice_fields(api, data)
+        data.update(fields)
+        snapshot = data["proxy_server_request"]
+        snapshot["body"] = {**snapshot["body"], **fields}
         return data
 
     async def _decide(
@@ -509,6 +620,7 @@ class WatcherCallback(CustomLogger):
                     **by_id[cast(str, output.tool_use_id)].model_dump(),
                     reason=explanation if isinstance(explanation, str) and explanation else "Approval is required.",
                     is_escalation=output.decision == "escalate",
+                    user_can_approve=output.decision == "escalate" and str(output.decision_source) in _GRADED,
                 )
             )
         return denials
@@ -547,7 +659,9 @@ class WatcherCallback(CustomLogger):
 
         No buffered call has reached the client, so a refused proposal's siblings
         receive cancellation results. The returned single response contains only
-        an approved alternative's executable calls and ordinary denial notices.
+        an approved alternative's executable calls and ordinary denial notices,
+        or, after an escalation or a third refusal, the model's text asking the
+        user how to proceed.
         """
         api = route(data)
         if api is None:
@@ -584,10 +698,13 @@ class WatcherCallback(CustomLogger):
             notices.append(denial_notice(denials, cancelled=cancelled))
             self._remember_denials(recovery, denials)
             recovery.withheld.extend(call.tool_use_id for call in calls)
-            if attempt == _MAX_PROPOSALS - 1:
-                notices.append("Watcher stopped after three blocked proposals.")
+            stop = _stops(denials, attempt)
+            request = build_replan_request(api, request, candidate, denials, released_ids=set(), stop=stop)
+            if stop:
+                replacement = await self._final_reply(api, request, data, denials, recovery.deadline)
+                if replacement is None:
+                    notices.append(stop_notice(denials))
                 break
-            request = build_replan_request(api, request, candidate, denials, released_ids=set())
             candidate = await self._until(complete_replan(api, request, data), recovery.deadline)
             denials = await self._until(
                 self._assess_replacement(api, _request_with_body(data, request), candidate, user, recovery),
@@ -601,6 +718,33 @@ class WatcherCallback(CustomLogger):
         if isinstance(response, BaseModel):
             return type(response).model_validate(delivered)
         return delivered
+
+    async def _final_reply(
+        self, api: API, request: dict[str, Any], data: dict[str, Any], denials: list[ToolDenial], deadline: float | None
+    ) -> dict[str, Any] | None:
+        """Generate the reply asking the user how to proceed, or return None when it failed.
+
+        The model was asked to put the question itself. Calls it proposes anyway
+        are withheld without evaluation, and ``stop_notice`` is appended when it
+        proposed any, wrote no text or stopped early. A provider failure,
+        timeout, malformed reply or failed Responses result returns None, so
+        the caller ends with ``stop_notice`` alone: an error status would invite
+        client retries that regenerate and resubmit the refused proposals.
+        """
+        try:
+            reply = await self._until(complete_replan(api, request, data), deadline)
+            if api == "responses" and (reply.get("status") == "failed" or reply.get("error")):
+                logger.warning("The final responses generation failed: the provider reported an error")
+                return None
+            if _asks_user(api, reply):
+                return reply
+            ended = without_client_calls(api, reply)
+            _append_text(api, ended, stop_notice(denials))
+            _mark_ended(api, ended)
+            return ended
+        except Exception as error:
+            logger.warning("The final %s generation failed: %s", api, type(error).__name__)
+            return None
 
     async def async_post_call_streaming_iterator_hook(
         self, user_api_key_dict: UserAPIKeyAuth, response: Any, request_data: dict[str, Any]
@@ -728,6 +872,7 @@ class WatcherCallback(CustomLogger):
                 **call.model_dump(),
                 reason=recovery.forbidden[_operation_key(call)].reason,
                 is_escalation=recovery.forbidden[_operation_key(call)].is_escalation,
+                user_can_approve=recovery.forbidden[_operation_key(call)].user_can_approve,
             )
             for call in client_tool_details(api, response)
             if _operation_key(call) in recovery.forbidden
@@ -836,6 +981,14 @@ class WatcherCallback(CustomLogger):
                     if index is None:
                         break
                     evaluation = state.evaluation(client_body(api, attempt_data["proxy_server_request"]["body"]), index)
+                    if attempt.final:
+                        attempt.denials = _withheld_unevaluated(client_tool_details(api, evaluation.response))
+                        while held:
+                            frame = held.popleft()
+                            if delivery.retains(frame):
+                                for event in delivery.emit(frame, state):
+                                    yield event
+                        break
                     request = _request_with_body(attempt_data, evaluation.request)
                     deadline = recovery.deadline or (asyncio.get_running_loop().time() + self.timeout_seconds)
                     decision = asyncio.create_task(
@@ -859,7 +1012,7 @@ class WatcherCallback(CustomLogger):
                     attempt.released.extend(calls)
                     recovery.released.extend(calls)
                     state.allowed.add(index)
-                if state.terminal and not attempt.denials and not finished:
+                if state.terminal and not attempt.denials and not attempt.final and not finished:
                     delivery.checkpoint(state)
                     final = delivery.finish(state)
                     if api != "chat_completions":
@@ -879,18 +1032,35 @@ class WatcherCallback(CustomLogger):
     async def _gated_stream(
         self, api: API, data: dict[str, Any], response: Any, user: UserAPIKeyAuth, delivery: StreamDelivery
     ) -> AsyncGenerator[bytes]:
-        """Stream an original proposal and at most two evaluated replacements as one response."""
+        """Stream an original proposal, at most two evaluated replacements and a final reply as one response.
+
+        After an escalation or the third refused proposal, one more generation
+        is asked to stop and put the question to the user. It is read in full
+        before any of it is delivered (``_final_chunks``), then delivered like
+        any other text. ``stop_notice`` ends the response instead of an error
+        when that generation fails or times out, and follows the reply's text
+        when the reply proposed calls (withheld), had no text or stopped early.
+        """
         recovery = _Recovery()
         request = client_body(api, data["proxy_server_request"]["body"])
-        for number in range(_MAX_PROPOSALS):
+        refused: list[ToolDenial] = []
+        final = False
+        for number in range(_MAX_PROPOSALS + 1):
             delivery.begin_attempt()
-            attempt = _Attempt(stream=IncrementalStream(api))
+            attempt = _Attempt(stream=IncrementalStream(api), final=final)
             iterator = self._stream_attempt(
                 api, data, _request_with_body(data, request), response, user, delivery, attempt, recovery
             )
             async with aclosing(iterator):
                 async for event in iterator:
                     yield event
+            if attempt.final:
+                asks = not attempt.denials and _asks_user(api, attempt.stream.body)
+                for event in self._end_delivery(
+                    api, data, user, delivery, attempt.stream, None if asks else refused, recovery
+                ):
+                    yield event
+                return
             if not attempt.denials:
                 return
             released_ids = {call.tool_use_id for call in attempt.released}
@@ -903,24 +1073,75 @@ class WatcherCallback(CustomLogger):
             self._remember_denials(recovery, attempt.denials)
             for event in delivery.notice(denial_notice(attempt.denials, cancelled=cancelled)):
                 yield event
-            if number == _MAX_PROPOSALS - 1:
-                for event in delivery.notice("Watcher stopped after three blocked proposals."):
-                    yield event
-                final = delivery.finish(attempt.stream)
-                self._start_recording(api, data, delivery.response, user, recovery.withheld_ids())
-                for event in final:
-                    yield event
-                return
+            refused = attempt.denials
+            final = _stops(attempt.denials, number)
             request = build_replan_request(
-                api, request, attempt.stream.body, attempt.denials, released_ids=released_ids
+                api, request, attempt.stream.body, attempt.denials, released_ids=released_ids, stop=final
             )
-            generation = asyncio.create_task(
-                self._until(complete_replan(api, request, data, stream=True), recovery.deadline)
+            operation = (
+                self._final_chunks(api, request, data) if final else complete_replan(api, request, data, stream=True)
             )
+            generation = asyncio.create_task(self._until(operation, recovery.deadline))
             async with aclosing(self._wait(generation, api)) as waiting:
                 async for ping in waiting:
                     yield ping
-            response = generation.result()
+            try:
+                response = generation.result()
+            except Exception as error:
+                if not final:
+                    raise
+                logger.warning("The final %s generation failed: %s", api, type(error).__name__)
+                for event in self._end_delivery(api, data, user, delivery, attempt.stream, refused, recovery):
+                    yield event
+                return
+            if final:
+                response = _replay(response)
+
+    async def _final_chunks(self, api: API, request: dict[str, Any], data: dict[str, Any]) -> list[Any]:
+        """Generate the final reply and read and validate all of it before any is delivered.
+
+        The reply is short text. Holding it until the provider finishes means a
+        failure, timeout or malformed stream can still be replaced by the fixed
+        question, rather than cutting off a half-delivered reply with an error.
+        """
+        response = await complete_replan(api, request, data, stream=True)
+        async with aclosing(self._stream_chunks(api, response)) as source:
+            chunks = [chunk async for chunk in source]
+        state = IncrementalStream(api)
+        async with aclosing(self._provider_events(api, _replay(chunks))) as events:
+            async for value in events:
+                state.add(value)
+        if not state.terminal or set(state.calls) != state.complete:
+            raise IncompleteStream("The final reply ended before completing")
+        # Replay withholds proposed calls by reading their details, which
+        # rejects malformed arguments; reject them here, while the fallback
+        # can still discard the reply.
+        client_tool_details(api, state.body)
+        return chunks
+
+    def _end_delivery(
+        self,
+        api: API,
+        data: dict[str, Any],
+        user: UserAPIKeyAuth,
+        delivery: StreamDelivery,
+        state: IncrementalStream,
+        refused: list[ToolDenial] | None,
+        recovery: _Recovery,
+    ) -> list[bytes]:
+        """Finish a stream after its final reply, first adding ``stop_notice`` for ``refused`` when given.
+
+        ``state`` is the last attempt read in full: the final reply, or the
+        refused attempt before it when the final generation failed. The
+        recording names ``recovery``'s withheld calls.
+        """
+        events: list[bytes] = []
+        if refused is not None:
+            events += delivery.notice(stop_notice(refused))
+            _mark_ended(api, state.body)
+        events += delivery.finish(state)
+        self._start_recording(api, data, delivery.response, user, recovery.withheld_ids())
+        return events
 
 
 watcher_callback = WatcherCallback()

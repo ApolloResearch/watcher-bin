@@ -87,6 +87,9 @@ class Provider(BaseHTTPRequestHandler):
     alternative: it is answered with a ``read_file`` call numbered by how many
     proposals the history already holds, or, when the first user message
     contains ``zipped``, with a gzip body that decodes to more than 8 MiB.
+    One with ``tool_choice: "none"`` asks for the final reply, answered with a
+    question in text, or, when the first user message contains ``disobey``,
+    with a tool call anyway.
     """
 
     protocol_version = "HTTP/1.1"
@@ -97,6 +100,20 @@ class Provider(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         request = read_json(self)
+        first_user = next(message for message in request["messages"] if message["role"] == "user")["content"]
+        if request["messages"][-1]["role"] == "tool" and request.get("tool_choice") == "none":
+            final: dict = {"role": "assistant", "content": "Blocked. A. skip it, B. something else?"}
+            if "disobey" in first_user:
+                final["tool_calls"] = [
+                    {"id": "call-final", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}
+                ]
+            choice = {
+                "index": 0,
+                "message": final,
+                "finish_reason": "tool_calls" if "disobey" in first_user else "stop",
+            }
+            reply(self, 200, {"id": "chatcmpl-final", "object": "chat.completion", "choices": [choice]})
+            return
         if request["messages"][-1]["role"] == "tool":
             attempt = sum(message["role"] == "assistant" for message in request["messages"])
             call = {
@@ -105,11 +122,11 @@ class Provider(BaseHTTPRequestHandler):
                 "function": {"name": "read_file", "arguments": json.dumps({"attempt": attempt})},
             }
             message = {"role": "assistant", "content": f"Alternative {attempt}.", "tool_calls": [call]}
-            if "zipped" in request["messages"][0]["content"]:
+            if "zipped" in first_user:
                 message["content"] = "x" * (9 * 1024 * 1024)
             choice = {"index": 0, "message": message, "finish_reason": "tool_calls"}
             payload = {"id": "chatcmpl-alternative", "object": "chat.completion", "choices": [choice]}
-            reply(self, 200, payload, "gzip" if "zipped" in request["messages"][0]["content"] else None)
+            reply(self, 200, payload, "gzip" if "zipped" in first_user else None)
             return
         marker = request["messages"][-1]["content"]
         if request.get("stream"):
@@ -250,7 +267,9 @@ class SimulatedWatcher(BaseHTTPRequestHandler):
     """Watcher API fixture; a word of the first user message chooses mode and judgment.
 
     The first word decides the client's own exchange; for an alternative,
-    whose history holds N earlier proposals, word N + 1 decides.
+    whose history holds N earlier proposals, word N + 1 decides. ``graded``
+    escalates as Watcher's grader would, so the user may approve the call;
+    ``escalate`` escalates by rule.
 
     The ``hold`` marker sets ``held`` and then never answers within a test's
     lifetime, standing in for a grade that is still running.
@@ -275,7 +294,7 @@ class SimulatedWatcher(BaseHTTPRequestHandler):
             self.held.set()
             time.sleep(60)
         mode = {"observe": "observe", "paused": "paused"}.get(marker, "enforce")
-        judgment = {"deny": "deny", "escalate": "escalate"}.get(marker, "allow")
+        judgment = {"deny": "deny", "escalate": "escalate", "graded": "escalate"}.get(marker, "allow")
         calls = body["response_body"]["choices"][0]["message"].get("tool_calls") or []
         reply(
             self,
@@ -283,7 +302,11 @@ class SimulatedWatcher(BaseHTTPRequestHandler):
             [
                 {
                     "tool_use_id": call["id"],
-                    "decision_source": "bypass" if mode == "paused" else "rule",
+                    "decision_source": "bypass"
+                    if mode == "paused"
+                    else "policy_gateway"
+                    if marker == "graded"
+                    else "rule",
                     "decision": "deferred" if mode != "enforce" else judgment,
                     "judged_decision": None if mode == "paused" else judgment,
                     "enforcement_mode": mode,

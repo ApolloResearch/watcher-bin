@@ -44,11 +44,14 @@ import watcher_sdk._generated.api.graders.list_graders_endpoint_v1_graders_get a
 import watcher_sdk._generated.api.graders.search_graders_endpoint_v1_graders_search_post as _search_graders_api
 import watcher_sdk._generated.api.graders.update_grader_endpoint_v1_graders_grader_id_patch as _update_grader_api
 import watcher_sdk._generated.api.health.health_v1_health_get as _health_api
-import watcher_sdk._generated.api.hooks.aperture_entire_request_hook_v1_hooks_aperture_post as _aperture_entire_request_hook_api
+import watcher_sdk._generated.api.hooks.aperture_entire_request_hook_v1_hooks_aperture_entire_request_post as _aperture_entire_request_hook_api
+import watcher_sdk._generated.api.hooks.aperture_pre_request_hook_v1_hooks_aperture_pre_request_post as _aperture_pre_request_hook_api
+import watcher_sdk._generated.api.hooks.aperture_pre_response_hook_v1_hooks_aperture_pre_response_post as _aperture_pre_response_hook_api
 import watcher_sdk._generated.api.hooks.pre_tool_use_hook_v1_hooks_pre_tool_use_post as _pre_tool_use_hook_api
 import watcher_sdk._generated.api.ingest.ingest_append_endpoint_v1_sessions_session_id_trajectories_trajectory_hash_append_post as _ingest_append_api
 import watcher_sdk._generated.api.ingest.ingest_v1_ingest_post as _ingest_api
 import watcher_sdk._generated.api.ingest.write_agent_relationship_v1_sessions_child_session_id_agent_relationship_put as _agent_relationship_api
+import watcher_sdk._generated.api.installations.post_installation_report_endpoint_v1_installations_installation_id_reports_post as _send_installation_report_api
 import watcher_sdk._generated.api.monitors.get_monitor_customization_v1_monitors_customization_get as _get_monitor_customization_api
 import watcher_sdk._generated.api.monitors.grade_by_monitor_v1_monitors_role_grade_post as _grade_by_monitor_api
 import watcher_sdk._generated.api.monitors.list_monitors_v1_monitors_get as _list_monitors_api
@@ -91,6 +94,10 @@ from watcher_sdk._generated.models import (
     AdminSessionContentAccessRequestListResponse,
     ApertureHookAccepted,
     ApertureHookRequest,
+    AperturePreRequest,
+    AperturePreRequestResponse,
+    AperturePreResponseRequest,
+    AperturePreResponseResponse,
     AuthClientConfig,
     AvailableSessionDetailResponse,
     ChatMessageAssistant,
@@ -117,6 +124,7 @@ from watcher_sdk._generated.models import (
     HookCallError,
     IngestRequest,
     IngestResponse,
+    InstallationReportResponse,
     MessageDetailResponse,
     ModelsConfig,
     MonitorCustomizationResponse,
@@ -189,6 +197,7 @@ from watcher_sdk._generated.models.get_session_aggregates_endpoint_v1_sessions_a
 )
 from watcher_sdk._generated.models.grader_search_request import GraderSearchRequest
 from watcher_sdk._generated.models.ingest_append_request import IngestAppendRequest
+from watcher_sdk._generated.models.installation_report import InstallationReport as _GeneratedInstallationReport
 from watcher_sdk._generated.models.refresh_request import RefreshRequest
 from watcher_sdk._generated.models.session_search_filters import SessionSearchFilters
 from watcher_sdk._generated.models.session_search_filters_external_ids_type_0 import (
@@ -217,6 +226,7 @@ from watcher_sdk.errors import (
     WatcherTimeoutError,
     raise_for_status,
 )
+from watcher_sdk.installation_report import InstallationReport
 from watcher_sdk.settings_schema.command_rules_eval import (
     TERMINAL_THRESHOLD_LABEL,
     TERMINAL_THRESHOLD_PATTERN,
@@ -284,7 +294,7 @@ _LOCAL_JUDGMENTS: dict[str, str] = {
 # `Read`, for instance).
 _TRANSLATED_HARNESS_KEYS = frozenset({"claude_code", "codex", "github_copilot_cli"})
 # The coding agents' own transcript formats `pre_tool_use_hook` accepts in `messages`.
-_TRANSCRIPT_FILE_FORMATS = ("claude-code-jsonl", "codex-jsonl", "copilot-events-jsonl")
+_TRANSCRIPT_FILE_FORMATS = ("claude-code-jsonl", "claude-code-trajectory", "codex-jsonl", "copilot-events-jsonl")
 _TRANSCRIPT_FILE_MODELS = (ClaudeCodeTrajectory, CodexTrajectory, CopilotTrajectory)
 
 
@@ -648,6 +658,10 @@ def _sdk_method(
     return decorator
 
 
+_COPILOT_RESUMABLE_UNAVAILABLE_UNTIL: dict[str, float] = {}
+_COPILOT_RESUMABLE_PROBE_TTL_SECONDS = 60.0
+
+
 class AsyncWatcherClient:
     """Async client for the Watcher API.
 
@@ -688,6 +702,8 @@ class AsyncWatcherClient:
                 an outer test fixture).
         """
         self._max_retries = max_retries
+        self._copilot_resumable_probed = False
+        self._copilot_resumable_target = str(httpx_client.base_url if httpx_client is not None else httpx.URL(base_url))
         self._sdk_manages_httpx_lifecycle = httpx_client is None or manage_external_httpx_client_lifecycle
         # (baseline-or-None, fetched_at monotonic) for pre_tool_use's local
         # deterministic stage; None until the first fetch, and a cached None
@@ -868,20 +884,49 @@ class AsyncWatcherClient:
             body=PermissionCheckRequest(permissions=list(permissions)),
         )
 
-    async def _ingest_incremental(self, body: bytes) -> IngestResponse:
+    async def _probe_copilot_resumable(self) -> None:
+        """Check route presence without sending a transcript to an older server.
+
+        FastAPI answers GET on this POST-only route with 405. A GET 404
+        cannot come from the POST handler's session-not-found response.
+        Cache absence briefly by target so fresh clients can skip repeated probes
+        while still discovering a server upgrade.
+        """
+        http = self._generated_client.get_async_httpx_client()
+        target = self._copilot_resumable_target
+        if _COPILOT_RESUMABLE_UNAVAILABLE_UNTIL.get(target, 0) > time.monotonic():
+            raise WatcherAPIError(404, "Resumable ingest unavailable", code="resumable_ingest_unsupported")
+        if self._copilot_resumable_probed:
+            return
+        raw = await http.request(method="GET", url="/v1/ingest/resumable")
+        if raw.status_code == 404:
+            _COPILOT_RESUMABLE_UNAVAILABLE_UNTIL[target] = time.monotonic() + _COPILOT_RESUMABLE_PROBE_TTL_SECONDS
+            raise WatcherAPIError(404, "Resumable ingest unavailable", code="resumable_ingest_unsupported")
+        if raw.status_code != 405:
+            _raise_for_http_error(raw.status_code, raw.content, raw.headers)
+        self._copilot_resumable_probed = True
+
+    async def _ingest_incremental(self, body: bytes, *, format: str) -> IngestResponse:
         """Send one already serialized native chunk, without automatic retries.
 
-        The 8 MiB bound covers the exact bytes transmitted. A successful
-        response returns one item in ``results`` with the committed chunk endpoint
+        ``format`` comes from the chunk planner; the serialized body is sent unchanged.
+        Claude Code and Codex requests have an exact 8 MiB bound. Copilot uses
+        that size as a target: an indivisible event or complete call cycle may
+        exceed it. A successful response returns one item in ``results`` with the committed chunk endpoint
         and live leaf. Missing results mean an older server lacks this capability; callers
-        must not advance incremental progress from that response.
+        must not advance incremental progress from that response. Copilot uses
+        a dedicated path so an older server refuses an unknown route before
+        it can mistake a delta for a complete transcript.
         """
-        if len(body) > MAX_BODY_BYTES:
+        is_copilot = format == "copilot-events-jsonl"
+        if len(body) > MAX_BODY_BYTES and not is_copilot:
             raise UploadTooLarge("Native ingest request exceeds 8 MiB")
         try:
+            if is_copilot:
+                await self._probe_copilot_resumable()
             raw = await self._generated_client.get_async_httpx_client().request(
                 method="POST",
-                url="/v1/ingest",
+                url="/v1/ingest/resumable" if is_copilot else "/v1/ingest",
                 content=body,
                 headers={"Content-Type": "application/json"},
             )
@@ -1206,6 +1251,7 @@ class AsyncWatcherClient:
         tool_use_id: str | None = None,
         user: str | None = None,
         ephemeral: bool | None = None,
+        record_transcript: bool | None = None,
         mode: str | None = None,
         force_regrade: bool = False,
         timeout: float | None = None,
@@ -1230,6 +1276,7 @@ class AsyncWatcherClient:
         tool_use_id: str | None = None,
         user: str | None = None,
         ephemeral: bool | None = None,
+        record_transcript: bool | None = None,
         mode: str | None = None,
         force_regrade: bool = False,
         timeout: float | None = None,
@@ -1254,6 +1301,7 @@ class AsyncWatcherClient:
         tool_use_id: None = None,
         user: str | None = None,
         ephemeral: bool | None = None,
+        record_transcript: bool | None = None,
         mode: str | None = None,
         force_regrade: bool = False,
         timeout: float | None = None,
@@ -1301,6 +1349,7 @@ class AsyncWatcherClient:
         tool_use_id: str | None = None,
         user: str | None = None,
         ephemeral: bool | None = None,
+        record_transcript: bool | None = None,
         mode: str | None = None,
         force_regrade: bool = False,
         timeout: float | None = None,
@@ -1438,16 +1487,33 @@ class AsyncWatcherClient:
                   `CopilotTrajectory`), which is sent as built instead of
                   being parsed from a mapping; the request is the same.
 
+                Claude callers with an independent history uploader may instead
+                send ``format="claude-code-trajectory"`` with entries selected
+                by ``watcher_transcript_transport.claude.current_trajectory_groups``
+                (flatten the groups). The server reads that supplied order,
+                without reconstructing other branches. Complete call cycles
+                are recorded under the same V1 rules. With hash scheme 3, every
+                append using this format may use an earlier acknowledged
+                ``append_after``, even if it already has stored children. No
+                rewind is detected or required. Send every entry in the selected
+                continuation after the anchor: matching stored messages are
+                reused, and a different continuation creates a branch. Older
+                hash schemes retain the ordinary non-leaf refusal. Keep uploading
+                complete history independently. The request body limit is
+                unchanged.
+
                 With `append_after`, send only what follows the anchor (chat
                 messages or file entries); an empty delta can evaluate a call
                 already stored.
             append_after: A mapping containing the
-                stored `session_id` UUID string and `trajectory_id` of the last
-                message already sent. The server restores that exact prefix
-                before validation and evaluation, so selected calls may appear
-                in earlier uploads. The anchor must still be continuable; the
-                server never chooses a branch implicitly. Bootstrap the initial
-                anchor through ingestion or a verified `search_sessions` result.
+                stored `session_id` UUID string and `trajectory_id` of the
+                acknowledged message to continue from. The server restores that
+                exact prefix before validation and evaluation, so selected calls
+                may appear in earlier uploads. The anchor must still be continuable unless
+                using ``claude-code-trajectory`` with hash scheme 3 as described
+                above. Ownership and anchor checks still apply. Bootstrap the
+                initial anchor through ingestion or a verified `search_sessions`
+                result.
                 A successful append waits for transcript and available decision
                 recording, then returns `HookAppendResponse`. Pass
                 `response.append_after.to_dict()` on the next append without
@@ -1494,6 +1560,17 @@ class AsyncWatcherClient:
                 return the completed judgment; observe applies a deferred decision.
                 Cannot be combined with `append_after`; the SDK raises `ValueError`
                 before sending a request, and the server rejects it with HTTP 422.
+            record_transcript: Set False to store neither `messages` nor a
+                decision record while still storing the grade rows, filed under
+                the conversation `external_ids` names when it is already stored,
+                and returning their IDs (server default True). For a caller that
+                stores the agent's transcript file through its own uploads and
+                sends only part of it here; its decision upload cites the grade
+                IDs once the call is stored. Only with a transcript file in
+                `messages` (the server refuses it with chat messages), a
+                non-null external ID, and neither `append_after` nor
+                `ephemeral=True`; the SDK raises `ValueError` for those two
+                combinations. Older servers reject the field with HTTP 422.
             mode: `"full"` (the server default) or `"triage_only"` to skip
                 the slow gateway grade — triage can clear a call but never
                 deny, so an uncleared call is judged `escalate`. Both modes
@@ -1533,11 +1610,15 @@ class AsyncWatcherClient:
         """
         if append_after is not None and ephemeral is True:
             raise ValueError("append_after cannot be combined with ephemeral=True")
+        if record_transcript is False and (append_after is not None or ephemeral is True):
+            raise ValueError("record_transcript=False cannot be combined with append_after or ephemeral=True")
         if request_body is not None or response_body is not None:
             if request_body is None or response_body is None:
                 raise ValueError("A raw pair needs both request_body and response_body")
             if append_after is not None:
                 raise ValueError("append_after is only supported with watcher-format messages")
+            if record_transcript is not None:
+                raise ValueError("record_transcript is only supported with messages, not a raw pair")
             if input is not None or messages is not None or tool_use_id is not None:
                 raise ValueError("A raw pair replaces input, messages and tool_use_id; do not combine them")
             if isinstance(withheld_tool_use_ids, str):
@@ -1575,7 +1656,8 @@ class AsyncWatcherClient:
             raise ValueError("withholds_refused_calls is only supported with a raw pair")
         if isinstance(messages, Mapping) and messages.get("format") not in _TRANSCRIPT_FILE_FORMATS:
             raise ValueError(
-                "A transcript file in messages must be claude-code-jsonl, codex-jsonl or copilot-events-jsonl"
+                "A transcript in messages must be claude-code-jsonl, claude-code-trajectory, codex-jsonl "
+                "or copilot-events-jsonl"
             )
         if input is None or isinstance(input, list):
             if tool_use_id is not None:
@@ -1608,6 +1690,8 @@ class AsyncWatcherClient:
             body_dict["user"] = user
         if ephemeral is not None:
             body_dict["ephemeral"] = ephemeral
+        if record_transcript is not None:
+            body_dict["record_transcript"] = record_transcript
         if mode is not None:
             body_dict["mode"] = mode
         if force_regrade:
@@ -1621,7 +1705,7 @@ class AsyncWatcherClient:
         input_count = max(1, len(input)) if isinstance(input, list) else 1
 
         def build() -> PreToolUseHookRequest | ClaudeCodeHookRequest | CodexHookRequest | CopilotHookRequest:
-            if body_dict["format"] == "claude-code-jsonl":
+            if body_dict["format"] in ("claude-code-jsonl", "claude-code-trajectory"):
                 file_body = ClaudeCodeHookRequest.from_dict(body_dict)
             elif body_dict["format"] == "codex-jsonl":
                 file_body = CodexHookRequest.from_dict(body_dict)
@@ -1708,6 +1792,48 @@ class AsyncWatcherClient:
         except httpx.TimeoutException as e:
             raise WatcherTimeoutError(str(e)) from e
         _raise_for_response(response)
+        return response.parsed  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+
+    async def aperture_pre_request_hook(self, payload: Mapping[str, Any]) -> AperturePreRequestResponse:
+        """Add Watcher's fixed explanation to an Aperture provider request.
+
+        Send the original ``metadata`` and ``request_body`` envelope. This
+        informational hook does not grade calls; the returned action either
+        permits the unchanged request or supplies its replacement body. Uses
+        the client's configured timeout and never retries automatically.
+        """
+        body = AperturePreRequest.from_dict(payload)
+        try:
+            response = await _aperture_pre_request_hook_api.asyncio_detailed(client=self._generated_client, body=body)
+        except httpx.ConnectError as e:
+            raise WatcherConnectionError(str(e)) from e
+        except httpx.TimeoutException as e:
+            raise WatcherTimeoutError(str(e)) from e
+        _raise_for_response(response)
+        return response.parsed  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+
+    async def aperture_pre_response_hook(
+        self, payload: Mapping[str, Any], *, timeout: float = 310.0
+    ) -> AperturePreResponseResponse:
+        """Evaluate pending Aperture calls before release, without automatic retries.
+
+        Supply the original request and response bodies, metadata, and the
+        selected ``tool_calls``. Requires ``sessions:write:any``. The server
+        applies organization policy and returns Aperture's allow, modify or
+        block action. Keep the timeout above the server's 300-second budget.
+        A transport failure must not be treated as permission to execute.
+        """
+        body = AperturePreResponseRequest.from_dict(payload)
+        kwargs = _aperture_pre_response_hook_api._get_kwargs(body=body)
+        kwargs["timeout"] = timeout
+        try:
+            raw = await self._generated_client.get_async_httpx_client().request(**kwargs)
+        except httpx.ConnectError as e:
+            raise WatcherConnectionError(str(e)) from e
+        except httpx.TimeoutException as e:
+            raise WatcherTimeoutError(str(e)) from e
+        _raise_for_http_error(raw.status_code, raw.content, raw.headers)
+        response = _aperture_pre_response_hook_api._build_response(client=self._generated_client, response=raw)
         return response.parsed  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
 
     async def _org_hook_baseline(self) -> _HookBaseline | None:
@@ -2510,6 +2636,27 @@ class AsyncWatcherClient:
         body = UpdateMonitorCustomizationRequest(instructions=instructions)
         return await _update_monitor_customization_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
             client=self._generated_client, body=body
+        )
+
+    @_sdk_method
+    async def send_installation_report(
+        self, installation_id: UUID, report: InstallationReport
+    ) -> InstallationReportResponse:
+        """Send one report from this Watcher client installation.
+
+        ``report`` is the shared model from ``watcher_sdk.installation_report``. Send a new ``report_id``
+        after every scan and reuse it to retry; a report whose ID is already stored returns ``duplicate``.
+        The installation is registered to the signed-in user; organization API keys cannot report.
+
+        Raises:
+            WatcherAPIError: With status 409 and code ``inventory_disabled`` while agent inventory is off in
+                the organization's managed settings, or ``installation_conflict`` when another user owns the
+                installation ID.
+            WatcherValidationError: When the server rejects the report or the credential has no user.
+        """
+        body = _GeneratedInstallationReport.from_dict(report.model_dump(mode="json"))
+        return await _send_installation_report_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            installation_id=installation_id, client=self._generated_client, body=body
         )
 
     @_sdk_method

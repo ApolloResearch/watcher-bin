@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from ..models.copilot_trajectory_metadata_type_0 import (
         CopilotTrajectoryMetadataType0,
     )
+    from ..models.hook_append_anchor import HookAppendAnchor
 
 
 T = TypeVar("T", bound="CopilotTrajectory")
@@ -35,7 +36,9 @@ class CopilotTrajectory:
     conversation, or names the one subagent whose events ``entries`` holds,
     which Watcher records as its own session. ``agent_id`` is required, with
     null for the parent, so a subagent upload that leaves it out is refused
-    rather than recorded as the parent.
+    rather than recorded as the parent. ``append_after`` names the stored
+    prefix for an incremental delta; ``fork`` permits a new branch from that
+    prefix. Deltas retain the log's initial ``session.start`` identity event.
 
         Attributes:
             timestamp (datetime.datetime):
@@ -44,6 +47,8 @@ class CopilotTrajectory:
             entries (list[CopilotEntry]):
             session_id (None | str | Unset):
             metadata (CopilotTrajectoryMetadataType0 | None | Unset):
+            append_after (HookAppendAnchor | None | Unset):
+            fork (bool | Unset):  Default: False.
     """
 
     timestamp: datetime.datetime
@@ -52,12 +57,15 @@ class CopilotTrajectory:
     entries: list[CopilotEntry]
     session_id: None | str | Unset = UNSET
     metadata: CopilotTrajectoryMetadataType0 | None | Unset = UNSET
+    append_after: HookAppendAnchor | None | Unset = UNSET
+    fork: bool | Unset = False
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.copilot_trajectory_metadata_type_0 import (
             CopilotTrajectoryMetadataType0,
         )
+        from ..models.hook_append_anchor import HookAppendAnchor
 
         timestamp = self.timestamp.isoformat()
 
@@ -85,6 +93,16 @@ class CopilotTrajectory:
         else:
             metadata = self.metadata
 
+        append_after: dict[str, Any] | None | Unset
+        if isinstance(self.append_after, Unset):
+            append_after = UNSET
+        elif isinstance(self.append_after, HookAppendAnchor):
+            append_after = self.append_after.to_dict()
+        else:
+            append_after = self.append_after
+
+        fork = self.fork
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -99,6 +117,10 @@ class CopilotTrajectory:
             field_dict["session_id"] = session_id
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
+        if append_after is not UNSET:
+            field_dict["append_after"] = append_after
+        if fork is not UNSET:
+            field_dict["fork"] = fork
 
         return field_dict
 
@@ -108,6 +130,7 @@ class CopilotTrajectory:
         from ..models.copilot_trajectory_metadata_type_0 import (
             CopilotTrajectoryMetadataType0,
         )
+        from ..models.hook_append_anchor import HookAppendAnchor
 
         d = dict(src_dict)
         timestamp = datetime.datetime.fromisoformat(d.pop("timestamp"))
@@ -160,6 +183,25 @@ class CopilotTrajectory:
 
         metadata = _parse_metadata(d.pop("metadata", UNSET))
 
+        def _parse_append_after(data: object) -> HookAppendAnchor | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                append_after_type_0 = HookAppendAnchor.from_dict(data)
+
+                return append_after_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(HookAppendAnchor | None | Unset, data)
+
+        append_after = _parse_append_after(d.pop("append_after", UNSET))
+
+        fork = d.pop("fork", UNSET)
+
         copilot_trajectory = cls(
             timestamp=timestamp,
             format_=format_,
@@ -167,6 +209,8 @@ class CopilotTrajectory:
             entries=entries,
             session_id=session_id,
             metadata=metadata,
+            append_after=append_after,
+            fork=fork,
         )
 
         copilot_trajectory.additional_properties = d

@@ -97,8 +97,7 @@ async def test_applied_policy_controls_delivery(exchange, mode, decision, judgme
             await evaluate(
                 client, *exchange, conversation_id="bifrost:trusted-exchange", user_agent="ordinary-client/1"
             )
-            is expected
-        )
+        ).released is expected
     assert len(calls) == 1
 
 
@@ -127,7 +126,7 @@ async def test_missing_mismatched_or_error_outcome_withholds(exchange, result):
         ),
     ) as client:
         try:
-            permitted = await evaluate(client, *exchange, conversation_id="bifrost:trusted-exchange")
+            permitted = (await evaluate(client, *exchange, conversation_id="bifrost:trusted-exchange")).released
         except (ValueError, TypeError, AttributeError, KeyError):
             permitted = False
         assert not permitted
@@ -156,7 +155,7 @@ async def test_text_tail_records_through_same_hook(exchange):
         "http://watcher.invalid",
         httpx_client=httpx.AsyncClient(base_url="http://watcher.invalid", transport=httpx.MockTransport(handler)),
     ) as client:
-        assert await evaluate(client, request, response, conversation_id="bifrost:trusted-exchange")
+        assert (await evaluate(client, request, response, conversation_id="bifrost:trusted-exchange")).released
     assert len(seen) == 1
 
 
@@ -280,7 +279,7 @@ async def test_unique_native_id_must_cover_each_delivered_call(exchange, fault):
             transport=httpx.MockTransport(lambda _: httpx.Response(200, json=outcomes)),
         ),
     ) as client:
-        assert not await evaluate(client, *exchange, conversation_id="bifrost:trusted-exchange")
+        assert not (await evaluate(client, *exchange, conversation_id="bifrost:trusted-exchange")).released
 
 
 async def test_raw_pair_has_no_structured_32_call_limit(exchange):
@@ -311,7 +310,7 @@ async def test_raw_pair_has_no_structured_32_call_limit(exchange):
         "http://watcher.invalid",
         httpx_client=httpx.AsyncClient(base_url="http://watcher.invalid", transport=httpx.MockTransport(handler)),
     ) as client:
-        assert await evaluate(client, request, response, conversation_id="bifrost:trusted-exchange")
+        assert (await evaluate(client, request, response, conversation_id="bifrost:trusted-exchange")).released
 
 
 async def test_backend_receives_original_multimodal_body_without_local_conversion(exchange):
@@ -343,7 +342,7 @@ async def test_backend_receives_original_multimodal_body_without_local_conversio
         "http://watcher.invalid",
         httpx_client=httpx.AsyncClient(base_url="http://watcher.invalid", transport=httpx.MockTransport(handler)),
     ) as client:
-        assert await evaluate(client, request, response, conversation_id="bifrost:trusted-exchange")
+        assert (await evaluate(client, request, response, conversation_id="bifrost:trusted-exchange")).released
 
 
 async def test_applied_grading_failure_allow_remains_releasable(exchange):
@@ -364,7 +363,7 @@ async def test_applied_grading_failure_allow_remains_releasable(exchange):
             transport=httpx.MockTransport(lambda _: httpx.Response(200, json=[result])),
         ),
     ) as client:
-        assert await evaluate(client, *exchange, conversation_id="bifrost:trusted-exchange")
+        assert (await evaluate(client, *exchange, conversation_id="bifrost:trusted-exchange")).released
 
 
 @pytest.mark.parametrize("reason", ["length", "content_filter"])
@@ -385,5 +384,5 @@ async def test_truncated_text_is_submitted_without_inventing_or_authorizing_a_to
         "http://watcher.invalid",
         httpx_client=httpx.AsyncClient(base_url="http://watcher.invalid", transport=httpx.MockTransport(transport)),
     ) as client:
-        assert await evaluate(client, request, response, conversation_id="bifrost:partial-text")
+        assert (await evaluate(client, request, response, conversation_id="bifrost:partial-text")).released
     assert len(seen) == 1

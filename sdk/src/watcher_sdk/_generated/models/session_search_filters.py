@@ -46,6 +46,9 @@ class SessionSearchFilters:
         sources (list[str] | None | Unset): Match any selected canonical ingestion source among retained session
             messages. Open set of exact source keys, combined with other filters using AND. The source match covers the full
             session regardless of the date window.
+        hostnames (list[str] | None | Unset): Match sessions whose recorded machine hostname is any of these values,
+            exactly. The Watcher client records the hostname of the machine a session started on; sessions ingested through
+            a gateway or an SDK have none and never match.
         grading_statuses (list[SessionSearchFiltersGradingStatusesType0Item] | None | Unset):
         categories (list[str] | None | Unset):
         severities (list[SessionSearchFiltersSeveritiesType0Item] | None | Unset):
@@ -63,6 +66,7 @@ class SessionSearchFilters:
     external_ids: None | SessionSearchFiltersExternalIdsType0 | Unset = UNSET
     agent_platforms: list[str] | None | Unset = UNSET
     sources: list[str] | None | Unset = UNSET
+    hostnames: list[str] | None | Unset = UNSET
     grading_statuses: (
         list[SessionSearchFiltersGradingStatusesType0Item] | None | Unset
     ) = UNSET
@@ -134,6 +138,15 @@ class SessionSearchFilters:
 
         else:
             sources = self.sources
+
+        hostnames: list[str] | None | Unset
+        if isinstance(self.hostnames, Unset):
+            hostnames = UNSET
+        elif isinstance(self.hostnames, list):
+            hostnames = self.hostnames
+
+        else:
+            hostnames = self.hostnames
 
         grading_statuses: list[str] | None | Unset
         if isinstance(self.grading_statuses, Unset):
@@ -237,6 +250,8 @@ class SessionSearchFilters:
             field_dict["agent_platforms"] = agent_platforms
         if sources is not UNSET:
             field_dict["sources"] = sources
+        if hostnames is not UNSET:
+            field_dict["hostnames"] = hostnames
         if grading_statuses is not UNSET:
             field_dict["grading_statuses"] = grading_statuses
         if categories is not UNSET:
@@ -372,6 +387,23 @@ class SessionSearchFilters:
             return cast(list[str] | None | Unset, data)
 
         sources = _parse_sources(d.pop("sources", UNSET))
+
+        def _parse_hostnames(data: object) -> list[str] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                hostnames_type_0 = cast(list[str], data)
+
+                return hostnames_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[str] | None | Unset, data)
+
+        hostnames = _parse_hostnames(d.pop("hostnames", UNSET))
 
         def _parse_grading_statuses(
             data: object,
@@ -574,6 +606,7 @@ class SessionSearchFilters:
             external_ids=external_ids,
             agent_platforms=agent_platforms,
             sources=sources,
+            hostnames=hostnames,
             grading_statuses=grading_statuses,
             categories=categories,
             severities=severities,

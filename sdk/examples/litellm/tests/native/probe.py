@@ -27,6 +27,7 @@ import httpx
 from litellm.types.utils import ModelResponseStream
 from watcher_litellm.callback import SESSION_PREFIX
 from watcher_litellm.streams import assemble
+from watcher_litellm.system_notice import SYSTEM_NOTICE
 
 from watcher_sdk import AsyncWatcherClient, TrajectoryView
 
@@ -58,8 +59,23 @@ def stream_events(response: httpx.Response) -> list[dict[str, Any]]:
     return events
 
 
+_NOTICE_MESSAGE = {"role": "system", "content": SYSTEM_NOTICE}
+
+
+def client_view(body: dict[str, Any]) -> dict[str, Any]:
+    """A forwarded Chat body without the callback's system notice, which must appear exactly once."""
+    assert body["messages"].count(_NOTICE_MESSAGE) == 1, "the system notice must be added exactly once"
+    return {**body, "messages": [message for message in body["messages"] if message != _NOTICE_MESSAGE]}
+
+
+def first_user_text(body: dict[str, Any]) -> Any:
+    """The scenario marker: the first user message, after any system messages the callback adds."""
+    return next(message["content"] for message in body["messages"] if message["role"] == "user")
+
+
 def preserves_client_request(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
     """Allow appended native recovery/audit messages while keeping client input and options exact."""
+    actual = client_view(actual)
     return {key: value for key, value in actual.items() if key != "messages"} == {
         key: value for key, value in expected.items() if key != "messages"
     } and actual["messages"][: len(expected["messages"])] == expected["messages"]
@@ -104,7 +120,7 @@ def main() -> None:
                     payload = {"granted": True, "missing": []}
                 else:
                     watcher_requests.append(request)
-                    marker = request["request_body"]["messages"][0]["content"]
+                    marker = first_user_text(request["request_body"])
                     if "held" in marker:
                         held.set()
                         assert release.wait(20), "Pending decision was never released"
@@ -136,9 +152,7 @@ def main() -> None:
                     ]
             else:
                 provider_requests.append(request)
-                request_token = (
-                    request["messages"][0]["content"] if case.get("harness_identity_probe") else case["token"]
-                )
+                request_token = first_user_text(request) if case.get("harness_identity_probe") else case["token"]
                 if any(message["role"] == "tool" for message in request["messages"]):
                     message = {"role": "assistant", "content": case["final_text"]}
                     finish = "stop"
@@ -296,7 +310,8 @@ def main() -> None:
                 message = response.json()["choices"][0]["message"]
                 assert bool(message.get("tool_calls")) is released, response.text
                 if not released:
-                    assert "Watcher did not approve" in message["content"]
+                    kind = "ESCALATION" if marker == "escalate" else "NOTICE"
+                    assert f"WATCHER {kind} (added by Watcher" in message["content"]
                     assert case["final_text"] in message["content"]
                 results.append({"case": marker, "status": response.status_code, "body": response.json()})
             body["messages"][0]["content"] = "identical prompt"
@@ -307,7 +322,7 @@ def main() -> None:
                 )
                 assert response.status_code == 200, response.text
                 assert watcher_requests[-1]["external_ids"] == {"other": SESSION_PREFIX + session_id}
-                assert watcher_requests[-1]["request_body"] == {
+                assert client_view(watcher_requests[-1]["request_body"]) == {
                     **body,
                     "litellm_session_id": session_id,
                     "litellm_trace_id": session_id,
@@ -340,7 +355,8 @@ def main() -> None:
                         choice["finish_reason"] == "tool_calls" for event in events for choice in event["choices"]
                     )
                 else:
-                    assert "Watcher did not approve" in response.text
+                    kind = "ESCALATION" if marker == "escalate" else "NOTICE"
+                    assert f"WATCHER {kind} (added by Watcher" in response.text
                     assert case["final_text"] in response.text
                 results.append({"case": marker + "-stream", "status": response.status_code, "body": response.text})
             body["messages"][0]["content"] = "allow usage"
@@ -360,7 +376,7 @@ def main() -> None:
                 usage_records = [
                     request
                     for request in watcher_requests
-                    if request["request_body"]["messages"][0]["content"] == "allow usage"
+                    if first_user_text(request["request_body"]) == "allow usage"
                     and not request["response_body"]["choices"][0]["message"].get("tool_calls")
                 ]
                 if not usage_records:
@@ -391,7 +407,7 @@ def main() -> None:
             assert not thread.is_alive() and responses[0].status_code == 200
             held_message = responses[0].json()["choices"][0]["message"]
             assert not held_message.get("tool_calls")
-            assert "Watcher did not approve" in held_message["content"]
+            assert "WATCHER NOTICE (added by Watcher" in held_message["content"]
             assert case["final_text"] in held_message["content"]
             results.append({"case": "pending-response-withheld", "status": responses[0].status_code})
             for submitted in watcher_requests:
@@ -411,7 +427,7 @@ def main() -> None:
                     candidates.append(expected)
                 matches = [expected for expected in candidates if preserves_client_request(actual, expected)]
                 assert matches, actual
-                for message in actual["messages"][len(matches[0]["messages"]) :]:
+                for message in client_view(actual)["messages"][len(matches[0]["messages"]) :]:
                     assert message["role"] in {"assistant", "tool"}, message
                     if message["role"] == "tool":
                         assert message["tool_call_id"] == case["call_id"]
@@ -521,7 +537,7 @@ def main() -> None:
                 )
                 assert final_body["choices"][0]["message"]["content"] == case["final_text"], final.text
             else:
-                assert "Watcher did not approve" in message["content"]
+                assert "WATCHER NOTICE (added by Watcher" in message["content"]
                 assert case["final_text"] in message["content"]
             expected_final = case["final_text"] if permitted else message["content"]
             (root / "expected-final.txt").write_text(expected_final)

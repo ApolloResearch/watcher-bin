@@ -82,6 +82,7 @@ def test_raw_body_json_property_cannot_replace_graded_exchange(monkeypatch, wrap
     monkeypatch.setenv("WATCHER_BRIDGE_TOKEN", "fixture-token")
     monkeypatch.setenv("WATCHER_BASE_URL", "http://watcher.invalid")
     monkeypatch.setenv("WATCHER_API_KEY", "fixture-key")
+    monkeypatch.setenv("WATCHER_GATEWAY_URL", "http://127.0.0.1:8080")
     bridge.serve("127.0.0.1", 8765)
     payload = json.dumps(
         {
@@ -116,4 +117,4 @@ def test_raw_body_json_property_cannot_replace_graded_exchange(monkeypatch, wrap
     assert len(seen) == 1
     assert seen[0]["request_body"] == real_request
     assert seen[0]["response_body"] == real_response
-    assert json.loads(bytes(connection.response).split(b"\r\n\r\n", 1)[1]) == {"verdict": True}
+    assert json.loads(bytes(connection.response).split(b"\r\n\r\n", 1)[1]) == {"action": "release"}

@@ -6,10 +6,12 @@ mandatory native Portkey webhooks to every request on its Chat Completions route
 The webhooks call a private Python service that uses the public Watcher SDK.
 
 The same installation follows the Watcher organization's settings. In enforce
-mode, the gateway withholds responses containing denied or escalated tool calls.
+mode, the gateway never delivers a denied or escalated tool call. It explains
+the refusal to the client in the reply and asks the model for another approach,
+as described in [Refusals and alternatives](#refusals-and-alternatives).
 In observe or paused mode, it releases the response and preserves the client's
-normal tool permissions. It does not implement an interactive approval screen;
-requests that need a human are withheld.
+normal tool permissions. It does not implement an interactive approval screen:
+after an escalation, the model asks the user in its reply.
 
 ## Supported traffic
 
@@ -80,6 +82,9 @@ export PROVIDER_API_KEY=your-provider-key
 export GATEWAY_API_KEY=your-client-facing-gateway-key
 ```
 
+The bridge also reads `GATEWAY_API_KEY`, and `GATEWAY_HOST` and `GATEWAY_PORT`
+when set, to reach the launcher when it asks the model for an alternative.
+
 Start the bridge from this example directory:
 
 ```sh
@@ -117,16 +122,110 @@ returned an empty list. Text-only responses are also submitted for ingestion.
 The bridge sends the original request and completed response bodies, real client
 User-Agent, endpoint path and provider to `pre_tool_use_hook`. Watcher converts
 the transcript on the backend; no settings override is sent. It uses the
-applied decision: `allow` and `deferred` release the native response; `deny`,
-`escalate`, missing results and mismatched call IDs withhold the whole response.
+applied decision: `allow` and `deferred` release the native response; `deny`
+and `escalate` withhold every call in it and start the recovery described
+below; missing results and mismatched call IDs withhold the whole response.
 A configured grading-failure allow is respected as server policy. A bridge or
 Watcher transport failure also withholds the response, including in observe mode.
 
-Portkey returns HTTP 446 for a rejected guardrail. No executable tool call from
-that response should reach the client. The callback cannot stop a tool a client
-runs independently of gateway output. Unsupported streaming is rejected before
-the provider call because the pinned Portkey response-hook path cannot enforce
-its post-response verdict on a stream.
+A refused response is answered with HTTP 200, as described below. When no
+decision can be verified (a bridge or Watcher failure, or outcomes that do not
+match the response's calls), Portkey returns its hook-denied HTTP 446 error and
+no executable tool call reaches the client. The callback cannot stop a tool a
+client runs independently of gateway output. Unsupported streaming is rejected
+before the provider call because the pinned Portkey response-hook path cannot
+enforce its post-response verdict on a stream.
+
+### Refusals and alternatives
+
+Coding agents end their turn on a text-only reply or an error, so a bare refusal
+stops the task. Instead, the bridge keeps the client's request open and works
+with the model inside it:
+
+- **Every request** gets a fixed system message after the client's leading
+  system and developer messages. It tells the model that `WATCHER NOTICE` and
+  `WATCHER ESCALATION` text in its earlier replies was written by Watcher and is
+  genuine. The text never changes, so prompt caching is unaffected, and a
+  request that already carries it is left unchanged. Watcher receives the same
+  request the provider does.
+- **After a denial**, the response's calls are withheld together. The bridge
+  sends the model its proposal with one tool result per call, giving Watcher's
+  reason and inviting another approach, and generates an alternative. The
+  alternative is graded in the client's own Watcher session, under the same
+  `portkey:` conversation ID. Watcher already holds a decision for every call
+  of the refused proposal, so those calls are not recorded again as calls
+  that ran. An allowed alternative is delivered in one reply: the original
+  text, a notice per refused call, and the alternative's text and calls. A
+  call that repeats a refused operation under a new ID is refused again
+  without grading. Watcher never saw that proposal, so it and its refusal are
+  left out of the history Watcher grades later alternatives with, though the
+  model still sees them.
+- **After an escalation, or a third refused proposal**, one last generation is
+  made with `tool_choice` set to `none` (when the request offers tools). The
+  model is asked to stop and ask the user, with labelled options. Allowing the
+  call is offered only when Watcher's graders made the decision; a rule,
+  threshold or grading-failure escalation cannot be approved in the
+  conversation. If that generation proposes calls anyway, they are withheld
+  without being sent to Watcher, and a closing notice puts the question to the
+  user. The same notice closes a final reply that asks the user nothing: one
+  with no text, one cut off by the token limit or the provider's content
+  filter, or one with no question mark. A complete final reply that already
+  asks a question is delivered unchanged. Calls in a final reply are dropped
+  without being parsed, so a reply cut off mid-call keeps its text.
+- **When the client asked for JSON content** (`response_format` of type
+  `json_object` or `json_schema`), a notice would make that JSON unparseable.
+  A refusal is answered instead with HTTP 403 and the error type
+  `watcher_withheld`, and no alternative is generated; Watcher still records
+  the refusal.
+- **If generating or grading an alternative fails** or the time limit is
+  reached, no call from that attempt is delivered. The reply ends with the
+  notices so far, a sentence saying why no alternative followed and a fixed
+  question asking the user how to proceed, so the agent's turn never ends on a
+  notice alone. If the final generation fails, the sentence says why no final
+  reply followed and the closing notice still asks the user how to proceed.
+
+Every exchange the bridge sends Watcher declares that refused calls are
+withheld (`withholds_refused_calls`), so Watcher records an enforced denial or
+escalation as blocked rather than awaiting an answer. After a refusal, the
+bridge records the reply it delivered once that reply has been returned, in
+the background so it never delays or fails delivery. That recording names
+every call withheld in the reply's favour (`withheld_tool_use_ids`): each call
+of each refused proposal, except a call the reply delivers. The reply's own
+calls were graded with their alternative, so they are recorded as history and
+not graded again. A Watcher server older than this example rejects both
+fields; the bridge then sends the exchange again without them and logs a
+warning, so it is still evaluated and recorded, as before.
+
+Watcher stores each exchange after answering it. If it stores an
+alternative's exchange before the original proposal's, a call withheld only
+because a sibling was refused (one Watcher itself allowed) is first seen in
+that history with the gateway's receipt and recorded as completed, and the
+original decision arriving later keeps that status. A refused call is not
+affected: the declaration that refused calls are withheld lets its blocked
+status replace such a record.
+
+A client request makes at most four model calls; only the first three can
+deliver tool calls. The original decision, the alternatives and the final
+generation share one 280-second deadline. It stays below the launcher's
+290-second webhook timeout and the 300 seconds Node's built-in fetch waits for
+response headers.
+
+Alternatives are generated through the launcher itself, so they use the same
+Portkey route and provider configuration as the client's request. The bridge
+authenticates with `GATEWAY_API_KEY`; the launcher accepts only that one shared
+key, so this is the client's own credential. Portkey's webhooks receive neither
+request headers nor the exact request bytes, so the launcher checks these
+requests itself. Each carries an `X-Watcher-Alternative` header: an expiry, a
+random nonce and an HMAC-SHA256 over both and the SHA-256 of the exact body,
+keyed from `WATCHER_BRIDGE_TOKEN`. The launcher accepts each marker once, for that body,
+before it expires. It removes the header and dispatches the request with the
+provider configuration only, so the alternative is not graded twice and does
+not start another recovery. Any other request carrying the header is refused
+with HTTP 403.
+
+Portkey adds a `hook_results` object to every reply that passed through the
+webhooks, including the bridge URL. OpenAI-compatible clients ignore the extra
+field.
 
 Tool results and final assistant replies are recorded when included in subsequent
 full-history requests. For generic clients, these are separate sessions and the
@@ -147,14 +246,18 @@ tests/native/run.sh
 The recipe downloads checksum-pinned gateway and toolchain archives, builds the
 SDK and example wheels, and checks their installed bytes before running tests.
 It runs the actual gateway with local provider and Watcher protocol fixtures in
-a container with external networking disabled. Reports include JUnit results,
+a container with external networking disabled. The protocol checks include the
+system notice reaching the provider, a denial answered with an alternative
+generated through the gateway, the escalation and three-refusal final replies,
+and the alternative marker: forged, expired, wrong-body, replayed and
+unauthenticated requests are refused, and an accepted one is not graded again. Reports include JUnit results,
 runtime versions, source hashes and the native executable/plugin identities.
 Dependency downloads happen during the build; the test phase is isolated.
 
 Run the bridge's contract tests without network access:
 
 ```sh
-../run-without-network.sh .venv/bin/python -m pytest --noconftest -c pyproject.toml tests/test_bridge.py
+../run-without-network.sh .venv/bin/python -m pytest --noconftest -c pyproject.toml tests/
 ```
 
 The complete recipe starts the real Portkey process, a local provider and the

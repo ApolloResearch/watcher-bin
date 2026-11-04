@@ -10,7 +10,6 @@ import pytest
 import structlog
 from watcher_agent_router.alternatives import (
     ALTERNATIVE_HEADER,
-    STOPPED,
     Gateway,
     marker_key,
     recover,
@@ -18,15 +17,14 @@ from watcher_agent_router.alternatives import (
     verify_marker,
 )
 from watcher_agent_router.exchange import (
-    RETRY_INSTRUCTION,
     Denial,
     Evaluation,
     UnsupportedExchange,
     alternative_message,
     compose,
-    continuation,
     operation_key,
 )
+from watcher_agent_router.notices import ALTERNATIVE_FAILED, continuation, stop_notice
 
 from watcher_sdk import AsyncWatcherClient
 
@@ -161,8 +159,12 @@ def test_continuation_explains_each_call_without_changing_the_request():
     assistant, denied, cancelled = result["messages"][1:]
     assert assistant == ORIGINAL["choices"][0]["message"]
     assert denied["role"] == "tool" and denied["tool_call_id"] == "call-1"
-    assert '"reason": "Too risky"' in denied["content"] and denied["content"].endswith(RETRY_INSTRUCTION)
-    assert cancelled["tool_call_id"] == "call-2" and "was not run" in cancelled["content"]
+    assert denied["content"] == (
+        "WATCHER NOTICE: Watcher blocked this call. Reason: Too risky. The call did not run. Continue the user's "
+        "task another way; Watcher checks every call, so you do not need permission to try a different approach."
+    )
+    assert cancelled["tool_call_id"] == "call-2"
+    assert cancelled["content"] == "This call did not run because Watcher refused another call in the same response."
 
 
 def test_compose_puts_notices_between_the_original_text_and_the_alternative():
@@ -250,6 +252,26 @@ async def test_approved_alternative_is_graded_as_its_own_session():
     assert hook["user_agent"] == "fixture/1.0"
 
 
+@pytest.mark.parametrize(
+    "content,reason",
+    [(None, "stop"), ("", "stop"), (" \t\n", "stop"), ("Partial ans", "length"), ("Hidden", "content_filter")],
+)
+async def test_text_only_alternative_that_asks_nothing_ends_with_the_question(content, reason):
+    fakes = Fakes([completion(content=content, reason=reason)], [[]])
+    recovery = await fakes.recover()
+    choice = recovery.alternative["choices"][0]
+    assert choice["finish_reason"] == "stop" and "tool_calls" not in choice["message"]
+    expected = f"{content}\n\n{ALTERNATIVE_FAILED}" if content else ALTERNATIVE_FAILED
+    assert choice["message"]["content"] == expected and recovery.question == ALTERNATIVE_FAILED
+
+
+async def test_complete_text_only_alternative_is_delivered_as_it_is():
+    answer = completion(content="I can't do that safely; shall I skip it?")
+    fakes = Fakes([answer], [[]])
+    recovery = await fakes.recover()
+    assert recovery.alternative == answer
+
+
 async def test_alternative_with_another_success_status_is_graded():
     alternative = completion(("call-9", "read_file", {}))
     fakes = Fakes([httpx.Response(201, json=alternative)], [[outcome("call-9", "allow")]])
@@ -257,17 +279,147 @@ async def test_alternative_with_another_success_status_is_graded():
     assert recovery.alternative == alternative and len(fakes.hooks) == 1
 
 
-async def test_three_blocked_proposals_stop_with_every_notice():
+FINAL = completion(content="Several approaches were blocked. A. skip it, B. something else?")
+
+
+def outcome_from(tool_use_id: str, value: str, source: str) -> dict:
+    return {**outcome(tool_use_id, value), "decision_source": source}
+
+
+async def test_three_blocked_proposals_end_with_one_final_text_only_reply():
     first = completion(("call-5", "read_file", {"n": 1}))
     second = completion(("call-6", "read_file", {"n": 2}))
-    fakes = Fakes([first, second], [[outcome("call-5", "deny")], [outcome("call-6", "escalate")]])
+    fakes = Fakes([first, second, FINAL], [[outcome("call-5", "deny")], [outcome("call-6", "deny")]])
     recovery = await fakes.recover()
-    assert recovery.alternative is None and len(recovery.notices) == 4 and recovery.notices[-1] == STOPPED
-    assert "deny call-5" in recovery.notices[1] and "escalate call-6" in recovery.notices[2]
-    # The second request carries the first alternative and its refusal.
-    history = json.loads(fakes.gateway_requests[1].content)["messages"]
-    assert history[-2]["tool_calls"][0]["id"] == "call-5" and history[-1]["tool_call_id"] == "call-5"
+    assert recovery.alternative == FINAL and len(recovery.notices) == 3
+    assert 'Watcher blocked `read_file {"n": 1}`' in recovery.notices[1]
+    assert 'Watcher blocked `read_file {"n": 2}`' in recovery.notices[2]
+    # Four model calls in all: the client's and three through the gateway; only two alternatives were graded.
+    asked = [json.loads(request.content) for request in fakes.gateway_requests]
+    assert len(asked) == 3 and len(fakes.hooks) == 2
+    assert [request["tool_choice"] for request in asked] == ["auto", "auto", "none"]
+    assert asked[1]["messages"][-1]["content"].endswith("so you do not need permission to try a different approach.")
+    assert asked[2]["messages"][-1]["content"].endswith("tell the user what was blocked and ask how to proceed.")
+    assert asked[2]["messages"][-2]["tool_calls"][0]["id"] == "call-6"
     assert len({hook["external_ids"]["other"] for hook in fakes.hooks}) == 2
+
+
+@pytest.mark.parametrize(
+    "source,can_approve",
+    [("policy_gateway", True), ("triage", True), ("rule", False), ("threshold", False), ("grading_error", False)],
+)
+async def test_escalation_is_not_retried_and_asks_the_user_with_the_right_options(source, can_approve):
+    escalation = Evaluation(
+        verified=True,
+        denials=[
+            Denial(
+                tool_use_id="call-1",
+                tool_name="write_file",
+                tool_input={"path": "a"},
+                reason="Needs review",
+                is_escalation=True,
+                user_can_approve=can_approve,
+            )
+        ],
+    )
+    fakes = Fakes([FINAL])
+    recovery = await fakes.recover(evaluation=escalation)
+    assert recovery.alternative == FINAL and fakes.hooks == []
+    [asked] = [json.loads(request.content) for request in fakes.gateway_requests]
+    assert asked["tool_choice"] == "none"
+    escalated, sibling = asked["messages"][-2:]
+    assert sibling["content"] == "This call did not run because Watcher refused another call in the same response."
+    if can_approve:
+        assert escalated["content"].endswith("A. allow this call, B. skip it, C. do something else.")
+        assert "needs the user's decision" in recovery.notices[0]
+    else:
+        assert escalated["content"].endswith(
+            "A. skip it, B. do something else, C. ask an administrator to change the policy."
+        )
+        assert "allow" not in escalated["content"] and "cannot be approved in this conversation" in recovery.notices[0]
+
+
+async def test_escalated_alternative_goes_straight_to_the_final_reply():
+    alternative = completion(("call-5", "deploy", {}))
+    fakes = Fakes([alternative, FINAL], [[outcome_from("call-5", "escalate", "triage")]])
+    recovery = await fakes.recover()
+    assert recovery.alternative == FINAL and len(fakes.gateway_requests) == 2 and len(fakes.hooks) == 1
+    assert json.loads(fakes.gateway_requests[1].content)["tool_choice"] == "none"
+    assert "WATCHER ESCALATION" in recovery.notices[1]
+
+
+@pytest.mark.parametrize("can_approve,expected", [(True, "Reply A to allow"), (False, "ask an administrator")])
+async def test_final_reply_that_proposes_calls_anyway_is_withheld_without_grading(can_approve, expected):
+    escalation = Evaluation(
+        verified=True,
+        denials=[REFUSED.denials[0].model_copy(update={"is_escalation": True, "user_can_approve": can_approve})],
+    )
+    disobeying = completion(("call-9", "write_file", {"path": "a"}), content="Trying anyway.")
+    fakes = Fakes([disobeying])
+    recovery = await fakes.recover(evaluation=escalation)
+    assert fakes.hooks == [], "calls proposed after the stop request are never sent to Watcher"
+    message = recovery.alternative["choices"][0]["message"]
+    assert "tool_calls" not in message and recovery.alternative["choices"][0]["finish_reason"] == "stop"
+    assert message["content"].startswith("Trying anyway.\n\nWATCHER ESCALATION (added by Watcher")
+    assert expected in message["content"]
+
+
+async def test_final_reply_after_three_denials_that_proposes_calls_gets_the_cap_notice():
+    fakes = Fakes(
+        [completion(("c5", "t", {"n": 1})), completion(("c6", "t", {"n": 2})), completion(("c7", "t", {"n": 3}))],
+        [[outcome("c5", "deny")], [outcome("c6", "deny")]],
+    )
+    recovery = await fakes.recover()
+    assert len(fakes.hooks) == 2
+    content = recovery.alternative["choices"][0]["message"]["content"]
+    assert content.startswith("WATCHER NOTICE (added by Watcher") and "blocked three proposals in a row" in content
+
+
+async def test_final_reply_without_tools_sends_no_tool_choice():
+    request = {key: value for key, value in REQUEST.items() if key not in ("tools", "tool_choice")}
+    escalation = Evaluation(verified=True, denials=[REFUSED.denials[0].model_copy(update={"is_escalation": True})])
+    fakes = Fakes([FINAL])
+    await fakes.recover(request=request, evaluation=escalation)
+    assert "tool_choice" not in json.loads(fakes.gateway_requests[0].content)
+
+
+async def test_forced_tool_choice_is_kept_for_alternatives_and_narrowed_only_for_the_final_reply():
+    forced = {"type": "function", "function": {"name": "write_file"}}
+    request = {**REQUEST, "tool_choice": forced, "parallel_tool_calls": False}
+    fakes = Fakes(
+        [completion(("c5", "write_file", {"n": 1})), completion(("c6", "write_file", {"n": 2})), FINAL],
+        [[outcome("c5", "deny")], [outcome("c6", "deny")]],
+    )
+    await fakes.recover(request=request)
+    asked = [json.loads(request.content) for request in fakes.gateway_requests]
+    assert [request["tool_choice"] for request in asked] == [forced, forced, "none"]
+    assert all(request["parallel_tool_calls"] is False for request in asked)
+
+
+@pytest.mark.parametrize(
+    "reply,reason",
+    [
+        (httpx.Response(502, json={}), "the provider did not return an alternative"),
+        (completion(content=[{"type": "text", "text": "x"}]), "the gateway cannot verify the reply"),
+    ],
+)
+async def test_failed_final_reply_still_puts_the_question_to_the_user(reply, reason):
+    escalation = Evaluation(verified=True, denials=[REFUSED.denials[0].model_copy(update={"is_escalation": True})])
+    fakes = Fakes([reply])
+    recovery = await fakes.recover(evaluation=escalation)
+    assert recovery.alternative is None and fakes.hooks == []
+    assert recovery.notices[-2] == f"No final reply was delivered because {reason}."
+    assert "Reply A to skip it" in recovery.notices[-1]
+
+
+async def test_repeat_refused_from_memory_counts_toward_the_proposal_cap():
+    first = completion(("call-5", "deploy", {}))
+    repeat = completion(("call-6", "deploy", {}))
+    fakes = Fakes([first, repeat, FINAL], [[outcome_from("call-5", "deny", "rule")]])
+    # call-5 is denied; its repeat under a new ID is refused without grading and is the third refused proposal.
+    recovery = await fakes.recover()
+    assert len(fakes.hooks) == 1 and recovery.alternative == FINAL
+    assert json.loads(fakes.gateway_requests[2].content)["tool_choice"] == "none"
 
 
 async def test_repeated_refused_operation_is_refused_without_grading():
@@ -283,8 +435,8 @@ async def test_repeated_refused_operation_is_refused_without_grading():
         ("alternative_repeated", None),
         ("alternative_evaluated", fakes.hooks[0]["external_ids"]["other"]),
     ]
-    assert '"tool_use_id": "call-7"' in recovery.notices[1] and "Too risky" in recovery.notices[1]
-    assert '["call-8"]' in recovery.notices[1]
+    assert 'Watcher blocked `write_file {"path": "a"}`. Reason: Too risky.' in recovery.notices[1]
+    assert "`read_file {}` did not run because Watcher refused another call" in recovery.notices[1]
 
 
 @pytest.mark.parametrize(
@@ -308,21 +460,25 @@ async def test_failed_alternative_explains_why_and_releases_nothing(reply, reaso
     fakes = Fakes([reply])
     recovery = await fakes.recover()
     assert recovery.alternative is None and fakes.hooks == []
-    assert recovery.notices[-1] == f"No alternative was delivered because {reason}."
+    assert recovery.notices[-2:] == [f"No alternative was delivered because {reason}.", ALTERNATIVE_FAILED]
 
 
 async def test_continuation_too_large_to_send_is_not_sent():
     fakes = Fakes([])
     recovery = await fakes.recover(max_body=100)
     assert fakes.gateway_requests == []
-    assert recovery.notices[-1].endswith("because the conversation is too long to ask for an alternative.")
+    assert recovery.notices[-2].endswith("because the conversation is too long to ask for an alternative.")
 
 
 async def test_alternatives_share_the_remaining_time_limit():
     fakes = Fakes([completion(content="late")])
     fakes.delay = 5
     recovery = await fakes.recover(deadline_in=0.05)
-    assert recovery.notices[-1] == "No alternative was delivered because the time limit was reached."
+    assert recovery.notices[-2:] == [
+        "No alternative was delivered because the time limit was reached.",
+        ALTERNATIVE_FAILED,
+    ]
+    assert recovery.question == ALTERNATIVE_FAILED
 
 
 @pytest.mark.parametrize(
@@ -337,4 +493,59 @@ async def test_unevaluated_alternative_is_never_released(decisions, reason):
     fakes = Fakes([completion(("call-9", "read_file", {}))], decisions)
     recovery = await fakes.recover()
     assert recovery.alternative is None
-    assert recovery.notices[-1] == f"No alternative was delivered because {reason}."
+    assert recovery.notices[-2:] == [f"No alternative was delivered because {reason}.", ALTERNATIVE_FAILED]
+
+
+async def test_final_reply_shares_the_remaining_time_limit():
+    escalation = Evaluation(verified=True, denials=[REFUSED.denials[0].model_copy(update={"is_escalation": True})])
+    fakes = Fakes([FINAL])
+    fakes.delay = 5
+    recovery = await fakes.recover(evaluation=escalation, deadline_in=0.05)
+    assert recovery.alternative is None
+    assert recovery.notices[-2] == "No final reply was delivered because the time limit was reached."
+
+
+@pytest.mark.parametrize(
+    "final",
+    [
+        completion(content=None),
+        completion(content=""),
+        completion(content="Should I", reason="length"),
+        completion(content="Should I", reason="content_filter"),
+    ],
+    ids=["no-text", "empty", "cut-off", "filtered"],
+)
+async def test_final_reply_that_asks_nothing_gets_the_fixed_question(final):
+    escalation = Evaluation(
+        verified=True,
+        denials=[REFUSED.denials[0].model_copy(update={"is_escalation": True, "user_can_approve": True})],
+    )
+    fakes = Fakes([final])
+    recovery = await fakes.recover(evaluation=escalation)
+    choice = recovery.alternative["choices"][0]
+    assert choice["finish_reason"] == "stop" and fakes.hooks == []
+    assert choice["message"]["content"].endswith("B to skip it, or C to do something else.")
+
+
+async def test_complete_final_reply_without_a_question_gets_the_fixed_question():
+    """A final reply that only reports what happened would end the turn without asking the user anything."""
+    report = completion(content="Two approaches were blocked, so I stopped.", reason="stop")
+    first = completion(("call-5", "read_file", {"n": 1}))
+    second = completion(("call-6", "read_file", {"n": 2}))
+    fakes = Fakes([first, second, report], [[outcome("call-5", "deny")], [outcome("call-6", "deny")]])
+    recovery = await fakes.recover()
+    choice = recovery.alternative["choices"][0]
+    assert choice["finish_reason"] == "stop" and "tool_calls" not in choice["message"]
+    assert choice["message"]["content"] == (
+        "Two approaches were blocked, so I stopped.\n\n" + stop_notice(REFUSED.denials)
+    )
+
+
+async def test_complete_final_reply_that_already_asks_is_left_unchanged():
+    """A reply that puts its own question to the user is not asked twice."""
+    asking = completion(content="Both reads were blocked. Should I skip them or try another file?", reason="stop")
+    first = completion(("call-5", "read_file", {"n": 1}))
+    second = completion(("call-6", "read_file", {"n": 2}))
+    fakes = Fakes([first, second, asking], [[outcome("call-5", "deny")], [outcome("call-6", "deny")]])
+    recovery = await fakes.recover()
+    assert recovery.alternative == asking

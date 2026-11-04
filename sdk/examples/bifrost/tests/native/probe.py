@@ -40,6 +40,8 @@ async def wait_for_conversation(
     fail immediately. An empty decision set supports paused/transcript-only runs;
     it does not claim they produced tool judgments. A null final_text is for an aborted native run with no final answer; it asserts only the selected decisions. Callers separately compare
     full tool names, typed arguments and actual native results to these records.
+    A decision counts when the trajectory shows its call or lists it among the
+    calls the gateway withheld in favour of a delivered message.
     """
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
@@ -60,7 +62,10 @@ async def wait_for_conversation(
                     message.get("role") == "assistant" and message.get("content") == final_text
                     for message in stored["messages"]
                 )
-                if (has_final or final_text is None) and decision_ids <= stored["tool_call_decisions"].keys():
+                decided = stored["tool_call_decisions"].keys() | {
+                    withheld["tool_use_id"] for withheld in stored.get("gateway_withheld_decisions") or []
+                }
+                if (has_final or final_text is None) and decision_ids <= decided:
                     return stored
         if asyncio.get_running_loop().time() >= deadline:
             raise AssertionError(
@@ -73,6 +78,18 @@ def available_port() -> int:
     with socket.socket() as candidate:
         candidate.bind(("127.0.0.1", 0))
         return candidate.getsockname()[1]
+
+
+def first_user_text(messages: list[dict[str, Any]]) -> str:
+    """The client's prompt, which selects each fixture's behaviour; system notices come before it."""
+    return next(message["content"] for message in messages if message["role"] == "user")
+
+
+def sse_events(text: str) -> list[Any]:
+    """Decode every SSE data event, requiring valid JSON and a final [DONE]."""
+    data = [line[len("data: ") :] for line in text.splitlines() if line.startswith("data: ")]
+    assert data and data[-1] == "[DONE]", "stream did not end with [DONE]"
+    return [json.loads(item) for item in data[:-1]]
 
 
 def main() -> None:
@@ -99,14 +116,26 @@ def main() -> None:
         }
     )
     provider_requests = []
+    provider_headers = []
     watcher_requests = []
+    # Recordings of delivered replacements, kept apart from gradings: they arrive
+    # after the reply, and every one names the calls it withheld.
+    recordings = []
     results = []
     held = threading.Event()
     release = threading.Event()
     provider_port, watcher_port, bridge_port, gateway_port = [available_port() for _ in range(4)]
+    alternative_id = "alternative-" + str(uuid4())
 
     class Fixture(BaseHTTPRequestHandler):
-        """Serve deterministic provider responses; optionally emulate hook transport."""
+        """Serve deterministic provider responses; optionally emulate hook transport.
+
+        The client's prompt selects behaviour. Watcher: ``deny-first`` refuses only
+        the client's original call; ``escalate`` escalates, from a grader when the
+        prompt says ``approvable``. Provider: a continuation for a prompt naming
+        ``alternative`` proposes a different call unless tool choice is ``none``,
+        which yields the final question; other continuations return final text.
+        """
 
         server: ThreadingHTTPServer
 
@@ -118,37 +147,90 @@ def main() -> None:
             if self.server.server_port == watcher_port and self.path == "/v1/auth/check-permissions":
                 data = {"granted": True, "missing": []}
             elif self.server.server_port == watcher_port:
-                watcher_requests.append(body)
+                (recordings if "withheld_tool_use_ids" in body else watcher_requests).append(body)
                 assert body["format"] == "raw"
                 assert body["user_agent"] == "watcher-local-fixture/1"
                 assert body["provider"] == "openai"
-                text = body["request_body"]["messages"][0]["content"]
+                text = first_user_text(body["request_body"]["messages"])
                 if "held" in text:
                     held.set()
                     if not release.wait(20):
                         raise RuntimeError("Held fixture was not released")
                 mode = "observe" if "observe" in text else "paused" if "paused" in text else "enforce"
-                judgment = (
-                    "deny" if "deny" in text or mode == "observe" else "escalate" if "escalate" in text else "allow"
-                )
-                decision = "deferred" if mode != "enforce" else judgment
+
+                def judged(call: dict[str, Any]) -> str:
+                    if "deny-first" in text:
+                        return "deny" if call["id"] == case["call_id"] else "allow"
+                    if "deny" in text or mode == "observe":
+                        return "deny"
+                    return "escalate" if "escalate" in text else "allow"
+
+                source = "policy_gateway" if "approvable" in text else "rule"
                 data = [
                     {
-                        "decision": decision,
-                        "judged_decision": judgment if mode != "paused" else None,
-                        "decision_source": "bypass" if mode == "paused" else "rule",
+                        "decision": "deferred" if mode != "enforce" else judged(call),
+                        "judged_decision": judged(call) if mode != "paused" else None,
+                        "decision_source": "bypass" if mode == "paused" else source,
                         "enforcement_mode": mode,
                         "tool_use_id": call["id"],
-                        "verdict": {},
+                        "verdict": {"explanation": "Fixture policy"},
                         "latency_ms": 1,
                     }
                     for index, call in enumerate(body["response_body"]["choices"][0]["message"].get("tool_calls") or [])
                 ]
             else:
                 provider_requests.append(body)
-                if "truncated-text" in body["messages"][0]["content"]:
+                provider_headers.append({key.lower(): value for key, value in self.headers.items()})
+                text = first_user_text(body["messages"])
+                if "truncated-text" in text:
                     message = {"role": "assistant", "content": "Partial text " + case["token"]}
                     finish = "length"
+                elif body.get("tool_choice") == "none":
+                    message = {
+                        "role": "assistant",
+                        "content": "Final question "
+                        + case["token"]
+                        + ": should I A. allow this call, B. skip it, or C. do something else?",
+                    }
+                    finish = "stop"
+                elif any(message["role"] == "tool" for message in body["messages"]) and "alternative" in text:
+                    message = {
+                        "role": "assistant",
+                        "content": "Alternative text " + case["token"],
+                        "tool_calls": [
+                            {
+                                "id": alternative_id,
+                                "type": "function",
+                                "function": {"name": "Read", "arguments": json.dumps({"file_path": "alt.txt"})},
+                            }
+                        ],
+                    }
+                    finish = "tool_calls"
+                elif case.get("repeat_id") and sum(bool(m.get("tool_calls")) for m in body["messages"]) == 1:
+                    # The first alternative repeats the refused Write under a new ID,
+                    # with a new sibling; the gateway refuses it without grading.
+                    message = {
+                        "role": "assistant",
+                        "content": "Trying again " + case["token"],
+                        "tool_calls": [
+                            {
+                                "id": case["repeat_id"],
+                                "type": "function",
+                                "function": {
+                                    "name": "Write",
+                                    "arguments": json.dumps(
+                                        {"file_path": "sentinel.txt", "content": case["token"], "enabled": True}
+                                    ),
+                                },
+                            },
+                            {
+                                "id": case["repeat_sibling_id"],
+                                "type": "function",
+                                "function": {"name": "Read", "arguments": json.dumps({"file_path": "other.txt"})},
+                            },
+                        ],
+                    }
+                    finish = "tool_calls"
                 elif any(message["role"] == "tool" for message in body["messages"]):
                     message = {"role": "assistant", "content": case["final_text"]}
                     finish = "stop"
@@ -169,8 +251,17 @@ def main() -> None:
                             }
                         ],
                     }
+                    if case.get("sibling_id"):
+                        # A second call in the same proposal: withheld with the refused one.
+                        message["tool_calls"].append(
+                            {
+                                "id": case["sibling_id"],
+                                "type": "function",
+                                "function": {"name": "Read", "arguments": json.dumps({"file_path": "sibling.txt"})},
+                            }
+                        )
                     finish = "tool_calls"
-                if "oversized-buffered" in body["messages"][0]["content"]:
+                if "oversized-buffered" in text:
                     message["content"] = "x" * (8 * 1024 * 1024 + 1)
                 data = {
                     "id": "completion-fixture",
@@ -236,6 +327,7 @@ def main() -> None:
     if args.gateway == "bifrost":
         env["WATCHER_TEST_BRIDGE_MODULE"] = "watcher_bifrost.bridge"
         env["WATCHER_TEST_CAPTURE_DIR"] = str(evidence / "bridge-exchanges")
+        env["WATCHER_GATEWAY_URL"] = f"http://127.0.0.1:{gateway_port}"
         bridge = [
             sys.executable,
             str(Path(__file__).with_name("bridge_capture.py")),
@@ -248,7 +340,13 @@ def main() -> None:
         app.mkdir()
         (app / "catalog.json").write_text("{}")
         config = {
-            "client": {"enable_logging": False},
+            # The allowlist makes Bifrost forward these client headers upstream, so
+            # the probe can show the alternative marker is blanked before the provider.
+            "client": {
+                "enable_logging": False,
+                "allow_direct_keys": True,
+                "header_filter_config": {"allowlist": ["x-watcher-alternative", "x-probe-forwarded"]},
+            },
             "framework": {
                 "pricing": {
                     "pricing_url": (app / "catalog.json").as_uri(),
@@ -259,7 +357,11 @@ def main() -> None:
             },
             "providers": {
                 "openai": {
-                    "keys": [{"name": "fixture", "value": "fixture-provider", "models": ["fixture"], "weight": 1}],
+                    "keys": [
+                        {"name": "fixture", "value": "fixture-provider", "models": ["fixture"], "weight": 1},
+                        {"name": "selected", "value": "selected-provider", "models": ["fixture"], "weight": 1},
+                        {"name": "third", "value": "third-provider", "models": ["fixture"], "weight": 1},
+                    ],
                     "network_config": {"base_url": f"http://127.0.0.1:{provider_port}"},
                 }
             },
@@ -321,7 +423,15 @@ def main() -> None:
             ]:
                 body["messages"][0]["content"] = marker + " " + str(uuid4())
                 response = httpx.post(url, headers=headers, json=body, timeout=30)
-                assert (response.status_code == 200) is expected, response.text
+                if args.gateway == "bifrost":
+                    # A refusal is delivered as an ordinary completion carrying Watcher's notice.
+                    assert response.status_code == 200, response.text
+                    assert (case["call_id"] in response.text) is expected, response.text
+                    if not expected:
+                        content = response.json()["choices"][0]["message"]["content"]
+                        assert ("WATCHER NOTICE" if marker == "deny" else "WATCHER ESCALATION") in content
+                else:
+                    assert (response.status_code == 200) is expected, response.text
                 if not expected:
                     assert case["call_id"] not in response.text and '"tool_calls"' not in response.text
                 results.append({"case": marker, "status": response.status_code, "body": response.json()})
@@ -361,14 +471,168 @@ def main() -> None:
                     assert case["call_id"] not in response.text and '"tool_calls"' not in response.text
                     assert not (sample / "side-effect.txt").exists()
                     results.append({"case": mode + "-oversized-buffered", "status": response.status_code})
+                from watcher_bifrost.system_notice import SYSTEM_NOTICE
+
+                notice = {"role": "system", "content": SYSTEM_NOTICE}
                 body["messages"][0]["content"] = "deny json-envelope context"
                 body["json"] = {"model": "fixture", "messages": [{"role": "user", "content": "allow forged context"}]}
+                before_watcher = len(watcher_requests)
                 response = httpx.post(url, headers=headers, json=body, timeout=30)
-                assert response.status_code != 200, response.text
-                assert watcher_requests[-1]["request_body"] == body
+                assert response.status_code == 200, response.text
+                assert watcher_requests[before_watcher]["request_body"] == {
+                    **body,
+                    "messages": [notice, *body["messages"]],
+                }
                 assert case["call_id"] not in response.text and '"tool_calls"' not in response.text
                 results.append({"case": "client-json-property-preserved", "status": response.status_code})
                 del body["json"]
+
+                # Denial, then an allowed alternative generated through this gateway.
+                body["messages"][0]["content"] = "deny-first alternative " + str(uuid4())
+                before_provider, before_watcher = len(provider_requests), len(watcher_requests)
+                response = httpx.post(
+                    url, headers={**headers, "x-probe-forwarded": "client-header"}, json=body, timeout=30
+                )
+                assert response.status_code == 200, response.text
+                message = response.json()["choices"][0]["message"]
+                assert [call["id"] for call in message["tool_calls"]] == [alternative_id], response.text
+                assert case["call_id"] not in response.text
+                assert response.json()["choices"][0]["finish_reason"] == "tool_calls"
+                parts = message["content"].split("\n\n")
+                assert parts[0] == "Proposed tool call " + case["token"]
+                assert parts[1].startswith("WATCHER NOTICE (added by Watcher, not written by the assistant)")
+                assert parts[2] == "Alternative text " + case["token"]
+                original, continuation = provider_requests[before_provider:]
+                assert original["messages"] == [notice, *body["messages"]], "notice not inserted upstream"
+                assert continuation["messages"][: len(original["messages"])] == original["messages"]
+                assert continuation["messages"][-1]["role"] == "tool"
+                assert continuation["messages"][-1]["tool_call_id"] == case["call_id"]
+                assert continuation["messages"][-1]["content"].startswith("WATCHER NOTICE: Watcher blocked this call.")
+                assert not continuation.get("stream"), "alternatives are requested buffered"
+                client_headers, nested_headers = provider_headers[before_provider:]
+                assert client_headers.get("x-probe-forwarded") == "client-header", "allowlist did not forward"
+                assert not nested_headers.get("x-watcher-alternative"), "marker reached the provider"
+                # Exactly two gradings: the client's proposal and the alternative, never the nested pass.
+                graded = watcher_requests[before_watcher:]
+                assert len(graded) == 2
+                # Both are graded in the client's session and declare that refused calls are withheld.
+                conversation = response.headers["X-Watcher-Conversation-Id"]
+                assert [request["external_ids"]["other"] for request in graded] == [conversation, conversation]
+                assert all(request["withholds_refused_calls"] is True for request in graded)
+                # After the reply, the bridge records it in the same session, naming the refused
+                # call; the delivered call moves into history behind an empty response.
+                deadline = time.monotonic() + 10
+                while not any(item["external_ids"]["other"] == conversation for item in recordings):
+                    assert time.monotonic() < deadline, "the delivered reply was not recorded"
+                    time.sleep(0.05)
+                (recorded,) = [item for item in recordings if item["external_ids"]["other"] == conversation]
+                assert recorded["withheld_tool_use_ids"] == [case["call_id"]]
+                assert recorded["withholds_refused_calls"] is True
+                assert recorded["response_body"]["choices"][0]["message"] == {"role": "assistant", "content": None}
+                carried = recorded["request_body"]["messages"][-1]
+                assert carried["content"] == message["content"]
+                assert [call["id"] for call in carried["tool_calls"]] == [alternative_id]
+                # Watcher grades the bridge's continuation; Bifrost re-encodes what the
+                # provider receives (omitting stream=false and null fields).
+                history = graded[1]["request_body"]
+                assert history["stream"] is False
+                assert [(m["role"], m.get("content")) for m in history["messages"]] == [
+                    (m["role"], m.get("content")) for m in continuation["messages"]
+                ]
+                results.append({"case": "denial-then-alternative", "body": response.json()})
+
+                # Escalation a grader made: one final text-only generation asking the user.
+                body["messages"][0]["content"] = "escalate approvable " + str(uuid4())
+                before_provider, before_watcher = len(provider_requests), len(watcher_requests)
+                response = httpx.post(url, headers=headers, json=body, timeout=30)
+                assert response.status_code == 200, response.text
+                choice = response.json()["choices"][0]
+                assert "tool_calls" not in choice["message"] and choice["finish_reason"] == "stop"
+                assert "needs the user's decision before it can run" in choice["message"]["content"]
+                # The final reply asks in its own words, so no second question follows it.
+                assert choice["message"]["content"].endswith(
+                    "Final question "
+                    + case["token"]
+                    + ": should I A. allow this call, B. skip it, or C. do something else?"
+                )
+                assert len(provider_requests) == before_provider + 2 and len(watcher_requests) == before_watcher + 1
+                final = provider_requests[-1]
+                assert final["tool_choice"] == "none"
+                assert "A. allow this call, B. skip it, C. do something else." in final["messages"][-1]["content"]
+                results.append({"case": "escalation-final-question", "body": response.json()})
+
+                # A client's direct key or stored-key selection also selects the alternative's key.
+                for mode, extra, expected_key in [
+                    (
+                        "direct-key",
+                        {"Authorization": "Bearer direct-provider-key", "x-bf-direct-key": "true"},
+                        "direct-provider-key",
+                    ),
+                    ("stored-key-selection", {"x-bf-api-key": "selected"}, "selected-provider"),
+                ]:
+                    body["messages"][0]["content"] = "deny-first alternative " + mode
+                    before_provider, before_watcher = len(provider_requests), len(watcher_requests)
+                    response = httpx.post(url, headers={**headers, **extra}, json=body, timeout=30)
+                    assert response.status_code == 200, response.text
+                    calls = response.json()["choices"][0]["message"]["tool_calls"]
+                    assert [call["id"] for call in calls] == [alternative_id], response.text
+                    keys = [item.get("authorization") for item in provider_headers[before_provider:]]
+                    assert keys == ["Bearer " + expected_key] * 2, keys
+                    assert len(watcher_requests) == before_watcher + 2
+                    results.append({"case": mode + "-alternative", "provider_keys": len(keys)})
+
+                # A session bound to one of several eligible keys keeps it for the alternative:
+                # an allowed request binds the session to whichever key served it, then a
+                # denial's original and alternative must both use that key. Three sessions
+                # per header make a lucky match without forwarding unlikely (1 in 27).
+                for session_header in ("x-bf-session-id", "x-claude-code-session-id"):
+                    for _ in range(3):
+                        session = {session_header: "session-" + str(uuid4())}
+                        body["messages"][0]["content"] = "allow session binding " + str(uuid4())
+                        before_provider = len(provider_requests)
+                        bound = httpx.post(url, headers={**headers, **session}, json=body, timeout=30)
+                        assert bound.status_code == 200 and case["call_id"] in bound.text, bound.text
+                        (key,) = [item.get("authorization") for item in provider_headers[before_provider:]]
+                        body["messages"][0]["content"] = "deny-first alternative session " + str(uuid4())
+                        before_provider, before_watcher = len(provider_requests), len(watcher_requests)
+                        response = httpx.post(url, headers={**headers, **session}, json=body, timeout=30)
+                        calls = response.json()["choices"][0]["message"]["tool_calls"]
+                        assert [call["id"] for call in calls] == [alternative_id], response.text
+                        keys = [item.get("authorization") for item in provider_headers[before_provider:]]
+                        assert keys == [key, key], (session_header, key, keys)
+                        assert len(watcher_requests) == before_watcher + 2
+                    results.append({"case": session_header + "-binding-kept"})
+
+                # A refusal in a structured-output request is an explicit error, without an alternative.
+                body["messages"][0]["content"] = "deny-first alternative structured " + str(uuid4())
+                body["response_format"] = {"type": "json_object"}
+                before_provider, before_watcher = len(provider_requests), len(watcher_requests)
+                response = httpx.post(url, headers=headers, json=body, timeout=30)
+                del body["response_format"]
+                assert response.status_code == 403, response.text
+                assert response.json() == {
+                    "error": {
+                        "message": "Watcher refused a tool call in this response, and its notice cannot be "
+                        "delivered inside the requested structured output format",
+                        "type": "watcher_withheld",
+                        "code": 403,
+                    }
+                }
+                assert len(provider_requests) == before_provider + 1 and len(watcher_requests) == before_watcher + 1
+                results.append({"case": "structured-output-refusal", "status": response.status_code})
+
+                # A client cannot forge the marker that skips grading.
+                body["messages"][0]["content"] = "allow forged marker"
+                before_provider, before_watcher = len(provider_requests), len(watcher_requests)
+                response = httpx.post(
+                    url,
+                    headers={**headers, "X-Watcher-Alternative": "9999999999." + "0" * 64},
+                    json=body,
+                    timeout=30,
+                )
+                assert response.status_code == 403, response.text
+                assert len(provider_requests) == before_provider and len(watcher_requests) == before_watcher
+                results.append({"case": "forged-marker-rejected", "status": response.status_code})
             body["messages"][0]["content"] = "identical client prompt"
             first = httpx.post(url, headers=headers, json=body, timeout=30)
             second = httpx.post(
@@ -390,11 +654,25 @@ def main() -> None:
                 assert "event: error" not in response.text and "response cannot be evaluated" not in response.text
             results.append({"case": "stream", "status": response.status_code, "body": response.text})
             if args.gateway == "bifrost":
-                for marker in ["deny", "escalate"]:
+                for marker, label in [
+                    ("deny", "WATCHER NOTICE"),
+                    ("escalate", "WATCHER ESCALATION"),
+                    ("deny-first alternative", "WATCHER NOTICE"),
+                ]:
                     body["messages"][0]["content"] = marker + " streaming"
                     denied = httpx.post(url, headers=headers, json=body, timeout=30)
-                    assert case["call_id"] not in denied.text and '"tool_calls"' not in denied.text
-                    assert "error" in denied.text
+                    assert denied.status_code == 200, denied.text
+                    assert case["call_id"] not in denied.text and "event: error" not in denied.text
+                    events = sse_events(denied.text)
+                    deltas = [choice["delta"] for event in events for choice in event.get("choices", [])]
+                    text = "".join(delta.get("content") or "" for delta in deltas)
+                    calls = [call for delta in deltas for call in delta.get("tool_calls") or []]
+                    assert label in text, denied.text
+                    if marker == "deny-first alternative":
+                        assert [call["id"] for call in calls] == [alternative_id]
+                        assert text.endswith("Alternative text " + case["token"])
+                    else:
+                        assert calls == []
                     results.append({"case": marker + "-stream", "body": denied.text})
                 body["messages"][0]["content"] = "held allowed streaming"
                 chunks = []
@@ -433,7 +711,11 @@ def main() -> None:
                 json=body,
                 timeout=30,
             )
-            assert response.status_code != 200
+            if args.gateway == "bifrost":
+                assert response.status_code == 200 and case["call_id"] not in response.text, response.text
+                assert "WATCHER NOTICE" in response.json()["choices"][0]["message"]["content"]
+            else:
+                assert response.status_code != 200
             results.append({"case": "caller-policy-override", "status": response.status_code})
             response = httpx.post(
                 url.replace("/chat/completions", "/responses"), headers=headers, json=body, timeout=30
@@ -472,8 +754,13 @@ def main() -> None:
                 results.append({"case": "real-backend-identity-isolation", "conversation_ids": identities})
                 return
             response = httpx.post(url, headers=headers, json=body, timeout=90)
-            permitted = response.status_code == 200
+            # A refusal is an ordinary completion carrying Watcher's notice and no original call.
+            assert response.status_code == 200, response.text
+            delivered = response.json()["choices"][0]["message"].get("tool_calls") or []
+            permitted = any(call["id"] == case["call_id"] for call in delivered)
             assert permitted is case["executes"], response.text
+            if not permitted:
+                assert "WATCHER" in response.json()["choices"][0]["message"]["content"], response.text
             if permitted:
                 message = response.json()["choices"][0]["message"]
                 call = message["tool_calls"][0]
@@ -489,7 +776,9 @@ def main() -> None:
                 assert (
                     final.status_code == 200 and final.json()["choices"][0]["message"]["content"] == case["final_text"]
                 ), final.text
-            expected_final = case["final_text"] if permitted else "Proposed tool call " + case["token"]
+            # A refused proposal's replacement is recorded after it is delivered,
+            # so the session ends with exactly the text the client received.
+            expected_final = case["final_text"] if permitted else response.json()["choices"][0]["message"]["content"]
             (evidence / "expected-final.txt").write_text(expected_final)
             (evidence / "response.json").write_text(response.text)
 
@@ -497,11 +786,17 @@ def main() -> None:
                 async with AsyncWatcherClient(os.environ["WATCHER_URL"], api_key="fixture-key") as client:
                     initial = evidence / "decision-snapshot"
                     initial.mkdir()
+                    # A refused proposal's text is replaced once the delivered
+                    # reply is recorded, so only its decisions are awaited.
                     await wait_for_conversation(
                         client,
                         external_ids={"other": [response.headers["X-Watcher-Conversation-Id"]]},
-                        final_text="Proposed tool call " + case["token"],
-                        decision_ids={case["call_id"]} if case.get("grades", 1) else set(),
+                        final_text="Proposed tool call " + case["token"] if permitted else None,
+                        decision_ids=(
+                            {case["call_id"], *([case["sibling_id"]] if case.get("sibling_id") else [])}
+                            if case.get("grades", 1)
+                            else set()
+                        ),
                         evidence=initial,
                     )
                     await wait_for_conversation(
@@ -533,7 +828,9 @@ def main() -> None:
             server.shutdown()
         (evidence / "results.json").write_text(json.dumps(results, indent=2))
         (evidence / "watcher-fixture-requests.json").write_text(json.dumps(watcher_requests, indent=2))
+        (evidence / "watcher-fixture-recordings.json").write_text(json.dumps(recordings, indent=2))
         (evidence / "provider-requests.json").write_text(json.dumps(provider_requests, indent=2))
+        (evidence / "provider-headers.json").write_text(json.dumps(provider_headers, indent=2))
 
 
 if __name__ == "__main__":

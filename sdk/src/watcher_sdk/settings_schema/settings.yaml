@@ -99,6 +99,8 @@ enforcement:
   escalate_after_accumulated_denies: 10
 watcher_ignore_files:
   enabled: false
+agent_inventory:
+  enabled: false
 decision_sync:
   drain_interval_seconds: 30
 grading:
@@ -269,11 +271,13 @@ command_rules:
     regex: ^(pwd|cd|echo|which|uname|whoami|date|hostname|id)\b|^env(?:[ \t]*(?:\d*(?:>>|>\||>&|>|<<<|<<|<&|<)|&>>|&>)[ \t]*(?:&\d+|&-|[^ \t<>|&;]+)?)*[ \t]*$
     decision: allow
     priority: 301
+  # yq --split-exp (-s) writes each result to a file its expression names, so it is graded, quoted
+  # (`'--split-exp'`, `"-s"`) or not.
   - id: bash-data-format-tools
     tool_name: Bash
     name: Data format tools
     category: file_directory
-    regex: ^(?:(?:jq|yq|csvtool)\b|xmllint\b(?!.*(?:\s-o|--output(?![\w-]))))
+    regex: ^(?:(?:jq|csvtool)\b|yq\b(?!.*\s['"]?(?:-[a-z]*s|--split-exp(?![\w-])))|xmllint\b(?!.*(?:\s['"]?-o|--output(?![\w-]))))
     decision: allow
     priority: 302
   - id: bash-stdin-sort-uniq
@@ -418,6 +422,41 @@ command_rules:
     regex: '\*\*\*\s*(?:Add File|Update File|Delete File|Move to):[^\\"]*\.watcher-ignore(?=[ \t]*(?:\\|"))'
     decision: human
     priority: 107
+  # Watcher's own state (~/.apollo_monitor: thresholds, profiles, the admin file holding org locks)
+  # and the agent settings that load its hooks decide whether later calls are reviewed at all, so
+  # every agent write to them needs a person. These sit ahead of the extension allow rules, and the
+  # hook also matches them against the file a path resolves to. The Bash variant sees only writes
+  # made in the clear (sed, perl and yq only in place, sed through a `w` command, find with an action
+  # that writes or runs something, csvtool with -o); like the marker rule it reads to the end of the
+  # line, since quoted expressions hold `|` and `;`. A script the agent runs is out of reach.
+  - id: edit-watcher-protected-files
+    tool_name: Edit
+    name: Watcher settings or agent hooks
+    category: security_system
+    regex: (^|/)\.apollo_monitor(/|$)|(^|/)\.claude/settings(\.local)?\.json$|(^|/)\.codex/(hooks\.json|config\.toml)$|(^|/)\.copilot/(hooks/[^/]+|settings\.json|config\.json)$
+    decision: human
+    priority: 95
+  - id: write-watcher-protected-files
+    tool_name: Write
+    name: Watcher settings or agent hooks
+    category: security_system
+    regex: (^|/)\.apollo_monitor(/|$)|(^|/)\.claude/settings(\.local)?\.json$|(^|/)\.codex/(hooks\.json|config\.toml)$|(^|/)\.copilot/(hooks/[^/]+|settings\.json|config\.json)$
+    decision: human
+    priority: 96
+  - id: bash-watcher-protected-files
+    tool_name: Bash
+    name: Watcher settings or agent hooks
+    category: security_system
+    regex: '(?<![\w-])(?:touch|rm|mv|cp|ln|tee|install|truncate|unlink|chmod|(?:sed|perl|yq)(?=[ \t][^\n]*?(?:(?<![\w-])(?:-[a-z]*i|--in-?place)|[\d$/;{}''"\s][wW]))|find(?=[^\n]*?[ \t]-(?:delete|exec|execdir|ok|okdir|fls|fprint0?|fprintf)\b)|csvtool(?=[^\n]*?[ \t]-o\b))(?:[ \t]|\\\n)+(?:\\\n|[^\n])*(?:\.apollo_monitor(?=$|[/\s"'';|&()<>])|\.claude/settings(?:\.local)?\.json|\.codex/(?:hooks\.json|config\.toml)|\.copilot/(?:hooks/|settings\.json|config\.json))'
+    decision: human
+    priority: 97
+  - id: apply-patch-watcher-protected-files
+    tool_name: apply_patch
+    name: Watcher settings or agent hooks
+    category: security_system
+    regex: '\*\*\*\s*(?:Add File|Update File|Delete File|Move to):[^\\"]*(?:\.apollo_monitor/|\.copilot/hooks/|(?:\.claude/settings(?:\.local)?|\.copilot/(?:settings|config))\.json(?=[ \t]*(?:\\|"))|\.codex/(?:hooks\.json|config\.toml)(?=[ \t]*(?:\\|")))'
+    decision: human
+    priority: 98
   - id: edit-shell-rc-ssh-config
     tool_name: Edit
     name: Shell rc / SSH config
@@ -453,11 +492,18 @@ command_rules:
     regex: ^(grep|rg|ag|fd|egrep|fgrep|ack)\b
     decision: allow
     priority: 320
+  # Only a print-only script is approved: one script (quoted, or a bare word) built from addresses,
+  # the commands p l = d n g h x z q, braces and s/// with the g p i m or numeric flags, separated by
+  # `;` or newlines as sed itself requires, then file names and redirects. Anything else goes to the
+  # grader: the w and W commands and the s///w flag write files under any address (`1w f`, `$!wf`),
+  # e and s///e run commands, r and R read other files, -f takes the script from a file, and -i or
+  # --in-place edits in place. The required separator also keeps the match linear: a trailing s///
+  # flag can never be read as the next command.
   - id: bash-read-only-sed
     tool_name: Bash
     name: Read-only sed
     category: search
-    regex: ^sed\s+-n\b(?!.*(?:\s-i|--in-place\b|(?<!\w)[wW][\s/]))
+    regex: '^sed\s+-[ersuz]*n[ersuz]*(?:\s+-[ersuz]+)*\s+(?:-e\s+)?(?:''\s*(?:(?:(?:(?:\d+(?:~\d+)?|\$|/(?:[^/''\\\n]|\\[^''\n])*/I?)(?:,(?:(?:\d+(?:~\d+)?|\$|/(?:[^/''\\\n]|\\[^''\n])*/I?)|[+~]\d+))?\s*)?(?:!\s*)?(?:[pl=dnghxz]|q\d*|s/(?:[^/''\\\n]|\\[^''\n])*/(?:[^/''\\\n]|\\[^''\n])*/[gpim\d]*|\{)|\})(?:(?:\s*[;\n]\s*|(?<=\{)\s*|\s*(?=\}))|(?=\s*;?\s*'')))+\s*;?\s*''|"\s*(?:(?:(?:(?:\d+(?:~\d+)?|\$|/(?:[^/"$`\\\n]|\\.)*/I?)(?:,(?:(?:\d+(?:~\d+)?|\$|/(?:[^/"$`\\\n]|\\.)*/I?)|[+~]\d+))?\s*)?(?:!\s*)?(?:[pl=dnghxz]|q\d*|s/(?:[^/"$`\\\n]|\\.)*/(?:[^/"$`\\\n]|\\.)*/[gpim\d]*|\{)|\})(?:(?:\s*[;\n]\s*|(?<=\{)\s*|\s*(?=\}))|(?=\s*;?\s*")))+\s*;?\s*"|(?:(?:(?:(?:\d+(?:~\d+)?|\$|/(?:[^/''"\s;&|<>()$`\\\n]|\\.)*/I?)(?:,(?:(?:\d+(?:~\d+)?|\$|/(?:[^/''"\s;&|<>()$`\\\n]|\\.)*/I?)|[+~]\d+))?)?(?:!)?(?:[pl=dnghxz]|q\d*|s/(?:[^/''"\s;&|<>()$`\\\n]|\\.)*/(?:[^/''"\s;&|<>()$`\\\n]|\\.)*/[gpim\d]*|\{)|\})(?:(?:(?<=\{)|(?=\}))|(?=\s|$)))+)(?:\s+(?:[^\s''"\\;&|<>()$`-][^\s''"\\;&|<>()$`]*|\d*(?:>>?|&>)\s*[^\s''"\\;&|<>()$`]+|\d*>&\d+|<\s*[^\s''"\\;&|<>()$`-][^\s''"\\;&|<>()$`]*))*\s*$'
     decision: allow
     priority: 321
   - id: bash-git-read-only
@@ -528,6 +574,10 @@ command_rules:
     regex: git\s+clean\s+-[fd]
     decision: triage
     priority: 102
+  # The test, lint and build allow rules below approve by name, but the repository defines what runs
+  # (Makefile, conftest.py, package.json scripts, build.rs, the project build behind `uv run`), so an
+  # approved run can change anything, Watcher's settings included. Accepted risk: no grader sees
+  # those files either, and isolation or MDM protection of Watcher's files is what limits it.
   - id: bash-python-tests
     tool_name: Bash
     name: Python tests

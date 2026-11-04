@@ -136,9 +136,9 @@ async def test_disconnect_during_recovery_joins_provider_cleanup_and_stops_evalu
             assert len(router.requests) == 1
             called_api, kwargs = router.requests[0]
             assert called_api == api and kwargs["stream"] is True
-            assert "in this proposal; the gateway withheld them" in tool_feedback(api, kwargs)["denied"]
+            assert tool_feedback(api, kwargs)["denied"].startswith("WATCHER NOTICE: Watcher blocked this call.")
             assert not any(frame.has_tool for frame in output)
-            assert any("Watcher did not approve" in frame.wire for frame in output)
+            assert any("WATCHER NOTICE (added by Watcher" in frame.wire for frame in output)
             if stage == "read":
                 assert any("replacement text" in frame.wire for frame in output)
     finally:

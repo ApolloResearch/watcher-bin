@@ -224,6 +224,20 @@ class WatcherIgnoreFilesSettings(PermissionedSettingsModel):
     enabled: BoolSetting = Field(default=False, description="Whether in-repo .watcher-ignore files are honored.")
 
 
+class AgentInventorySettings(PermissionedSettingsModel):
+    """Whether Watcher reports the coding agents installed on each machine to the organization's agent inventory.
+
+    Admin-only and off by default: resolved from the admin baseline like ``snooze``, so a user cannot turn it
+    on or off for their own machine. The server reads the same key from its copy of the organization's
+    document and refuses reports while it is off, so an organization that distributes settings through MDM
+    sets it in both places.
+    """
+
+    enabled: BoolSetting = Field(
+        default=False, description="Whether Watcher clients scan for installed coding agents and report them hourly."
+    )
+
+
 class PolicyMonitorSettings(PermissionedSettingsModel):
     """Graders and thresholds for the live policy pipeline that gates tool calls."""
 
@@ -570,6 +584,10 @@ class WatcherSettings(StrictSettingsModel):
         description="Which coding agents Watcher integrates with.",
         examples=[{"enabled": {"codex": False}}],
     )
+    agent_inventory: AgentInventorySettings = Field(
+        default=AgentInventorySettings(),
+        description="Reporting of the coding agents installed on each machine (admin-only).",
+    )
 
     def autostart_on_login_enabled(self) -> bool:
         """Whether Watcher launches at login, resolved across the two places the key can live.
@@ -605,7 +623,9 @@ class WatcherSettings(StrictSettingsModel):
 # in a local file, a profile file, or an inline profile entry parses fine and then
 # never takes effect. Both the client's diagnostic scan and the server's save-time
 # validation work from this one set, so the two cannot drift apart.
-ADMIN_ONLY_TOP_LEVEL_KEYS: frozenset[str] = frozenset({"enforcement", "snooze", "watcher_ignore_files"})
+ADMIN_ONLY_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
+    {"agent_inventory", "enforcement", "snooze", "watcher_ignore_files"}
+)
 
 # Both document locations the autostart toggle can occupy, for the callers that ask about the
 # key itself rather than its value. A lock on either one binds the machines whose value lives
@@ -682,7 +702,7 @@ class EffectiveIgnoreFilePolicy(BaseModel):
 class IgnoredAdminOnlySetting(BaseModel):
     """An admin-only key found in a settings file that cannot set it.
 
-    ``enforcement``, ``snooze``, and ``watcher_ignore_files`` resolve from the admin baseline only (the
+    The keys in ``ADMIN_ONLY_TOP_LEVEL_KEYS`` resolve from the admin baseline only (the
     builtin default plus the global admin ``settings.yaml``). A copy of one of these keys in a local file
     or a profile file still validates against the schema but is silently dropped. ``key`` is the top-level
     key and ``file_path`` is the file it was found in, so a diagnostic can point the author at both.

@@ -20,7 +20,8 @@ from incremental_servers import API, Grade, call_ids, wait_gate
 from pydantic import BaseModel, ConfigDict, Field
 from servers import _chat_stream, _messages_stream, _responses_stream
 
-_DENIED_FEEDBACK = "Watcher did not approve these client tool calls"
+# Every refused call's native tool result starts with one of these markers.
+_REFUSAL_FEEDBACK = ("WATCHER NOTICE:", "WATCHER ESCALATION:")
 
 Decision = Literal["allow", "deny", "escalate"]
 
@@ -46,6 +47,7 @@ class RecoveryState(BaseModel):
     gate_grades: bool = False
     provider_gates: list[threading.Event] = Field(default_factory=lambda: [threading.Event() for _ in range(3)])
     watcher_status: int = 200
+    decision_source: str = "rule"
     reject_replacements: bool = False
 
 
@@ -93,7 +95,7 @@ def response_body(api: API, model: str, attempt: int, paths: list[str]) -> dict[
                     for index, path in enumerate(paths)
                 ],
             ],
-            "stop_reason": "tool_use",
+            "stop_reason": "tool_use" if paths else "end_turn",
             "stop_sequence": None,
             "usage": {"input_tokens": 5, "output_tokens": 20},
         }
@@ -109,16 +111,22 @@ def response_body(api: API, model: str, attempt: int, paths: list[str]) -> dict[
                     "message": {
                         "role": "assistant",
                         "content": prefix,
-                        "tool_calls": [
+                        **(
                             {
-                                "type": "function",
-                                "id": f"call_{attempt}_{index}",
-                                "function": {"name": "read_file", "arguments": json.dumps({"path": path})},
+                                "tool_calls": [
+                                    {
+                                        "type": "function",
+                                        "id": f"call_{attempt}_{index}",
+                                        "function": {"name": "read_file", "arguments": json.dumps({"path": path})},
+                                    }
+                                    for index, path in enumerate(paths)
+                                ]
                             }
-                            for index, path in enumerate(paths)
-                        ],
+                            if paths
+                            else {}
+                        ),
                     },
-                    "finish_reason": "tool_calls",
+                    "finish_reason": "tool_calls" if paths else "stop",
                 }
             ],
             "usage": {"prompt_tokens": 5, "completion_tokens": 20, "total_tokens": 25},
@@ -168,7 +176,7 @@ def provider_app(holder: RecoveryHolder) -> FastAPI:
         body = await request.json()
         state = holder.current
         feedback = tool_feedback(api, body)
-        attempt = sum(_DENIED_FEEDBACK in text for text in feedback.values())
+        attempt = sum(text.startswith(_REFUSAL_FEEDBACK) for text in feedback.values())
         state.provider_requests.append(body)
         if attempt and state.reject_replacements:
             return JSONResponse({"error": {"message": "private provider diagnostic", "type": "invalid_request"}}, 400)
@@ -219,7 +227,7 @@ def watcher_app(holder: RecoveryHolder) -> FastAPI:
                 {
                     "decision": state.decisions.get(call_id, "allow"),
                     "judged_decision": state.decisions.get(call_id, "allow"),
-                    "decision_source": "rule",
+                    "decision_source": state.decision_source,
                     "enforcement_mode": "enforce",
                     "tool_use_id": call_id,
                     "verdict": {"explanation": f"Fixture blocks {call_id}."},

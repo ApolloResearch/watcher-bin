@@ -6,9 +6,21 @@ from unittest.mock import create_autospec
 
 import httpx
 import pytest
-from watcher_portkey.bridge import UnsupportedExchange, decode_json, evaluate, validate_request
+from structlog.testing import capture_logs
+from watcher_portkey.exchange import UnsupportedExchange, UnverifiedDecision, decide, decode_json, validate_request
 
-from watcher_sdk import AsyncWatcherClient
+from watcher_sdk import AsyncWatcherClient, WatcherAPIError
+
+
+async def evaluate(watcher, request, response, **options) -> bool:
+    """Whether the bridge releases the response unchanged: a verified decision with no refusal.
+
+    Exchanges outside the delivery limits still raise ``UnsupportedExchange``.
+    """
+    try:
+        return await decide(watcher, request, response, **options) == []
+    except UnverifiedDecision:
+        return False
 
 
 @pytest.fixture
@@ -177,12 +189,6 @@ def test_unsupported_requests_rejected_before_provider(exchange, change):
     request.update(change)
     with pytest.raises(UnsupportedExchange):
         validate_request(request)
-
-
-def test_stream_requires_explicit_native_buffering(exchange):
-    request, _ = exchange
-    request["stream"] = True
-    assert validate_request(request, allow_stream=True) is None
 
 
 @pytest.mark.parametrize("arguments", ['{"x":1,"x":2}', '{"x":NaN}', "[]", "null"])
@@ -387,3 +393,92 @@ async def test_truncated_text_is_submitted_without_inventing_or_authorizing_a_to
     ) as client:
         assert await evaluate(client, request, response, conversation_id="portkey:partial-text")
     assert len(seen) == 1
+
+
+ALLOWED = {
+    "decision": "allow",
+    "judged_decision": "allow",
+    "decision_source": "rule",
+    "enforcement_mode": "enforce",
+    "tool_use_id": "native-call-1",
+    "verdict": {},
+    "latency_ms": 1,
+}
+
+
+def older_watcher(sent: list[dict], rejected: str = "extra_forbidden"):
+    """A Watcher released before the gateway fields, rejecting them as its raw request model does."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        sent.append(body)
+        unknown = [field for field in ("withheld_tool_use_ids", "withholds_refused_calls") if field in body]
+        if unknown:
+            errors = [{"loc": ["body", "raw", field], "msg": "Not permitted", "type": rejected} for field in unknown]
+            return httpx.Response(422, json={"detail": errors})
+        return httpx.Response(200, json=[ALLOWED])
+
+    return handler
+
+
+async def test_every_exchange_declares_that_refused_calls_are_withheld(exchange):
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json=[ALLOWED])
+
+    async with AsyncWatcherClient(
+        "http://watcher.invalid",
+        httpx_client=httpx.AsyncClient(base_url="http://watcher.invalid", transport=httpx.MockTransport(handler)),
+    ) as client:
+        assert await evaluate(client, *exchange, conversation_id="portkey:trusted-exchange", withheld_ids=["a"])
+    (body,) = sent
+    assert body["withholds_refused_calls"] is True and body["withheld_tool_use_ids"] == ["a"]
+
+
+async def test_an_older_watcher_gets_the_exchange_again_without_the_gateway_fields(exchange):
+    sent: list[dict] = []
+    async with AsyncWatcherClient(
+        "http://watcher.invalid",
+        httpx_client=httpx.AsyncClient(
+            base_url="http://watcher.invalid", transport=httpx.MockTransport(older_watcher(sent))
+        ),
+    ) as client:
+        with capture_logs() as logs:
+            assert await evaluate(client, *exchange, conversation_id="portkey:trusted-exchange", withheld_ids=["a"])
+    assert len(sent) == 2
+    assert sent[0]["withholds_refused_calls"] is True
+    assert "withholds_refused_calls" not in sent[1] and "withheld_tool_use_ids" not in sent[1]
+    assert sent[1]["request_body"] == sent[0]["request_body"]
+    assert [entry["event"] for entry in logs] == ["watcher_predates_gateway_fields"]
+
+
+@pytest.mark.parametrize("body", [{"detail": "invalid"}, {"detail": [{"loc": ["body", "raw", "url"], "type": "x"}]}])
+async def test_other_rejections_are_not_retried(exchange, body):
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(422, json=body)
+
+    async with AsyncWatcherClient(
+        "http://watcher.invalid",
+        httpx_client=httpx.AsyncClient(base_url="http://watcher.invalid", transport=httpx.MockTransport(handler)),
+    ) as client:
+        with pytest.raises(WatcherAPIError):
+            await evaluate(client, *exchange, conversation_id="portkey:trusted-exchange")
+    assert len(sent) == 1
+
+
+async def test_a_rejection_of_an_unrelated_kind_is_not_retried(exchange):
+    sent: list[dict] = []
+    async with AsyncWatcherClient(
+        "http://watcher.invalid",
+        httpx_client=httpx.AsyncClient(
+            base_url="http://watcher.invalid", transport=httpx.MockTransport(older_watcher(sent, "missing"))
+        ),
+    ) as client:
+        with pytest.raises(WatcherAPIError):
+            await evaluate(client, *exchange, conversation_id="portkey:trusted-exchange")
+    assert len(sent) == 1

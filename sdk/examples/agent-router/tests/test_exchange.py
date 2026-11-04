@@ -15,8 +15,8 @@ from watcher_agent_router.exchange import (
     refused,
     releasable,
     validate_request,
-    withheld_notice,
 )
+from watcher_agent_router.notices import withheld_notice
 
 from watcher_sdk import AsyncWatcherClient
 
@@ -331,8 +331,9 @@ def test_withheld_response_removes_every_call_and_explains_in_text(exchange):
     choice = withheld["choices"][0]
     assert choice["finish_reason"] == "stop" and "tool_calls" not in choice["message"]
     content = choice["message"]["content"]
-    assert content.startswith("Let me write it.\n\nWatcher did not approve")
-    assert '"reason": "No"' in content and '["native-call-2"]' in content
+    assert content.startswith("Let me write it.\n\nWATCHER NOTICE (added by Watcher")
+    assert "Watcher blocked `write_file {}`. Reason: No. The call did not run." in content
+    assert "`read_file {}` did not run because Watcher refused another call" in content
     assert response["choices"][0]["message"]["tool_calls"], "the original response is not modified"
 
 
@@ -340,7 +341,7 @@ def test_withheld_response_without_prior_text(exchange):
     _, response = exchange
     denial = Denial(tool_use_id="native-call-1", tool_name="write_file", tool_input={}, reason="No", is_escalation=True)
     content = _withhold(response, Evaluation(verified=True, denials=[denial]))["choices"][0]["message"]["content"]
-    assert content.startswith("Watcher did not approve") and "were withheld because" not in content
+    assert content.startswith("WATCHER ESCALATION (added by Watcher") and "another call" not in content
 
 
 async def test_inconsistent_outcome_is_neither_released_nor_refused(exchange):
@@ -364,7 +365,7 @@ async def test_one_refused_call_withholds_its_allowed_sibling(exchange):
         result = await evaluate(client, request, response, conversation_id=CONVERSATION)
     assert result.verified and [denial.tool_use_id for denial in result.denials] == ["native-call-1"]
     message = _withhold(response, result)["choices"][0]["message"]
-    assert "tool_calls" not in message and '["native-call-2"]' in message["content"]
+    assert "tool_calls" not in message and "`read_file {}` did not run" in message["content"]
 
 
 async def test_refusal_with_a_missing_sibling_decision_is_unverified(exchange):
@@ -373,27 +374,26 @@ async def test_refusal_with_a_missing_sibling_decision_is_unverified(exchange):
         assert not (await evaluate(client, request, response, conversation_id=CONVERSATION)).verified
 
 
-def test_long_arguments_and_reasons_are_shortened_in_the_notice():
-    from watcher_agent_router.exchange import denial_notice
+@pytest.mark.parametrize(
+    "decision,source,can_approve",
+    [
+        ("escalate", "policy_gateway", True),
+        ("escalate", "triage", True),
+        ("escalate", "rule", False),
+        ("escalate", "threshold", False),
+        ("deny", "policy_gateway", False),
+    ],
+)
+async def test_only_grader_escalations_can_be_approved_in_the_conversation(exchange, decision, source, can_approve):
+    value = outcome(decision=decision, judged=decision, decision_source=source)
+    async with watcher(lambda _: httpx.Response(200, json=[value])) as client:
+        [denial] = (await evaluate(client, *exchange, conversation_id=CONVERSATION)).denials
+    assert denial.user_can_approve is can_approve
 
-    big = Denial(
-        tool_use_id="a", tool_name="t", tool_input={"text": "é" * 20_000}, reason="r" * 9000, is_escalation=False
-    )
-    notice = denial_notice([big], [])
-    shown = json.loads(notice.split("\n\n", 1)[1])[0]
-    assert (
-        set(shown["tool_input"]) == {"truncated_arguments"} and len(shown["tool_input"]["truncated_arguments"]) == 4096
-    )
-    assert len(shown["reason"]) == 4096
 
-
-def test_notice_counts_calls_past_its_size_limit():
-    from watcher_agent_router.exchange import denial_notice
-
-    denials = [
-        Denial(tool_use_id=f"id-{index}", tool_name="t", tool_input={"x": "y" * 3000}, reason="no", is_escalation=False)
-        for index in range(40)
-    ]
-    notice = denial_notice(denials, [f"c-{index}" for index in range(150)])
-    assert len(notice.encode()) < 80 * 1024
-    assert "more refused tool calls were withheld." in notice and "and 50 more." in notice
+async def test_grading_error_escalation_cannot_be_approved_in_the_conversation(exchange):
+    failure = {"code": "timeout", "message": "Grading timed out"}
+    value = outcome(decision="escalate", judged="escalate", decision_source="grading_error", grading_error=failure)
+    async with watcher(lambda _: httpx.Response(200, json=[value])) as client:
+        [denial] = (await evaluate(client, *exchange, conversation_id=CONVERSATION)).denials
+    assert denial.is_escalation and not denial.user_can_approve and denial.reason == "Grading timed out"

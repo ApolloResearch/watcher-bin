@@ -659,7 +659,7 @@
           "ingest"
         ],
         "summary": "Ingest",
-        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\n``results[i]`` describes ``trajectories[i]``, including empty and duplicate\ninputs. Each result has a chunk endpoint, live leaf, and storage status.\nSet ``append_after`` and ``fork`` on the trajectory to continue or branch;\neither option requires exactly one Claude Code or Codex input. Released\naggregate fields retain their batch semantics.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nproxy-capture (Tailscale Aperture) attribution; keys carrying only\n``sessions:ingest`` write unattributed sessions.\n\nA Claude Code session id or Codex thread id names one session per\norganization. An upload attributed to a user (a signed-in user's, or one\nattributed through ``identity.login_name``) joins that session when it has\nno owner and makes the user its owner, including its linked descendants.\nA conflicting known owner in its ancestry or descendants also rejects the\nattribution atomically. When another user owns it, the\nrequest is rejected with 409 ``session_owner_conflict``: that trajectory\nis not stored, earlier trajectories in the request stay stored, and later\nones are not processed. An upload attributed to no user joins the session\nwhoever owns it and leaves the owner unchanged.",
+        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\n``results[i]`` describes ``trajectories[i]``, including empty and duplicate\ninputs. Each result has a chunk endpoint, live leaf, and storage status.\nSet ``append_after`` and ``fork`` on the trajectory to continue or branch;\neither option requires exactly one Claude Code, Codex, or Copilot input. Released\naggregate fields retain their batch semantics.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nproxy-capture (Tailscale Aperture) attribution; keys carrying only\n``sessions:ingest`` write unattributed sessions.\n\nA Claude Code session id or Codex thread id names one session per\norganization. An upload attributed to a user (a signed-in user's, or one\nattributed through ``identity.login_name``) joins that session when it has\nno owner and makes the user its owner, including its linked descendants.\nA conflicting known owner in its ancestry or descendants also rejects the\nattribution atomically. When another user owns it, the\nrequest is rejected with 409 ``session_owner_conflict``: that trajectory\nis not stored, earlier trajectories in the request stay stored, and later\nones are not processed. An upload attributed to no user joins the session\nwhoever owns it and leaves the owner unchanged.",
         "operationId": "ingest_v1_ingest_post",
         "requestBody": {
           "content": {
@@ -855,7 +855,7 @@
           "hooks"
         ],
         "summary": "Pre Tool Use Hook",
-        "description": "Evaluate one or several pending calls, or accept a transcript with no pending call.\n\nScalar input returns one decision or an HTTP refusal. A batch returns an\nordered result per input; a refused input carries status_code/detail while\nother inputs continue. Null or empty input returns an empty list and only\ningests the top-level `messages`. All inputs share one transcript, recorded\nonce along with successful judgments.\nDecisions attach to each input's `tool_use_id`. For evaluated requests,\n`ephemeral` skips transcript, decision, and grade persistence while retaining\nusage accounting. Enforce and observe both return completed judgments,\nincluding when ephemeral or the caller cannot record sessions.\n\nAn append cannot be ephemeral and requires authority to write its parent\nsession. It returns a HookAppendResponse containing the committed next\nanchor and an ordered results list, even for scalar or transcript-only\ninput. Messages and available decisions are stored before success; reuse\nthe returned anchor directly for the next append. Recording failure is\nHTTP 503 and can follow committed messages. Its body retains ordered\n`results`, including denies, without an `append_after` cursor. Apply those\ndecisions and retry the same append to finish recording.\n\n`settings_overrides` accepts YAML text or a JSON object and uses the normal\nadministrator permission rules. An override that changes a locked setting\nis refused with HTTP 422; one that repeats it is accepted. The effective `enforcement.mode` selects enforcement, observation,\nor ingestion only. Observe returns the completed judgment with a deferred\napplied decision. Paused and unnamed calls do not evaluate; authorized\ncallers still record the transcript. HTTP 422 errors use a list of detail\nentries, including validation and settings overrides.\n\nThe caller enforces returned decisions; this endpoint does not execute or\nblock tools itself. Deterministic stages precede triage and gateway grading.\n`mode=triage_only` bounds grading depth, while `skip_rules` and\n`policy_version` support clients that already evaluated deterministic stages.\nStage waits are bounded in both enforce and observe, but detached grades\ncan finish and count usage after a timeout or disconnect.\nCallers own transport-failure handling.\n\nCompleted evaluations are reused per org, session and tool-use ID when the\nstored name and JSON arguments match. Current enforcement posture is applied\nto the original judgment; policy or grading-depth changes do not invalidate\nit. `force_regrade=true` evaluates again and permits replacing the recorded\ndecision, including with an observation. Failed and unjudged evaluations\nretry normally. Reuse requires known external IDs, ingestion authority and\npermission to read the resolved session; id-less, ephemeral and write-only\ncallers evaluate normally, as do unknown stored call metadata shapes.\nReuse creates no new grades, usage or alerts, though the transcript still\ningests. Concurrent misses and retries before post-response recording may\nevaluate more than once. Paused mode never evaluates, even when forced.\n\nWith `format=\"raw\"`, send a provider request (`request_body`) and its\ncomplete response (`response_body`) in one supported wire format (OpenAI\nChat Completions or Responses, Anthropic Messages, Gemini generateContent\nor Bedrock Converse) plus the client-facing endpoint path in `url`, instead\nof `messages` and `input`. Watcher converts the pair and evaluates the\nselected new client calls. The response is a list, one output per selected\ncall in response order; each `tool_use_id` is the provider's call ID.\nGemini calls get generated IDs and are matched by order within the selected\ncandidate. `response_index` selects by zero-based array position and is\nrequired when there are multiple alternatives. Deliver only the selected\nchoice or candidate. Match every\nexecutable client call to exactly one output before applying its decision.\nWithhold the response if a call has no output, IDs are duplicated, or an\noutput cannot be matched to a call. For Gemini, require equal call and output\ncounts. An error output is not permission to execute a call.\n\nAnthropic calls before the final `fallback` block have no output. An empty\nlist means no client calls were selected, not that the original response\ncontains none. There is no limit on the number of tool calls in one response.\nKnown coding harnesses are recognized from the request and `user_agent` and\ncontribute their session IDs. Their own helper requests without selected\nclient calls (Claude Code background requests, Codex thread titles,\napproval reviews and memory extraction, Antigravity titles) return `[]`\nand are not recorded. The gateway still checks those responses for\nexecutable calls.",
+        "description": "Evaluate one or several pending calls, or accept a transcript with no pending call.\n\nScalar input returns one decision or an HTTP refusal. A batch returns an\nordered result per input; a refused input carries status_code/detail while\nother inputs continue. Null or empty input returns an empty list and only\ningests the top-level `messages`. All inputs share one transcript, recorded\nonce along with successful judgments.\nDecisions attach to each input's `tool_use_id`. For evaluated requests,\n`ephemeral` skips transcript, decision, and grade persistence while retaining\nusage accounting. `record_transcript=false` skips only transcript and\ndecision persistence: grades are stored under the conversation's stored\nsession, when there is one, for the caller's own decision upload to cite.\nEnforce and observe both return completed judgments,\nincluding when ephemeral or the caller cannot record sessions.\n\nAn append cannot be ephemeral and requires authority to write its parent\nsession. It returns a HookAppendResponse containing the committed next\nanchor and an ordered results list, even for scalar or transcript-only\ninput. Messages and available decisions are stored before success; reuse\nthe returned anchor directly for the next append. Recording failure is\nHTTP 503 and can follow committed messages. Its body retains ordered\n`results`, including denies, without an `append_after` cursor. Apply those\ndecisions and retry the same append to finish recording.\n\n`settings_overrides` accepts YAML text or a JSON object and uses the normal\nadministrator permission rules. An override that changes a locked setting\nis refused with HTTP 422; one that repeats it is accepted. The effective `enforcement.mode` selects enforcement, observation,\nor ingestion only. Observe returns the completed judgment with a deferred\napplied decision. Paused and unnamed calls do not evaluate; authorized\ncallers still record the transcript. HTTP 422 errors use a list of detail\nentries, including validation and settings overrides.\n\nThe caller enforces returned decisions; this endpoint does not execute or\nblock tools itself. Deterministic stages precede triage and gateway grading.\n`mode=triage_only` bounds grading depth, while `skip_rules` and\n`policy_version` support clients that already evaluated deterministic stages.\nStage waits are bounded in both enforce and observe, but detached grades\ncan finish and count usage after a timeout or disconnect.\nCallers own transport-failure handling.\n\nCompleted evaluations are reused per org, session and tool-use ID when the\nstored name and JSON arguments match. Current enforcement posture is applied\nto the original judgment; policy or grading-depth changes do not invalidate\nit. `force_regrade=true` evaluates again and permits replacing the recorded\ndecision, including with an observation. Failed and unjudged evaluations\nretry normally. Reuse requires known external IDs, ingestion authority and\npermission to read the resolved session; id-less, ephemeral and write-only\ncallers evaluate normally, as do unknown stored call metadata shapes.\nReuse creates no new grades, usage or alerts, though the transcript still\ningests. Concurrent misses and retries before post-response recording may\nevaluate more than once. Paused mode never evaluates, even when forced.\n\nWith `format=\"raw\"`, send a provider request (`request_body`) and its\ncomplete response (`response_body`) in one supported wire format (OpenAI\nChat Completions or Responses, Anthropic Messages, Gemini generateContent\nor Bedrock Converse) plus the client-facing endpoint path in `url`, instead\nof `messages` and `input`. Watcher converts the pair and evaluates the\nselected new client calls. The response is a list, one output per selected\ncall in response order; each `tool_use_id` is the provider's call ID.\nGemini calls get generated IDs and are matched by order within the selected\ncandidate. `response_index` selects by zero-based array position and is\nrequired when there are multiple alternatives. Deliver only the selected\nchoice or candidate. Match every\nexecutable client call to exactly one output before applying its decision.\nWithhold the response if a call has no output, IDs are duplicated, or an\noutput cannot be matched to a call. For Gemini, require equal call and output\ncounts. An error output is not permission to execute a call.\n\nAnthropic calls before the final `fallback` block have no output. An empty\nlist means no client calls were selected, not that the original response\ncontains none. There is no limit on the number of tool calls in one response.\nKnown coding harnesses are recognized from the request and `user_agent` and\ncontribute their session IDs. Their own helper requests without selected\nclient calls (Claude Code background requests, Codex thread titles,\napproval reviews and memory extraction, Antigravity titles) return `[]`\nand are not recorded. The gateway still checks those responses for\nexecutable calls.",
         "operationId": "pre_tool_use_hook_v1_hooks_pre_tool_use_post",
         "requestBody": {
           "content": {
@@ -884,6 +884,7 @@
                   "mapping": {
                     "watcher": "#/components/schemas/PreToolUseHookRequest",
                     "claude-code-jsonl": "#/components/schemas/ClaudeCodeHookRequest",
+                    "claude-code-trajectory": "#/components/schemas/ClaudeCodeHookRequest",
                     "codex-jsonl": "#/components/schemas/CodexHookRequest",
                     "copilot-events-jsonl": "#/components/schemas/CopilotHookRequest",
                     "raw": "#/components/schemas/RawPreToolUseHookRequest"
@@ -951,13 +952,64 @@
         }
       }
     },
+    "/v1/hooks/aperture/entire-request": {
+      "post": {
+        "tags": [
+          "hooks"
+        ],
+        "summary": "Aperture Entire Request Hook",
+        "description": "Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous monitoring.\n\nConfigure Aperture with events=[\"entire_request\"] and\nsend=[\"request_body\", \"response_body\"]. The API key must have\nsessions:write:any so metadata.login_name can attribute the session.\nAdmin enforcement.mode selects observation or ingestion only (paused);\nthis asynchronous transport always caps enforcement at observe. Only tool\ncalls in the response are evaluated. Text-only turns are ingested too.\n\nA 202 confirms admission, not completed grading or durable storage.\nUnsupported formats and malformed provider bodies are logged after the\nACK. Captures require recognized coding-harness identity, using the\nper-format markers documented in the hooks reference. Other applications\nare skipped; those the raw capture already identifies are answered 202\nwithout being admitted (see the module docstring). While agent inventory\nis on, any capture also records a sighting of its client: the client's\nname and the person, nothing else.",
+        "operationId": "aperture_entire_request_hook_v1_hooks_aperture_entire_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApertureHookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApertureHookAccepted"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot attribute sessions to the webhook's developer"
+          },
+          "413": {
+            "description": "The webhook exceeds the hook request size limit"
+          },
+          "503": {
+            "description": "The bounded delivery workers are full; this delivery was not accepted"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/hooks/aperture": {
       "post": {
         "tags": [
           "hooks"
         ],
         "summary": "Aperture Entire Request Hook",
-        "description": "Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous monitoring.\n\nConfigure Aperture with events=[\"entire_request\"] and\nsend=[\"request_body\", \"response_body\"]. The API key must have\nsessions:write:any so metadata.login_name can attribute the session.\nAdmin enforcement.mode selects observation or ingestion only (paused);\nthis asynchronous transport always caps enforcement at observe. Only tool\ncalls in the response are evaluated. Text-only turns are ingested too.\n\nA 202 confirms admission, not completed grading or durable storage.\nUnsupported formats and malformed provider bodies are logged after the\nACK. Captures require recognized coding-harness identity, using the\nper-format markers documented in the hooks reference. Other applications\nare skipped; those the raw capture already identifies are answered 202\nwithout being admitted (see the module docstring).",
+        "description": "Deprecated Tailscale Aperture observation alias for POST /v1/hooks/aperture/entire-request. Existing subscriptions remain supported.",
         "operationId": "aperture_entire_request_hook_v1_hooks_aperture_post",
         "requestBody": {
           "content": {
@@ -988,6 +1040,91 @@
           },
           "503": {
             "description": "The bounded delivery workers are full; this delivery was not accepted"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true
+      }
+    },
+    "/v1/hooks/aperture/pre-response": {
+      "post": {
+        "tags": [
+          "hooks"
+        ],
+        "summary": "Aperture Pre Response Hook",
+        "description": "Evaluate Aperture's pending tool calls before the gateway releases them.\n\nConfigure a blocking tool_call_pre_response hook sending request_body,\nresponse_body and tools, with fail_policy=\"fail_closed\" and a timeout exceeding\n300 seconds. The authenticated caller requires sessions:write:any; Aperture\nmetadata attributes the captured conversation to its developer. The server\napplies the organization's existing enforcement and grading-failure policy.\nDenied shell calls become harmless notice commands. Other denied tools\nblock the pending callback. There is no resampling or tool-name replacement.\nRefused calls are recorded before responding; allowed calls record asynchronously.",
+        "operationId": "aperture_pre_response_hook_v1_hooks_aperture_pre_response_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AperturePreResponseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AperturePreResponseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/hooks/aperture/pre-request": {
+      "post": {
+        "tags": [
+          "hooks"
+        ],
+        "summary": "Aperture Pre Request Hook",
+        "description": "Insert the fixed shell-rewrite notice without grading or policy lookups.\n\nConfigure Aperture's pre_request event with request_body and fail_open.\nThis hook is informational; enforcement remains on tool_call_pre_response.",
+        "operationId": "aperture_pre_request_hook_v1_hooks_aperture_pre_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AperturePreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AperturePreRequestResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -1404,7 +1541,7 @@
           "sessions"
         ],
         "summary": "Get Session Filter Options Endpoint",
-        "description": "List category filter options from the score definitions of session-visible graders.",
+        "description": "List filter options: grader score categories and the machine hostnames on readable sessions.",
         "operationId": "get_session_filter_options_endpoint_v1_sessions_filter_options_get",
         "responses": {
           "200": {
@@ -2975,6 +3112,407 @@
           }
         }
       }
+    },
+    "/v1/installations/{installation_id}/reports": {
+      "post": {
+        "tags": [
+          "installations"
+        ],
+        "summary": "Post Installation Report Endpoint",
+        "description": "Store one report from a Watcher client installation.\n\nSend a report after every scan, with a new `report_id`; retry a failed request with the same one. A\nreport whose ID is already stored changes nothing and returns 200 with `duplicate`. The installation is\nregistered to the signed-in user on its first report, never to anything in the body. Agent IDs and\nvalues this server does not recognize are ignored. Organization API keys cannot report.",
+        "operationId": "post_installation_report_endpoint_v1_installations__installation_id__reports_post",
+        "parameters": [
+          {
+            "name": "installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Installation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationReportResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "This report ID was already stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationReportResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Agent inventory is off in your organization's managed settings (code `inventory_disabled`): report again at the next scan. Or this installation ID belongs to another user (code `installation_conflict`): generate a new installation ID and report again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationReportErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body exceeds 64 KiB."
+          },
+          "422": {
+            "description": "The report breaks the schema or a limit, or the credential has no user (code `inventory_requires_user`)."
+          }
+        }
+      }
+    },
+    "/v1/agent-inventory/summary": {
+      "get": {
+        "tags": [
+          "agent-inventory"
+        ],
+        "summary": "Get Agent Inventory Summary Endpoint",
+        "description": "Organization-wide agent inventory counts: people, machines and coverage for each agent.\n\nCounts only; no names, email addresses or host names. Recent means the last 7 days.",
+        "operationId": "get_agent_inventory_summary_endpoint_v1_agent_inventory_summary_get",
+        "parameters": [
+          {
+            "name": "unsanctioned",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Agent IDs to count in `unsanctioned_people`, and `unrecognized` for every unrecognized gateway client; repeat the parameter for each. Other values are ignored.",
+              "title": "Unsanctioned"
+            },
+            "description": "Agent IDs to count in `unsanctioned_people`, and `unrecognized` for every unrecognized gateway client; repeat the parameter for each. Other values are ignored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInventorySummaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agent-inventory/installations": {
+      "get": {
+        "tags": [
+          "agent-inventory"
+        ],
+        "summary": "List Agent Inventory Installations Endpoint",
+        "description": "List machines running the Watcher client, with their owner and agents, most recently reported first.\n\nOther people's email addresses are hidden unless you may read user emails. Dates are UTC dates.",
+        "operationId": "list_agent_inventory_installations_endpoint_v1_agent_inventory_installations_get",
+        "parameters": [
+          {
+            "name": "agent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_]{0,63}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Machines with this agent.",
+              "title": "Agent"
+            },
+            "description": "Machines with this agent."
+          },
+          {
+            "name": "coverage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "monitored",
+                    "gap"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Machines with an agent in this coverage state.",
+              "title": "Coverage"
+            },
+            "description": "Machines with an agent in this coverage state."
+          },
+          {
+            "name": "installation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One machine.",
+              "title": "Installation Id"
+            },
+            "description": "One machine."
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Machines this person owns.",
+              "title": "User Id"
+            },
+            "description": "Machines this person owns."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInventoryInstallationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agent-inventory/users": {
+      "get": {
+        "tags": [
+          "agent-inventory"
+        ],
+        "summary": "List Agent Inventory Users Endpoint",
+        "description": "List people seen in the last 7 days, with their machines and the agents they used, most recently active first.\n\nOther people's email addresses are hidden unless you may read user emails; a person a gateway named is a\nWatcher user whose email is the login the gateway reported. Dates are UTC dates.",
+        "operationId": "list_agent_inventory_users_endpoint_v1_agent_inventory_users_get",
+        "parameters": [
+          {
+            "name": "agent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_]{0,63}$"
+                  },
+                  "maxItems": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "People who used any of these agents in the last 7 days, and `unrecognized` for any unrecognized gateway client; repeat the parameter for each.",
+              "title": "Agent"
+            },
+            "description": "People who used any of these agents in the last 7 days, and `unrecognized` for any unrecognized gateway client; repeat the parameter for each."
+          },
+          {
+            "name": "coverage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "monitored",
+                    "gap"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "People with this coverage for one of the `agent` values, or for any agent.",
+              "title": "Coverage"
+            },
+            "description": "People with this coverage for one of the `agent` values, or for any agent."
+          },
+          {
+            "name": "reporting",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "True: people with a machine that reported in the last 7 days; false: others.",
+              "title": "Reporting"
+            },
+            "description": "True: people with a machine that reported in the last 7 days; false: others."
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 400
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One person, by the `key` from this list.",
+              "title": "Key"
+            },
+            "description": "One person, by the `key` from this list."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInventoryUserListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3181,6 +3719,1021 @@
         ],
         "title": "AdminSessionContentAccessRequestListResponse",
         "description": "A page of organization requests, ordered newest first."
+      },
+      "AgentInventoryCoverageCounts": {
+        "properties": {
+          "monitored": {
+            "type": "integer",
+            "title": "Monitored",
+            "description": "Watcher received a session from them for this agent in the last 7 days."
+          },
+          "gap": {
+            "type": "integer",
+            "title": "Gap",
+            "description": "Watcher received no session from them for this agent in the last 7 days."
+          },
+          "not_supported": {
+            "type": "integer",
+            "title": "Not Supported",
+            "description": "Watcher cannot monitor this agent."
+          }
+        },
+        "type": "object",
+        "required": [
+          "monitored",
+          "gap",
+          "not_supported"
+        ],
+        "title": "AgentInventoryCoverageCounts",
+        "description": "People who used an agent in the last 7 days, by coverage."
+      },
+      "AgentInventoryGatewayClient": {
+        "properties": {
+          "client_name": {
+            "type": "string",
+            "title": "Client Name",
+            "description": "An agent ID for recognized agents, otherwise the product name from the user agent."
+          },
+          "recognized": {
+            "type": "boolean",
+            "title": "Recognized",
+            "description": "Whether the client is an agent the inventory knows."
+          },
+          "people": {
+            "type": "integer",
+            "title": "People",
+            "description": "People seen using it at the gateway who have no machine reporting it."
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Seen At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_name",
+          "recognized",
+          "people",
+          "last_seen_at"
+        ],
+        "title": "AgentInventoryGatewayClient",
+        "description": "A client seen only in gateway traffic in the last 7 days."
+      },
+      "AgentInventoryGatewaySummary": {
+        "properties": {
+          "people": {
+            "type": "integer",
+            "title": "People",
+            "description": "People with any gateway traffic in the last 7 days."
+          },
+          "unrecognized_people": {
+            "type": "integer",
+            "title": "Unrecognized People",
+            "description": "People seen using any unrecognized client in the last 7 days."
+          },
+          "only_at_gateway": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryGatewayClient"
+            },
+            "type": "array",
+            "title": "Only At Gateway",
+            "description": "Every unrecognized client, and recognized agents used at the gateway by people with no machine reporting that agent's recent use."
+          }
+        },
+        "type": "object",
+        "required": [
+          "people",
+          "unrecognized_people",
+          "only_at_gateway"
+        ],
+        "title": "AgentInventoryGatewaySummary",
+        "description": "Clients seen in traffic through gateways connected to Watcher in the last 7 days."
+      },
+      "AgentInventoryInstallation": {
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Installation Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email",
+            "description": "Hidden unless you may read other people's email addresses."
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os"
+          },
+          "arch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arch"
+          },
+          "client_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Version"
+          },
+          "first_report_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "First Report At"
+          },
+          "last_report_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Report At"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryInstallationAgent"
+            },
+            "type": "array",
+            "title": "Agents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installation_id",
+          "user_id",
+          "user_name",
+          "user_email",
+          "hostname",
+          "os",
+          "arch",
+          "client_version",
+          "first_report_at",
+          "last_report_at",
+          "agents"
+        ],
+        "title": "AgentInventoryInstallation",
+        "description": "One machine running the Watcher client, with its owner and agents."
+      },
+      "AgentInventoryInstallationAgent": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "use_detected": {
+            "type": "boolean",
+            "title": "Use Detected",
+            "description": "Whether the Watcher client can tell when this agent was last used."
+          },
+          "surfaces": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Surfaces"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "last_used_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used On",
+            "description": "The UTC date the agent was last used."
+          },
+          "recent_sessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recent Sessions",
+            "description": "Session files modified in the last 7 days, when countable."
+          },
+          "watcher_hooks": {
+            "type": "string",
+            "title": "Watcher Hooks",
+            "description": "Whether Watcher's hooks are set up for this agent on this machine: `on`; `off` when the agent is turned on in Watcher but its hooks are not installed; `disabled` when the agent is turned off in Watcher; or `not_applicable` when Watcher has no hooks for it."
+          },
+          "settings_folder_only": {
+            "type": "boolean",
+            "title": "Settings Folder Only",
+            "description": "True when the only trace of the agent on this machine is its settings folder."
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "monitored",
+                  "gap",
+                  "not_supported"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage",
+            "description": "The owner's coverage for this agent; null when neither this machine nor Watcher's sessions show use in the last 7 days."
+          },
+          "coverage_via": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "client",
+                  "gateway",
+                  "both"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Via",
+            "description": "When `coverage` is `monitored`, how Watcher received the owner's sessions for this agent in the last 7 days: `client` through the Watcher client, `gateway` through a gateway or another API integration, or `both`. Null for any other coverage, or when the sessions do not record how they arrived."
+          },
+          "watcher_sessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watcher Sessions",
+            "description": "The owner's Watcher sessions for this agent active in the last 7 days, from any of their machines or a gateway; null when Watcher cannot receive sessions from the agent."
+          },
+          "machine_watcher_sessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Watcher Sessions",
+            "description": "The owner's Watcher sessions for this agent active in the last 7 days recorded with this machine's hostname, matched as the session list's machine filter matches. Sessions with no recorded hostname, such as those through a gateway or SDK, are not counted, and the owner's machines with the same hostname share the count. Null when Watcher cannot receive sessions from the agent or the machine reported no hostname."
+          },
+          "last_session_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Session At",
+            "description": "The owner's newest Watcher session for this agent, of any age."
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "supported",
+          "use_detected",
+          "surfaces",
+          "version",
+          "last_used_on",
+          "recent_sessions",
+          "watcher_hooks",
+          "settings_folder_only",
+          "coverage",
+          "coverage_via"
+        ],
+        "title": "AgentInventoryInstallationAgent",
+        "description": "One agent on one machine."
+      },
+      "AgentInventoryInstallationListResponse": {
+        "properties": {
+          "installations": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryInstallation"
+            },
+            "type": "array",
+            "title": "Installations"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installations",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AgentInventoryInstallationListResponse",
+        "description": "A page of machines, most recently reported first."
+      },
+      "AgentInventoryReportAgent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9_]{0,63}$",
+            "title": "Id",
+            "description": "The agent's inventory ID."
+          },
+          "surfaces": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Surfaces",
+            "description": "Where the agent is installed: `cli`, `ide`, `ide_extension`, `desktop_app` or `sdk`."
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version",
+            "description": "The newest installed version, if known."
+          },
+          "last_used_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used On",
+            "description": "The UTC date the agent was last used, if known."
+          },
+          "recent_sessions": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recent Sessions",
+            "description": "Session files modified in the last 7 days, or null when they cannot be counted."
+          },
+          "watcher_hooks": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Watcher Hooks",
+            "description": "Whether Watcher's hooks are set up for this agent: `on`; `off` when the agent is turned on in Watcher but its hooks are not installed; `disabled` when the agent is turned off in Watcher; or `not_applicable` when Watcher has no hooks for it.",
+            "default": "not_applicable"
+          },
+          "settings_folder_only": {
+            "type": "boolean",
+            "title": "Settings Folder Only",
+            "description": "True when the only trace of the agent is its settings folder: no installed program, extension or app, and no session files. Someone set the agent up on this machine once; it may have been removed.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "AgentInventoryReportAgent",
+        "description": "One agent found on the machine."
+      },
+      "AgentInventoryStatus": {
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At",
+            "description": "When the Watcher client ran the scan. A retried report keeps its original time."
+          },
+          "client_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Version"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os",
+            "description": "`macos` or `linux`."
+          },
+          "arch": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arch",
+            "description": "`arm64` or `x86_64`."
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryReportAgent"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Agents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed_at"
+        ],
+        "title": "AgentInventoryStatus",
+        "description": "The `inventory` section of an installation report: the coding agents one scan found on the machine.\n\nSend the full list each time."
+      },
+      "AgentInventorySummaryAgent": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported",
+            "description": "Whether Watcher can monitor this agent."
+          },
+          "use_detected": {
+            "type": "boolean",
+            "title": "Use Detected",
+            "description": "Whether the Watcher client can tell when this agent was last used. Without that, machines never report using it, so its coverage counts come only from sessions Watcher received."
+          },
+          "machines": {
+            "type": "integer",
+            "title": "Machines",
+            "description": "Machines where the agent is installed."
+          },
+          "machines_recent": {
+            "type": "integer",
+            "title": "Machines Recent",
+            "description": "Machines where the agent was used in the last 7 days."
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/AgentInventoryCoverageCounts"
+          },
+          "gateway_people": {
+            "type": "integer",
+            "title": "Gateway People",
+            "description": "People whose gateway traffic for this agent was seen in the last 7 days."
+          },
+          "watcher_people": {
+            "type": "integer",
+            "title": "Watcher People",
+            "description": "People whose sessions for this agent reached Watcher in the last 7 days, by any route."
+          },
+          "people_using": {
+            "type": "integer",
+            "title": "People Using",
+            "description": "People who used the agent in the last 7 days: on a reporting machine, in sessions Watcher received or through a gateway. Only people the user list shows are counted."
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "supported",
+          "use_detected",
+          "machines",
+          "machines_recent",
+          "coverage",
+          "gateway_people",
+          "watcher_people",
+          "people_using"
+        ],
+        "title": "AgentInventorySummaryAgent",
+        "description": "Counts for one agent across your organization."
+      },
+      "AgentInventorySummaryResponse": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "machines": {
+            "type": "integer",
+            "title": "Machines",
+            "description": "Machines that reported in the last 90 days."
+          },
+          "people": {
+            "type": "integer",
+            "title": "People",
+            "description": "People who own those machines."
+          },
+          "people_seen": {
+            "type": "integer",
+            "title": "People Seen",
+            "description": "People seen in the last 7 days, as the owner of a reporting machine or through a gateway: the base for every share of people."
+          },
+          "people_reporting": {
+            "type": "integer",
+            "title": "People Reporting",
+            "description": "People who own a machine that reported in the last 7 days."
+          },
+          "gap_people": {
+            "type": "integer",
+            "title": "Gap People",
+            "description": "People with a coverage gap for at least one agent. The machine list filtered by `coverage=gap` shows their machines."
+          },
+          "unsanctioned_people": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsanctioned People",
+            "description": "People who used any agent named in the `unsanctioned` query parameter in the last 7 days, on a reporting machine or through a gateway; null when the parameter is absent."
+          },
+          "newest_report_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest Report At"
+          },
+          "recent_days": {
+            "type": "integer",
+            "title": "Recent Days",
+            "description": "How many days count as recent."
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventorySummaryAgent"
+            },
+            "type": "array",
+            "title": "Agents"
+          },
+          "gateway": {
+            "$ref": "#/components/schemas/AgentInventoryGatewaySummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "machines",
+          "people",
+          "people_seen",
+          "people_reporting",
+          "gap_people",
+          "unsanctioned_people",
+          "newest_report_at",
+          "recent_days",
+          "agents",
+          "gateway"
+        ],
+        "title": "AgentInventorySummaryResponse",
+        "description": "Organization-wide agent inventory counts.\n\nAgents with `people_using` of 0 are installed but unused; agents with `machines` of 0 are used by people whose\nmachines do not report them, seen through a gateway or in sessions Watcher received."
+      },
+      "AgentInventoryUser": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "Identifies the person in this list: `user:<user ID>` for a Watcher user, including people a gateway named, or `gateway:no-identity` for gateway traffic that named nobody."
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email",
+            "description": "Hidden unless you may read other people's email addresses."
+          },
+          "last_report_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Report At",
+            "description": "The newest report from any of their machines."
+          },
+          "machines": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryUserMachine"
+            },
+            "type": "array",
+            "title": "Machines",
+            "description": "All their machines, most recently reported first."
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryUserAgent"
+            },
+            "type": "array",
+            "title": "Agents",
+            "description": "The agents they used in the last 7 days."
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "user_id",
+          "user_name",
+          "user_email",
+          "last_report_at",
+          "machines",
+          "agents"
+        ],
+        "title": "AgentInventoryUser",
+        "description": "One person seen in the last 7 days, with their machines and the agents they used."
+      },
+      "AgentInventoryUserAgent": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id",
+            "description": "The agent ID, or the client name for an unrecognized gateway client."
+          },
+          "recognized": {
+            "type": "boolean",
+            "title": "Recognized",
+            "description": "Whether the client is an agent the inventory knows."
+          },
+          "use_detected": {
+            "type": "boolean",
+            "title": "Use Detected",
+            "description": "Whether the Watcher client can tell when this agent was last used; false for unrecognized gateway clients."
+          },
+          "seen_via": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "client",
+                  "gateway",
+                  "both"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seen Via",
+            "description": "Where inventory saw the use: on one of their machines, in gateway traffic, or both; null when only sessions Watcher received show it."
+          },
+          "last_used_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used On",
+            "description": "The latest UTC date the agent was used on one of their machines; null when no machine reports it."
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At",
+            "description": "When it was last seen in their gateway traffic, if it was."
+          },
+          "versions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Versions",
+            "description": "The distinct versions on the machines where they used it recently."
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "monitored",
+                  "gap",
+                  "not_supported"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage",
+            "description": "The person's coverage for this agent; null when it was only seen at a gateway and Watcher received no session for it."
+          },
+          "coverage_via": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "client",
+                  "gateway",
+                  "both"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Via",
+            "description": "When `coverage` is `monitored`, how Watcher received their sessions: `client`, `gateway` or `both`; null otherwise."
+          },
+          "watcher_hooks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Watcher Hooks",
+            "description": "The distinct Watcher hook states on the machines where they used it recently: `on`, `off`, `disabled` or `not_applicable`. Explains a gap."
+          },
+          "watcher_sessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watcher Sessions",
+            "description": "The person's Watcher sessions for this agent active in the last 7 days, from any of their machines or a gateway; null when Watcher cannot receive sessions from the agent."
+          },
+          "last_session_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Session At",
+            "description": "The person's newest Watcher session for this agent, of any age."
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "recognized",
+          "use_detected",
+          "seen_via",
+          "last_used_on",
+          "last_seen_at",
+          "versions",
+          "coverage",
+          "coverage_via",
+          "watcher_hooks"
+        ],
+        "title": "AgentInventoryUserAgent",
+        "description": "One agent or gateway client a person used in the last 7 days."
+      },
+      "AgentInventoryUserListResponse": {
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryUser"
+            },
+            "type": "array",
+            "title": "Users"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "users",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AgentInventoryUserListResponse",
+        "description": "A page of people, most recently active first."
+      },
+      "AgentInventoryUserMachine": {
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Installation Id"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os"
+          },
+          "last_report_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Report At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "installation_id",
+          "hostname",
+          "os",
+          "last_report_at"
+        ],
+        "title": "AgentInventoryUserMachine",
+        "description": "One of a person's machines running the Watcher client."
       },
       "AgentRelationshipRequest": {
         "properties": {
@@ -3414,6 +4967,213 @@
         ],
         "title": "ApertureLog",
         "description": "A whole-file Tailscale Aperture proxy capture, referenced by its object storage location."
+      },
+      "AperturePreRequest": {
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/ApertureHookMetadata"
+          },
+          "request_body": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Request Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metadata",
+          "request_body"
+        ],
+        "title": "AperturePreRequest",
+        "description": "Aperture's original provider request before inference."
+      },
+      "AperturePreRequestResponse": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "modify"
+            ],
+            "title": "Action"
+          },
+          "request_body": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "AperturePreRequestResponse",
+        "description": "Allow unchanged requests or replace the entire body with the notice added."
+      },
+      "AperturePreResponseRequest": {
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/ApertureHookMetadata"
+          },
+          "request_body": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Request Body"
+          },
+          "response_body": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Response Body"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ApertureSelectedToolCall"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Calls"
+          },
+          "response_window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApertureResponseWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "metadata",
+          "request_body",
+          "response_body"
+        ],
+        "title": "AperturePreResponseRequest",
+        "description": "Blocking callback with original context and the exact calls awaiting release."
+      },
+      "AperturePreResponseResponse": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "block",
+              "modify"
+            ],
+            "title": "Action"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ApertureToolModification"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Calls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "AperturePreResponseResponse",
+        "description": "Allow, replace selected call arguments, or block the pending callback."
+      },
+      "ApertureResponseWindow": {
+        "properties": {
+          "final": {
+            "type": "boolean",
+            "title": "Final"
+          }
+        },
+        "type": "object",
+        "required": [
+          "final"
+        ],
+        "title": "ApertureResponseWindow",
+        "description": "Whether Aperture has completed this buffered response window."
+      },
+      "ApertureSelectedToolCall": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "params": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "params"
+        ],
+        "title": "ApertureSelectedToolCall",
+        "description": "One complete pending call supplied by Aperture's tool-call hook."
+      },
+      "ApertureToolModification": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "params": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "params"
+        ],
+        "title": "ApertureToolModification",
+        "description": "Argument replacement for an existing native call; its tool and ID stay fixed."
       },
       "AppliedDecision": {
         "type": "string",
@@ -4552,6 +6312,68 @@
         "title": "ClaudeCodeAttachment",
         "description": "Payload of an ``attachment``-type JSONL entry.\n\nAttachments carry out-of-band context injected into the conversation (hook\noutput, task reminders, diagnostics, ...). Almost all of them are telemetry,\nwith one exception that matters for ingestion: ``type == \"queued_command\"``\nrecords the delivery of a message the human typed while the agent was\nmid-turn. Queued messages are written to the JSONL *only* as this attachment\n(plus a ``queue-operation`` enqueue record) \u2014 there is no corresponding\n``user`` entry \u2014 so the human's words live exclusively in ``prompt``.\n\n``prompt`` is a plain string for text-only messages, or a list of content\nblocks when the queued message included images. Empirically no other\nattachment type carries a ``prompt``."
       },
+      "ClaudeCodeCurrentTrajectory": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "format": {
+            "type": "string",
+            "const": "claude-code-trajectory",
+            "title": "Format"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ClaudeCodeEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaudeCodeAgentIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "format",
+          "entries"
+        ],
+        "title": "ClaudeCodeCurrentTrajectory",
+        "description": "One ordered Claude conversation, supplied as context to the V1 hook.\n\nClients select the active path with the shared Claude transport selector.\nMessage order is authoritative; parent pointers are retained as native\nmetadata, without reconstructing abandoned branches. Include compaction\nboundaries and queued-command aliases. The hook stores complete call\ncycles only, just as for a full file. Complete history still belongs to\ningestion. Child requests require the same explicit agent identity as uploads."
+      },
       "ClaudeCodeEntry": {
         "properties": {
           "type": {
@@ -4829,6 +6651,12 @@
             "title": "Ephemeral",
             "default": false
           },
+          "record_transcript": {
+            "type": "boolean",
+            "title": "Record Transcript",
+            "description": "Set false to grade without storing this request's messages or a decision, while still storing the grades under the conversation the external IDs name, when that conversation is already stored, and returning their IDs. For a caller that stores the agent's transcript file through its own uploads and sends only part of it here: its decision upload cites the returned grade IDs once the call is stored. Only with an agent's own transcript file (not format watcher); requires at least one non-null external ID; cannot be combined with ephemeral or append_after.",
+            "default": true
+          },
           "force_regrade": {
             "type": "boolean",
             "title": "Force Regrade",
@@ -4876,12 +6704,30 @@
           },
           "format": {
             "type": "string",
-            "const": "claude-code-jsonl",
+            "enum": [
+              "claude-code-jsonl",
+              "claude-code-trajectory"
+            ],
             "title": "Format"
           },
           "messages": {
-            "$ref": "#/components/schemas/ClaudeCodeTrajectory",
-            "description": "The Claude Code session file as JSONL entries (or only those after append_after), in the shape trajectory ingestion accepts."
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClaudeCodeTrajectory"
+              },
+              {
+                "$ref": "#/components/schemas/ClaudeCodeCurrentTrajectory"
+              }
+            ],
+            "title": "Messages",
+            "description": "The Claude Code session file, or its selected current trajectory in canonical message order. With append_after, send only the continuation after that acknowledged message. Current-trajectory requests may branch from an earlier acknowledgment; the uploader records other branches.",
+            "discriminator": {
+              "propertyName": "format",
+              "mapping": {
+                "claude-code-jsonl": "#/components/schemas/ClaudeCodeTrajectory",
+                "claude-code-trajectory": "#/components/schemas/ClaudeCodeCurrentTrajectory"
+              }
+            }
           }
         },
         "additionalProperties": false,
@@ -4891,7 +6737,7 @@
           "messages"
         ],
         "title": "ClaudeCodeHookRequest",
-        "description": "Judge pending calls with a Claude Code session's own JSONL transcript as their context.\n\n``messages`` holds the session file's entries, or only those after\n``append_after``. Claude Code's hooks report every call with its\n``tool_use_id`` and in the shape the model sent it, so a selected call is\nchecked against the file's record of that ID when the file holds it, and\njudged from the report alone when the agent has not written it yet."
+        "description": "Judge pending calls with a Claude Code session's own JSONL transcript as their context.\n\n``messages`` holds the session file's entries, or only those after\n``append_after``. Claude Code's hooks report every call with its\n``tool_use_id`` and in the shape the model sent it, so a selected call is\nchecked against the file's record of that ID when the file holds it, and\njudged from the report alone when the agent has not written it yet.\n\n``claude-code-trajectory`` supplies one already-selected conversation in\ncanonical order. This format permits an interior ``append_after`` under\nhash scheme 3; leave ``fork`` unset. Older schemes keep the ordinary\nnon-leaf refusal. Complete-history recording belongs to the uploader."
       },
       "ClaudeCodeTrajectory": {
         "properties": {
@@ -5200,6 +7046,12 @@
             "type": "boolean",
             "title": "Ephemeral",
             "default": false
+          },
+          "record_transcript": {
+            "type": "boolean",
+            "title": "Record Transcript",
+            "description": "Set false to grade without storing this request's messages or a decision, while still storing the grades under the conversation the external IDs name, when that conversation is already stored, and returning their IDs. For a caller that stores the agent's transcript file through its own uploads and sends only part of it here: its decision upload cites the returned grade IDs once the call is stored. Only with an agent's own transcript file (not format watcher); requires at least one non-null external ID; cannot be combined with ephemeral or append_after.",
+            "default": true
           },
           "force_regrade": {
             "type": "boolean",
@@ -6486,6 +8338,12 @@
             "title": "Ephemeral",
             "default": false
           },
+          "record_transcript": {
+            "type": "boolean",
+            "title": "Record Transcript",
+            "description": "Set false to grade without storing this request's messages or a decision, while still storing the grades under the conversation the external IDs name, when that conversation is already stored, and returning their IDs. For a caller that stores the agent's transcript file through its own uploads and sends only part of it here: its decision upload cites the returned grade IDs once the call is stored. Only with an agent's own transcript file (not format watcher); requires at least one non-null external ID; cannot be combined with ephemeral or append_after.",
+            "default": true
+          },
           "force_regrade": {
             "type": "boolean",
             "title": "Force Regrade",
@@ -6575,6 +8433,21 @@
             ],
             "title": "Metadata"
           },
+          "append_after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HookAppendAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fork": {
+            "type": "boolean",
+            "title": "Fork",
+            "default": false
+          },
           "format": {
             "type": "string",
             "const": "copilot-events-jsonl",
@@ -6610,7 +8483,7 @@
           "entries"
         ],
         "title": "CopilotTrajectory",
-        "description": "A trajectory in GitHub Copilot CLI format: one conversation's events from the session's events.jsonl.\n\nA Copilot log holds the parent conversation and every subagent's. Each\nupload carries one of them: ``agent_id`` is null for the parent\nconversation, or names the one subagent whose events ``entries`` holds,\nwhich Watcher records as its own session. ``agent_id`` is required, with\nnull for the parent, so a subagent upload that leaves it out is refused\nrather than recorded as the parent."
+        "description": "A trajectory in GitHub Copilot CLI format: one conversation's events from the session's events.jsonl.\n\nA Copilot log holds the parent conversation and every subagent's. Each\nupload carries one of them: ``agent_id`` is null for the parent\nconversation, or names the one subagent whose events ``entries`` holds,\nwhich Watcher records as its own session. ``agent_id`` is required, with\nnull for the parent, so a subagent upload that leaves it out is refused\nrather than recorded as the parent. ``append_after`` names the stored\nprefix for an incremental delta; ``fork`` permits a new branch from that\nprefix. Deltas retain the log's initial ``session.start`` identity event."
       },
       "CreateGraderRequest": {
         "properties": {
@@ -6801,7 +8674,7 @@
           "can_retry"
         ],
         "title": "DeepReviewRequestResponse",
-        "description": "Queue state of an on-demand deep review, for polling until it finishes.\n\n``queued`` and ``running`` are in progress. ``succeeded`` means the review\nfinished; its report is published as the session's deep-review grade unless\na newer review already replaced it. ``failed`` means the review gave up after\nits retries or was cancelled; send the request again to start a new review\n(refused with 409 once this transcript has failed too many times)."
+        "description": "Queue state of an on-demand deep review, for polling until it finishes.\n\n``queued`` and ``running`` are in progress. ``succeeded`` means the review\nfinished; its report is published as the session's deep-review grade unless\na newer review already replaced it. ``failed`` means the review gave up after\nits retries or was cancelled; send the request again to start a new review."
       },
       "DeviceAuthorizationResponse": {
         "properties": {
@@ -8719,6 +10592,94 @@
         "title": "IngestToolCallReference",
         "description": "Ask an upload to resolve a tool call in a particular native transcript item.\n\nmessage_uuid is Claude's entry UUID or Codex's response-item ID.\nThe entry must be included in this upload. Missing or filtered entries return\nno match; clients retain unresolved references for a later full upload."
       },
+      "InstallationReport": {
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Report Id",
+            "description": "A random ID for this report. Retry a failed request with the same ID; it is stored once."
+          },
+          "status": {
+            "$ref": "#/components/schemas/InstallationStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_id",
+          "status"
+        ],
+        "title": "InstallationReport",
+        "description": "One report from a Watcher client installation."
+      },
+      "InstallationReportErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "InstallationReportErrorDetail",
+        "description": "A machine-readable error code and a human-readable message."
+      },
+      "InstallationReportErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/InstallationReportErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "InstallationReportErrorResponse",
+        "description": "An installation report error."
+      },
+      "InstallationReportResponse": {
+        "properties": {
+          "result": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "duplicate"
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "title": "InstallationReportResponse",
+        "description": "What the report did: `stored` for a new report, `duplicate` when this report ID was already stored."
+      },
+      "InstallationStatus": {
+        "properties": {
+          "inventory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentInventoryStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The coding agents found on the machine, when agent inventory is on."
+          }
+        },
+        "type": "object",
+        "title": "InstallationStatus",
+        "description": "What the installation is reporting, by section. Omit a section to report nothing about it."
+      },
       "JsonValue": {},
       "JudgedDecision": {
         "type": "string",
@@ -9728,6 +11689,12 @@
             "type": "boolean",
             "title": "Ephemeral",
             "default": false
+          },
+          "record_transcript": {
+            "type": "boolean",
+            "title": "Record Transcript",
+            "description": "Set false to grade without storing this request's messages or a decision, while still storing the grades under the conversation the external IDs name, when that conversation is already stored, and returning their IDs. For a caller that stores the agent's transcript file through its own uploads and sends only part of it here: its decision upload cites the returned grade IDs once the call is stored. Only with an agent's own transcript file (not format watcher); requires at least one non-null external ID; cannot be combined with ephemeral or append_after.",
+            "default": true
           },
           "force_regrade": {
             "type": "boolean",
@@ -11124,6 +13091,14 @@
             },
             "type": "array",
             "title": "Grader Score Categories"
+          },
+          "hostnames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hostnames",
+            "description": "Machine hostnames recorded on sessions the caller can read, sorted, at most 500. Values for the `hostnames` search filter."
           }
         },
         "type": "object",
@@ -11283,6 +13258,22 @@
             ],
             "title": "Sources",
             "description": "Match any selected canonical ingestion source among retained session messages. Open set of exact source keys, combined with other filters using AND. The source match covers the full session regardless of the date window."
+          },
+          "hostnames": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostnames",
+            "description": "Match sessions whose recorded machine hostname is any of these values, exactly. The Watcher client records the hostname of the machine a session started on; sessions ingested through a gateway or an SDK have none and never match."
           },
           "grading_statuses": {
             "anyOf": [

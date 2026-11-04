@@ -29,6 +29,7 @@ from aigw_support import (
     client,
     running_gateway,
 )
+from watcher_agent_router.notices import SYSTEM_NOTICE
 
 pytestmark = pytest.mark.skipif(not AIGW, reason="Set AIGW_BIN to an aigw binary to run native gateway tests")
 
@@ -68,14 +69,18 @@ def test_tool_call_follows_watcher_decision(stack: dict, marker: str, released: 
         raw = ask(stack, prompt)
         message = raw.parse().choices[0]
         assert message.finish_reason == "stop" and not message.message.tool_calls
-        assert message.message.content.startswith("Watcher did not approve")
-        assert f'"tool_use_id": "call-{marker}"' in message.message.content
+        label = "WATCHER ESCALATION" if marker == "escalate" else "WATCHER NOTICE"
+        assert message.message.content.startswith(f"{label} (added by Watcher, not written by the assistant)")
+        assert '`delete_file {"force": true, "path": "notes.txt"}`' in message.message.content
         conversation = raw.headers["x-watcher-conversation-id"]
     path, _headers, hook = stack["watcher"].requests[-1]
     assert len(stack["watcher"].requests) == before + 1 and path == "/v1/hooks/pre-tool-use"
     assert hook["format"] == "raw" and hook["url"] == "/v1/chat/completions"
     assert hook["external_ids"] == {"other": conversation} and conversation.startswith("agent-router:")
-    assert hook["request_body"]["messages"] == [{"role": "user", "content": prompt}]
+    # Watcher grades the request as the provider received it, with Watcher's system notice first.
+    notice = {"role": "system", "content": SYSTEM_NOTICE}
+    assert hook["request_body"]["messages"] == [notice, {"role": "user", "content": prompt}]
+    assert stack["provider"].requests[-1][2]["messages"] == hook["request_body"]["messages"]
     assert hook["response_body"]["choices"][0]["message"]["tool_calls"][0]["id"] == f"call-{marker}"
 
 
@@ -172,7 +177,7 @@ def test_provider_redirect_is_never_followed(stack: dict, prompt: str) -> None:
 def test_denied_call_in_201_or_chunked_response_is_withheld(stack: dict, prompt: str) -> None:
     before = len(stack["watcher"].requests)
     choice = ask(stack, prompt).parse().choices[0]
-    assert not choice.message.tool_calls and "Watcher did not approve" in choice.message.content
+    assert not choice.message.tool_calls and "WATCHER NOTICE (added by Watcher" in choice.message.content
     assert len(stack["watcher"].requests) == before + 1
 
 
@@ -241,7 +246,7 @@ def test_denied_streamed_tool_call_never_reaches_the_client(stack: dict) -> None
     _first, received = _stream(stack, "deny tool request")
     assert not any(item.choices and item.choices[0].delta.tool_calls for item in received)
     text = "".join(item.choices[0].delta.content or "" for item in received if item.choices)
-    assert text.startswith("Working on it. \n\nWatcher did not approve")
+    assert text.startswith("Working on it. \n\nWATCHER NOTICE (added by Watcher")
     assert received[-1].choices[0].finish_reason == "stop"
 
 
@@ -304,7 +309,7 @@ def test_denied_tool_only_stream_accumulates_into_a_valid_message(stack: dict) -
     ) as stream:
         message = stream.get_final_completion().choices[0].message
     assert message.role == "assistant" and not message.tool_calls
-    assert message.content is not None and message.content.startswith("Watcher did not approve")
+    assert message.content is not None and message.content.startswith("WATCHER NOTICE (added by Watcher")
 
 
 def test_bodyless_success_never_reaches_the_client_unevaluated(stack: dict) -> None:

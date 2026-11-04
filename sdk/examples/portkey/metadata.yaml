@@ -7,7 +7,7 @@ summary: Monitor client-facing requests and gate generated function calls from t
 category: gateway
 upstream_url: https://github.com/Portkey-AI/gateway
 support_status: experimental
-updated_at: '2026-10-01'
+updated_at: '2026-10-28'
 capabilities:
   observe:
     implemented: true
@@ -18,16 +18,21 @@ capabilities:
   enforce:
     implemented: true
     scope: Withholds generated client function calls at the gateway until Watcher
-      returns an applied allow or deferred decision.
+      returns an applied allow or deferred decision. A refused response is replaced
+      by Watcher's notices and either an alternative the model generated through
+      the same gateway and Watcher allowed (at most three proposals per request),
+      or, after an escalation or the third refusal, the model's text-only question
+      to the user.
     example: gateway/server.mjs
     boundary: gateway-response
     context: conversation
     recording: optional
     failure_behavior: mixed
     failure_details: Transport errors and missing outcomes withhold responses; applied
-      grading-failure decisions follow organization policy. Hook replies do not acknowledge
-      durable recording.
-    timeout_seconds: 420
+      grading-failure decisions follow organization policy. A failure or timeout while
+      generating or grading an alternative delivers the notices with no tool call.
+      Hook replies do not acknowledge durable recording.
+    timeout_seconds: 290
 manifests:
 - pyproject.toml
 verification:

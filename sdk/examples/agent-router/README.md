@@ -185,54 +185,103 @@ response, or the tool-bearing part of a streamed one. An
 releases it unchanged. A valid `allow` from the administrator's grading-failure
 policy also releases it.
 
+### System notice
+
+The processor adds one fixed system message to every request before the
+provider sees it. It tells the model that Watcher checks each tool call, that a
+`WATCHER NOTICE` or `WATCHER ESCALATION` in its own earlier replies was written
+by Watcher, and how to continue after each. Without it, models often call those
+notices injected text or their own mistake and retry the refused call. The
+message goes after the leading system and developer messages, so the caller's
+instructions keep their order and their cached prefix. It is byte-identical on
+every request, so the provider's prompt cache still applies, and a request that
+already contains it, for example from managed client settings, is left
+unchanged. Watcher grades the request with the notice, as the provider received
+it. A request too close to the 8 MiB limit to take the notice (about 1.3 KB) is
+refused with HTTP 413 before the provider is called.
+
 ### Denials
 
 When Watcher denies or escalates a call, the harness still receives an ordinary
 response rather than an error. The processor removes every executable call from
 that response, including calls Watcher allowed alongside the refused one, and
-ends the completion with `finish_reason: "stop"`. Its assistant text gains a
-notice that starts "Watcher did not approve these tool calls". The notice lists
-each refused call's ID, name, arguments and Watcher's public explanation
-(`verdict.explanation`), and names any sibling calls withheld with it. A
-buffered response keeps HTTP 200; a streamed one ends with the notice as a
-normal text event. The model sees the notice in the conversation history on the
-next turn, so an agent can choose another approach instead of failing. An
-unattended client therefore never executes a refused call. This example has no
-approval screen or way to resume an escalated call. With `GATEWAY_URL` set, the
-processor first asks the model for alternatives, described next.
+adds a notice to its assistant text, one paragraph per call. Each paragraph
+starts `WATCHER NOTICE (added by Watcher, not written by the assistant)`, or
+`WATCHER ESCALATION` for an escalation, names the call with its arguments and
+gives Watcher's public explanation (`verdict.explanation`). Calls withheld only
+because a sibling was refused get their own line. Long arguments and reasons
+are shortened. A buffered response keeps HTTP 200; a streamed one ends with the
+notice as a normal text event. The client's next request carries the notice in
+the model's own turn, and the system notice tells the model it is genuine. An
+unattended client therefore never executes a refused call. A request that asks for
+JSON content (`response_format` of type `json_object` or `json_schema`) would
+be broken by that text, so a refusal there is returned as HTTP 403 (or an SSE
+error event when streaming) with `type: watcher_withheld`, and no alternative
+is generated. This example has no
+approval screen or way to resume an escalated call in the same request. With
+`GATEWAY_URL` set, the processor also asks the model what to do next, as
+described below.
 
 ### Alternatives
 
-With `GATEWAY_URL` set, a refusal is followed by up to two alternatives within
-the same client request, as in the LiteLLM example. The processor copies the
-client's request, appends the refused proposal and one tool result per call
-(Watcher's explanation for each refused call, and "not run" for any sibling
-withheld with it), and sends it to Agent Router's listener as a buffered request
-(`stream: false`) with the gateway key. It therefore uses the client's route,
-model, backend, provider credentials, tools and `tool_choice`. A forced tool
-choice can use up both alternatives where the model would otherwise reply with
-text.
+With `GATEWAY_URL` set, the processor asks the model for its next step within
+the same client request. It copies the client's request, appends the refused
+proposal and one tool result per call, and sends it to Agent Router's listener
+as a buffered request (`stream: false`) with the gateway key. It therefore uses
+the client's route, model, backend and provider credentials.
 
-Each alternative is graded like any other exchange before any of it reaches the
+**After a denial**, the denied call's tool result gives Watcher's reason and
+asks the model to continue the task another way, because Watcher checks every
+call. The model is not invited to explain itself in text instead: an agent's
+turn ends at a text-only reply, since harnesses call the model again only after
+tool results. Tools, `tool_choice` and every other option are kept, so an
+alternative cannot use a tool the client excluded; a forced tool choice can use
+up both alternatives where the model would otherwise reply with text. Each
+alternative is graded like any other exchange before any of it reaches the
 client. The first approved alternative ends the response: the client receives
 the original text, the notices, then the alternative's text and tool calls with
 its finish reason, as one buffered completion or, for a streamed request, as the
 remaining events of the same stream. `usage` stays the first attempt's and does
-not count the alternatives' tokens. A refused alternative adds its own notice,
-and after three blocked proposals the response ends with "Watcher stopped after
-three blocked proposals." An alternative that repeats a refused call's name and
-arguments is refused again with the earlier explanation, without being graded,
-whatever its call ID. That check lasts for one client request and does not
-equate different arguments with the same effect.
+not count later generations' tokens. A refused alternative adds its own notice.
+An alternative that repeats a refused call's name and arguments is refused
+again with the earlier explanation, without being graded, whatever its call ID.
+That check lasts for one client request and does not equate different arguments
+with the same effect.
 
-If no alternative can be obtained, because the gateway or provider fails, the
-alternative cannot be read or merged, Watcher does not evaluate it or its
-decisions do not match, or time runs out, the response ends with the notices and
-a sentence saying why no alternative followed. Nothing from a failed alternative
-reaches the client. Unlike the LiteLLM example, these failures do not turn the
-response into an error, since the client's own proposal was cleanly refused.
-Failures on the client's own proposal return errors as described in
-[Other responses](#other-responses) and never lead to alternatives.
+**After an escalation, or a third refused proposal**, the model is not asked for
+another approach. One final generation asks it to stop and put the question to
+the user with labelled options, and its text ends the response. The final
+request sets `tool_choice: "none"` when the request offers tools (and leaves it
+unset otherwise), so the model answers in text and cannot start a
+provider-hosted tool. If the model proposes calls anyway, they are withheld
+without being graded, and a fixed `WATCHER ESCALATION` or `WATCHER NOTICE`
+question to the user follows its text. The same question is added when the
+final reply asks the user nothing: it has no text, was cut off by the token
+limit or the provider's content filter, or has no question mark. A complete
+final reply that already asks a question is delivered unchanged. An approved
+alternative without tool calls whose text is empty or cut off the same way ends
+with the fixed question a failed alternative gets. A client request therefore
+costs at most four model calls: its own, two alternatives and the final reply, and only the
+first three can release calls.
+
+The options offered depend on who escalated. Only Watcher's graders
+(`policy_gateway` and `triage` decisions) read the conversation, so only then
+is the model asked to offer "A. allow this call" and to let the user approve it
+in their reply; Watcher grades the call again when it is proposed. A rule, a
+threshold or the grading-failure policy would escalate the same call again, so
+for those the options are to skip it, do something else or ask an administrator
+to change the policy.
+
+If a generation cannot be obtained, because the gateway or provider fails, its
+response cannot be read or merged, Watcher does not evaluate an alternative or
+its decisions do not match, or time runs out, the response ends with the
+notices, a sentence saying why nothing followed and a fixed question asking the
+user how to proceed, so the agent's turn never ends on a notice alone. Nothing from a failed
+generation reaches the client. Unlike the LiteLLM example, these failures do
+not turn the response into an error, since the client's own proposal was
+cleanly refused. Failures on the client's own proposal return errors as
+described in [Other responses](#other-responses) and never lead to
+alternatives.
 
 **Separate Watcher sessions.** Each alternative Watcher grades is submitted as
 a separate exchange, so it gets a separate session with its own
@@ -243,16 +292,19 @@ original exchange, and the client only sees that session's ID in
 `alternative_evaluated` event per submitted alternative with both
 `conversation_id` and `alternative_conversation_id`. An alternative refused for
 repeating a refused operation is not submitted and has no session; the
-processor logs `alternative_repeated` for it instead. As elsewhere, a
+processor logs `alternative_repeated` for it instead. The final reply is not
+submitted either (the processor logs `final_reply` with the number of calls it
+withheld); Watcher sees it in the client's next request. As elsewhere, a
 successful submission acknowledges receipt, not storage. On the client's next
 turn, its history includes the delivered notices and alternative.
 
-**Time.** The client's proposal, each alternative's provider call and each
-grade share the processor's 420-second limit, so alternatives only use what the
-first decision left; Envoy's 450-second message timeout is never exceeded.
+**Time.** The client's proposal, each later provider call and each grade share
+the processor's 420-second limit, so they only use what the first decision
+left; Envoy's 450-second message timeout is never exceeded.
 
 **Internal marker.** The alternative request passes through the processor
-again. So that it is not graded twice or followed by alternatives of its own,
+again. So that it is not graded twice, given a second system notice or
+followed by alternatives of its own,
 the processor signs it with an `X-Watcher-Alternative` header: an expiry and an
 HMAC over the exact request body, keyed from `WATCHER_API_KEY`. A request with a
 valid marker passes through without grading, and the requesting pass grades the

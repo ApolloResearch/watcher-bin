@@ -737,7 +737,7 @@ class TestHooks:
         events = _events(out)
         assert events[-1] == {"type": "message_stop"}
         assert not any(event.get("content_block", {}).get("type") == "tool_use" for event in events)
-        assert "Watcher did not approve" in b"".join(out).decode()
+        assert "WATCHER NOTICE (added by Watcher" in b"".join(out).decode()
         assert assemble("messages", out)["content"][-1] == {"type": "text", "text": "A permitted alternative."}
 
     async def test_responses_stream_is_never_replayed(self) -> None:

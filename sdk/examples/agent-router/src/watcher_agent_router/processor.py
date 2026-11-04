@@ -10,7 +10,8 @@ reply per message. With buffered body modes the sequence for one exchange is:
    and drop the client key and ``Accept-Encoding`` so neither reaches the
    provider and its response arrives uncompressed;
 2. request body: validate the Chat Completions request before the provider is
-   called;
+   called, and add Watcher's fixed system notice (``notices.py``) to the body
+   the provider receives and Watcher grades;
 3. response headers: refuse provider redirects, note the status and encoding,
    and add the ``X-Watcher-Conversation-Id`` header;
 4. response body: submit the exchange to Watcher and release the body
@@ -68,8 +69,8 @@ from watcher_agent_router.exchange import (
     decode_json,
     evaluate,
     validate_request,
-    withheld_notice,
 )
+from watcher_agent_router.notices import with_system_notice, withheld_notice
 from watcher_agent_router.streaming import StreamGate, error_event
 from watcher_sdk import AsyncWatcherClient, WatcherAPIError
 
@@ -178,9 +179,15 @@ _TOO_LARGE = " The approved alternative was too large to deliver."
 
 
 def _short_notice(response: dict, evaluation: Evaluation, recovery: Recovery) -> str:
-    """A count-only notice that always fits, for when the full reply would exceed its size budget."""
+    """A count-only notice that always fits, for when the full reply would exceed its size budget.
+
+    It keeps recovery's fixed question, which is short, so a shortened reply
+    still ends by asking the user how to proceed.
+    """
     notice = withheld_notice(response, evaluation, compact=True)
-    return notice + _TOO_LARGE if recovery.alternative is not None else notice
+    if recovery.alternative is not None:
+        notice += _TOO_LARGE
+    return "\n\n".join(part for part in (notice, recovery.question) if part)
 
 
 def _denied_body(response: dict, evaluation: Evaluation, recovery: Recovery) -> bytes:
@@ -224,6 +231,33 @@ def _replace_chunk(data: bytes) -> ext_proc.ProcessingResponse:
     return ext_proc.ProcessingResponse(
         response_body=ext_proc.BodyResponse(response=ext_proc.CommonResponse(body_mutation=mutation))
     )
+
+
+_STRUCTURED_REFUSAL = (
+    "Watcher refused a tool call in this response, and its notice cannot be delivered "
+    "inside the requested structured output format"
+)
+
+
+def _structured(request: dict) -> bool:
+    """Whether the client asked for JSON content, which Watcher's text notices would break.
+
+    A refusal is explained by text added to the assistant's content. With
+    ``response_format`` set to ``json_object`` or ``json_schema`` that text
+    would make the content unparseable, so such a refusal is returned as an
+    error instead of a rewritten completion.
+    """
+    response_format = request.get("response_format")
+    return isinstance(response_format, dict) and response_format.get("type") in {"json_object", "json_schema"}
+
+
+def _replace_request_body(data: bytes) -> ext_proc.ProcessingResponse:
+    """Replace a whole buffered request body; Envoy holds its headers until this reply."""
+    common = ext_proc.CommonResponse(
+        body_mutation=ext_proc.BodyMutation(body=data),
+        header_mutation=ext_proc.HeaderMutation(set_headers=[_header("content-length", str(len(data)))]),
+    )
+    return ext_proc.ProcessingResponse(request_body=ext_proc.BodyResponse(response=common))
 
 
 def _continue_body(field: str) -> ext_proc.ProcessingResponse:
@@ -309,9 +343,22 @@ class WatcherProcessor(ext_proc_grpc.ExternalProcessorServicer):
         if exchange.marker is not None:
             if self._marker is None or not verify_marker(self._marker, exchange.marker, message.body):
                 return _reject(403, "Invalid alternative marker", exchange.conversation_id)
+            # The requesting pass built this body from a request that already
+            # carries the notice, and the marker signs these exact bytes.
             exchange.passthrough = True
-        exchange.request = request
-        return _continue_body("request_body")
+            exchange.request = request
+            return _continue_body("request_body")
+        noticed = with_system_notice(request)
+        if noticed is request:
+            exchange.request = request
+            return _continue_body("request_body")
+        body = _compact(noticed)
+        if len(body) > MAX_BODY:
+            # Every request must carry the notice, so one without room for it
+            # is refused rather than sent without it.
+            return _reject(413, "The request is too large to add Watcher's notice", exchange.conversation_id)
+        exchange.request = noticed
+        return _replace_request_body(body)
 
     def _response_headers(self, exchange: _Exchange, message: ext_proc.HttpHeaders) -> ext_proc.ProcessingResponse:
         """Record what the body phase needs; a redirect is replaced here, before Envoy forwards it.
@@ -384,6 +431,9 @@ class WatcherProcessor(ext_proc_grpc.ExternalProcessorServicer):
         outcome = await self._decide(exchange, exchange.request, response, deadline)
         if isinstance(outcome, _Refusal):
             return _reject(outcome.status, outcome.reason, exchange.conversation_id, **outcome.detail)
+        if outcome.denials and _structured(exchange.request):
+            _log_denials(exchange, outcome)
+            return _reject(403, _STRUCTURED_REFUSAL, exchange.conversation_id)
         if outcome.denials:
             recovery = await self._recover(exchange, exchange.request, response, outcome, deadline)
             return _replace_body(_denied_body(response, outcome, recovery))
@@ -426,6 +476,9 @@ class WatcherProcessor(ext_proc_grpc.ExternalProcessorServicer):
         outcome = await self._decide(exchange, exchange.request, completion, deadline)
         if isinstance(outcome, _Refusal):
             return self._end_stream(exchange, outcome, released)
+        if outcome.denials and _structured(exchange.request):
+            _log_denials(exchange, outcome)
+            return self._end_stream(exchange, _Refusal(status=403, reason=_STRUCTURED_REFUSAL), released)
         if outcome.denials:
             recovery = await self._recover(exchange, exchange.request, completion, outcome, deadline)
             events = gate.denial_events("\n\n".join(recovery.notices), recovery.alternative)

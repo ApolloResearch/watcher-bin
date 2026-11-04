@@ -10,6 +10,37 @@ from .admin_session_content_access_request import AdminSessionContentAccessReque
 from .admin_session_content_access_request_list_response import (
     AdminSessionContentAccessRequestListResponse,
 )
+from .agent_inventory_coverage_counts import AgentInventoryCoverageCounts
+from .agent_inventory_gateway_client import AgentInventoryGatewayClient
+from .agent_inventory_gateway_summary import AgentInventoryGatewaySummary
+from .agent_inventory_installation import AgentInventoryInstallation
+from .agent_inventory_installation_agent import AgentInventoryInstallationAgent
+from .agent_inventory_installation_agent_coverage_type_0 import (
+    AgentInventoryInstallationAgentCoverageType0,
+)
+from .agent_inventory_installation_agent_coverage_via_type_0 import (
+    AgentInventoryInstallationAgentCoverageViaType0,
+)
+from .agent_inventory_installation_list_response import (
+    AgentInventoryInstallationListResponse,
+)
+from .agent_inventory_report_agent import AgentInventoryReportAgent
+from .agent_inventory_status import AgentInventoryStatus
+from .agent_inventory_summary_agent import AgentInventorySummaryAgent
+from .agent_inventory_summary_response import AgentInventorySummaryResponse
+from .agent_inventory_user import AgentInventoryUser
+from .agent_inventory_user_agent import AgentInventoryUserAgent
+from .agent_inventory_user_agent_coverage_type_0 import (
+    AgentInventoryUserAgentCoverageType0,
+)
+from .agent_inventory_user_agent_coverage_via_type_0 import (
+    AgentInventoryUserAgentCoverageViaType0,
+)
+from .agent_inventory_user_agent_seen_via_type_0 import (
+    AgentInventoryUserAgentSeenViaType0,
+)
+from .agent_inventory_user_list_response import AgentInventoryUserListResponse
+from .agent_inventory_user_machine import AgentInventoryUserMachine
 from .agent_relationship_request import AgentRelationshipRequest
 from .agent_relationship_response import AgentRelationshipResponse
 from .aperture_hook_accepted import ApertureHookAccepted
@@ -20,6 +51,27 @@ from .aperture_hook_request_response_body_type_0 import (
     ApertureHookRequestResponseBodyType0,
 )
 from .aperture_log import ApertureLog
+from .aperture_pre_request import AperturePreRequest
+from .aperture_pre_request_request_body import AperturePreRequestRequestBody
+from .aperture_pre_request_response import AperturePreRequestResponse
+from .aperture_pre_request_response_action import AperturePreRequestResponseAction
+from .aperture_pre_request_response_request_body_type_0 import (
+    AperturePreRequestResponseRequestBodyType0,
+)
+from .aperture_pre_response_request import AperturePreResponseRequest
+from .aperture_pre_response_request_request_body import (
+    AperturePreResponseRequestRequestBody,
+)
+from .aperture_pre_response_request_response_body import (
+    AperturePreResponseRequestResponseBody,
+)
+from .aperture_pre_response_response import AperturePreResponseResponse
+from .aperture_pre_response_response_action import AperturePreResponseResponseAction
+from .aperture_response_window import ApertureResponseWindow
+from .aperture_selected_tool_call import ApertureSelectedToolCall
+from .aperture_selected_tool_call_params import ApertureSelectedToolCallParams
+from .aperture_tool_modification import ApertureToolModification
+from .aperture_tool_modification_params import ApertureToolModificationParams
 from .applied_decision import AppliedDecision
 from .auth_client_config import AuthClientConfig
 from .auth_client_config_auth_mode import AuthClientConfigAuthMode
@@ -65,11 +117,16 @@ from .claude_api_message import ClaudeAPIMessage
 from .claude_api_message_usage_type_0 import ClaudeAPIMessageUsageType0
 from .claude_code_agent_identity import ClaudeCodeAgentIdentity
 from .claude_code_attachment import ClaudeCodeAttachment
+from .claude_code_current_trajectory import ClaudeCodeCurrentTrajectory
+from .claude_code_current_trajectory_metadata_type_0 import (
+    ClaudeCodeCurrentTrajectoryMetadataType0,
+)
 from .claude_code_entry import ClaudeCodeEntry
 from .claude_code_hook_request import ClaudeCodeHookRequest
 from .claude_code_hook_request_external_ids_type_0 import (
     ClaudeCodeHookRequestExternalIdsType0,
 )
+from .claude_code_hook_request_format import ClaudeCodeHookRequestFormat
 from .claude_code_hook_request_mode import ClaudeCodeHookRequestMode
 from .claude_code_hook_request_settings_overrides_type_1 import (
     ClaudeCodeHookRequestSettingsOverridesType1,
@@ -205,7 +262,19 @@ from .ingest_response import IngestResponse
 from .ingest_result import IngestResult
 from .ingest_result_status import IngestResultStatus
 from .ingest_tool_call_reference import IngestToolCallReference
+from .installation_report import InstallationReport
+from .installation_report_error_detail import InstallationReportErrorDetail
+from .installation_report_error_response import InstallationReportErrorResponse
+from .installation_report_response import InstallationReportResponse
+from .installation_report_response_result import InstallationReportResponseResult
+from .installation_status import InstallationStatus
 from .judged_decision import JudgedDecision
+from .list_agent_inventory_installations_endpoint_v1_agent_inventory_installations_get_coverage_type_0 import (
+    ListAgentInventoryInstallationsEndpointV1AgentInventoryInstallationsGetCoverageType0,
+)
+from .list_agent_inventory_users_endpoint_v1_agent_inventory_users_get_coverage_type_0 import (
+    ListAgentInventoryUsersEndpointV1AgentInventoryUsersGetCoverageType0,
+)
 from .managed_settings_source import ManagedSettingsSource
 from .managed_settings_source_error_kind_type_0 import (
     ManagedSettingsSourceErrorKindType0,
@@ -426,6 +495,25 @@ __all__ = (
     "ActivatedMonitorsResponseDistribution",
     "AdminSessionContentAccessRequest",
     "AdminSessionContentAccessRequestListResponse",
+    "AgentInventoryCoverageCounts",
+    "AgentInventoryGatewayClient",
+    "AgentInventoryGatewaySummary",
+    "AgentInventoryInstallation",
+    "AgentInventoryInstallationAgent",
+    "AgentInventoryInstallationAgentCoverageType0",
+    "AgentInventoryInstallationAgentCoverageViaType0",
+    "AgentInventoryInstallationListResponse",
+    "AgentInventoryReportAgent",
+    "AgentInventoryStatus",
+    "AgentInventorySummaryAgent",
+    "AgentInventorySummaryResponse",
+    "AgentInventoryUser",
+    "AgentInventoryUserAgent",
+    "AgentInventoryUserAgentCoverageType0",
+    "AgentInventoryUserAgentCoverageViaType0",
+    "AgentInventoryUserAgentSeenViaType0",
+    "AgentInventoryUserListResponse",
+    "AgentInventoryUserMachine",
     "AgentRelationshipRequest",
     "AgentRelationshipResponse",
     "ApertureHookAccepted",
@@ -434,6 +522,21 @@ __all__ = (
     "ApertureHookRequestRequestBody",
     "ApertureHookRequestResponseBodyType0",
     "ApertureLog",
+    "AperturePreRequest",
+    "AperturePreRequestRequestBody",
+    "AperturePreRequestResponse",
+    "AperturePreRequestResponseAction",
+    "AperturePreRequestResponseRequestBodyType0",
+    "AperturePreResponseRequest",
+    "AperturePreResponseRequestRequestBody",
+    "AperturePreResponseRequestResponseBody",
+    "AperturePreResponseResponse",
+    "AperturePreResponseResponseAction",
+    "ApertureResponseWindow",
+    "ApertureSelectedToolCall",
+    "ApertureSelectedToolCallParams",
+    "ApertureToolModification",
+    "ApertureToolModificationParams",
     "AppliedDecision",
     "AuthClientConfig",
     "AuthClientConfigAuthMode",
@@ -465,9 +568,12 @@ __all__ = (
     "ClaudeAPIMessageUsageType0",
     "ClaudeCodeAgentIdentity",
     "ClaudeCodeAttachment",
+    "ClaudeCodeCurrentTrajectory",
+    "ClaudeCodeCurrentTrajectoryMetadataType0",
     "ClaudeCodeEntry",
     "ClaudeCodeHookRequest",
     "ClaudeCodeHookRequestExternalIdsType0",
+    "ClaudeCodeHookRequestFormat",
     "ClaudeCodeHookRequestMode",
     "ClaudeCodeHookRequestSettingsOverridesType1",
     "ClaudeCodeTrajectory",
@@ -579,7 +685,15 @@ __all__ = (
     "IngestResult",
     "IngestResultStatus",
     "IngestToolCallReference",
+    "InstallationReport",
+    "InstallationReportErrorDetail",
+    "InstallationReportErrorResponse",
+    "InstallationReportResponse",
+    "InstallationReportResponseResult",
+    "InstallationStatus",
     "JudgedDecision",
+    "ListAgentInventoryInstallationsEndpointV1AgentInventoryInstallationsGetCoverageType0",
+    "ListAgentInventoryUsersEndpointV1AgentInventoryUsersGetCoverageType0",
     "ManagedSettingsSource",
     "ManagedSettingsSourceErrorKindType0",
     "MessageDetailResponse",

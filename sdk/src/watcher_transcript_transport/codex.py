@@ -29,7 +29,9 @@ __all__ = [
     "is_turn_started_event",
     "own_codex_entries",
     "pending_call_id",
+    "pending_call_matches",
     "scan_codex_call_cycles",
+    "starts_pending_call_turn",
     "trim_incomplete_codex_tail",
 ]
 
@@ -464,12 +466,25 @@ def pending_call_id(entries: list[JsonEntry], tool_name: str, tool_input: Any) -
     call. Copied parent calls before the subagent's native history boundary
     cannot match, even when their arguments are identical to the child's.
     """
+    matches = pending_call_matches(entries, tool_name, tool_input)
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+def pending_call_matches(entries: list[JsonEntry], tool_name: str, tool_input: Any) -> frozenset[str]:
+    """Every distinct ``call_id`` `pending_call_id` could name: the current turn's unanswered calls the hook may report.
+
+    `pending_call_id` names one only when this set holds exactly one. The set
+    is exposed so a caller that has read just the end of a rollout can prove
+    its answer: outputs earlier in the file can only remove ids from this set,
+    so an empty set is final, and a non-empty one is final once none of its ids
+    appears earlier in the file.
+    """
     entries = own_codex_entries(entries)
     cycles = scan_codex_call_cycles(entries, allow_trailing_assistant_output=True)
     answered: set[str] = set()
     turn: list[dict[str, Any]] = []
     for index, entry in enumerate(entries):
-        if is_turn_started_event(entry):
+        if starts_pending_call_turn(entry):
             turn = []
             continue
         payload = entry.get("payload") if entry.get("type") == "response_item" else None
@@ -478,23 +493,36 @@ def pending_call_id(entries: list[JsonEntry], tool_name: str, tool_input: Any) -
         if payload.get("type") in CALL_CLOSING_TYPES and payload.get("call_id"):
             answered.add(payload["call_id"])
         elif (
-            payload.get("type") == "message"
-            and payload.get("role") == "user"
-            and _message_effect(payload) is (_MessageEffect.ENDS)
-        ):
-            turn = []
-        elif (
             payload.get("type") in CALL_OPENING_TYPES
             and payload.get("call_id")
             and index not in cycles.interrupted_openings
         ):
             turn.append(payload)
-    matches = {
+    return frozenset(
         payload["call_id"]
         for payload in turn
         if payload["call_id"] not in answered and _reports_call(payload, tool_name, tool_input)
-    }
-    return next(iter(matches)) if len(matches) == 1 else None
+    )
+
+
+def starts_pending_call_turn(entry: JsonEntry) -> bool:
+    """Whether `pending_call_matches` starts its current turn afresh at ``entry``.
+
+    A turn starts at Codex's turn-start event or at a user message the parser
+    keeps (injected AGENTS.md and environment blocks and empty messages do not
+    count). Only calls opened after the last such entry can be the pending call.
+    This judges the entry alone; inherited subagent history is excluded by the
+    caller, as `own_codex_entries` does.
+    """
+    if is_turn_started_event(entry):
+        return True
+    payload = entry.get("payload") if entry.get("type") == "response_item" else None
+    return (
+        isinstance(payload, dict)
+        and payload.get("type") == "message"
+        and payload.get("role") == "user"
+        and _message_effect(payload) is _MessageEffect.ENDS
+    )
 
 
 def _reports_call(payload: dict[str, Any], tool_name: str, tool_input: Any) -> bool:

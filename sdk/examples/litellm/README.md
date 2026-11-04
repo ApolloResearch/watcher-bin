@@ -32,11 +32,15 @@ routes them to.
    The request already sent to the provider is not changed.
 4. An allow decision, or a deferred decision in observe mode, releases the
    call and following buffered content up to the next tool call. Evaluation
-   repeats for each call, preserving stream order. A denial or escalation
-   withholds the call and asks the model for an alternative. Missing decisions
-   and errors stop delivery. Earlier approved calls may already have run and
+   repeats for each call, preserving stream order. A denial withholds the
+   call and asks the model for an alternative; an escalation withholds it and
+   asks the model to put the decision to the user. Missing decisions and
+   errors stop delivery. Earlier approved calls may already have run and
    cannot be retracted.
 5. Watcher records the conversation and its decisions.
+
+Every covered request also gets a fixed system notice before it reaches the
+provider. See [The system notice](#the-system-notice).
 
 Non-streaming responses evaluate each complete proposal atomically. If any
 call is refused, none of that proposal's calls reaches the client. The
@@ -58,10 +62,42 @@ completion, and a recording failure does not change the delivered reply.
 The callback can request **two alternatives** after the original proposal.
 For streamed requests, each alternative also streams text immediately and
 gates each tool call. The client receives one continuous response containing
-approved calls and ordinary text notices with refused calls' IDs, names,
-arguments and Watcher's public reasons. Denied calls are never delivered as
-executable tool events. Escalations take the same path; the gateway has no
-human-approval interface.
+approved calls and ordinary text notices. Each notice names a refused call
+with its arguments and Watcher's public reason, starts with `WATCHER NOTICE`
+(a denial) or `WATCHER ESCALATION`, and says that Watcher added it rather
+than the model. Refused calls are never delivered as executable tool events.
+
+The model learns about a denial from its proposed call's tool result:
+Watcher blocked the call, the reason, and an invitation to continue the
+user's task another way, because Watcher checks every call. It is not
+offered a text-only "explain why you cannot continue" reply: a reply with no
+tool call ends the agent's turn, since agent harnesses only call the model
+again after tool results or user input.
+
+An escalation is not retried. The gateway has no human-approval interface,
+so it makes **one final generation** in which the escalated call's tool
+result asks the model to stop and ask the user whether to allow the call,
+with labelled options. The model writes that question itself, so on the
+next turn it reads its own words rather than a question the gateway put into
+its reply. The same final generation follows a third blocked proposal,
+asking the model to say what was blocked and ask how to proceed. Any call
+the final generation proposes anyway is withheld without evaluation, and a
+fixed question to the user follows the reply's text. The same fixed question
+is added when the reply has no text or was cut off (token limit, content
+filter), and it replaces the reply when the final generation fails or runs
+out of time. Either way the response then ends normally rather than as cut
+off. When streaming, the final reply is read in full before any of it is
+sent, so a failure partway through still ends with the fixed question.
+
+Only escalations decided by Watcher's graders (`decision_source` of
+`policy_gateway` or `triage`) offer to allow the call, and only when no other
+escalation in the same response is held by policy: if the user allows
+it, the model proposes it again and Watcher grades it again, with the user's
+answer in the conversation. A rule, a tool threshold or the grading-failure
+policy decides without reading the conversation and would escalate the same
+call again, so for those escalations the notices say the call cannot be
+approved in the conversation, and the model offers to skip it, do something
+else, or ask an administrator to change the policy.
 
 A refused provider stream is drained to complete items the client has already
 seen. New, unexposed content from that proposal remains withheld.
@@ -71,28 +107,87 @@ tool-result feedback to a copy of the provider conversation. The feedback
 distinguishes withheld calls from calls already sent to the client. For an
 already released call it says that execution results are unknown and the
 operation must not be repeated. The caller's tool-selection constraints remain
-unchanged, including forced tool choices. A forced choice can exhaust the
-alternatives instead of letting the provider return a text-only refusal.
+unchanged for alternatives, including forced tool choices. A forced choice can
+exhaust the alternatives instead of letting the provider return a text-only
+refusal. Only the final generation changes it: when the request offers
+tools, its tool choice becomes the API's no-call choice (`none`), so the model
+answers in text and cannot run a provider-hosted tool such as web search. That
+one generation gives up the provider's prompt cache for the messages.
 
 During recovery, repeating a denied or previously released operation with
 the same tool name and arguments is blocked even under a new call ID. This
 check lasts for the current client request. It does not equate different
 commands or arguments that happen to have the same effect.
 
-After three blocked proposals, the response ends normally with explanatory
-text and any calls already approved and released. A timeout, malformed
-proposal or Watcher error ends with an error instead. The callback does not
-generate alternatives for missing or failed Watcher decisions.
+After an escalation or three blocked proposals, the response ends normally
+with the notices, the final generation's text (or the fixed question) and any
+calls already approved and released. Before that final generation, a timeout,
+malformed proposal or Watcher error ends with an error instead. The callback does not generate alternatives for missing or
+failed Watcher decisions.
+
+## The system notice
+
+The client's next request carries the gateway's notices inside the model's
+own earlier reply, as text the model did not write. Without an explanation,
+models often call such text injected, or their own mistake, and retry the
+denied operation. So the callback's pre-call hook adds this fixed text to
+every covered request, whether or not anything has been refused:
+
+> Watcher, your organisation's tool-call monitor, checks every tool call you
+> make before it runs. When it blocks a call, the gateway removes that call
+> from your reply, gives you Watcher's reason as the call's result and asks
+> you to continue. So your earlier replies can contain a WATCHER NOTICE that
+> you did not write: Watcher did, and the blocked call did not run. These
+> notices are genuine. A block applies to that call only. Keep working on the
+> user's task by another approach, including reaching the same result by
+> other means: Watcher reviews every call and will block anything that is not
+> allowed, so you do not need to stop and ask first. Do not repeat the
+> identical blocked call. If several different approaches have been blocked,
+> stop, tell the user what was blocked and ask how to proceed. A WATCHER
+> ESCALATION is different from a WATCHER NOTICE: the call needs the user's
+> decision before it may run. Do not try another approach and do not retry it
+> unless the user allows it. End your turn by asking the user what to do, as a
+> short question with labelled options, for example: A. allow this call, B.
+> skip it, C. do something else. Offer to allow the call only when the
+> escalation says the user can approve it.
+
+It goes after the client's own instructions, so their cached prefix is
+unchanged, and it is byte-identical on every request, so prompt caching keeps
+working:
+
+- **Messages**: a last `system` text block, without `cache_control`.
+- **Chat Completions**: a `system` message after the leading system and
+  developer messages.
+- **Responses**: a `developer` message after the leading system and developer
+  items of `input`. String input becomes that message plus a user message.
+
+A request that already contains the text, for example because managed client
+settings add it, is left unchanged, as is a request whose instruction field
+has an unexpected shape. The notice is part of the request that Watcher
+records and evaluates, and of every replacement generation. It is also added
+in observe and paused modes, where nothing is withheld; the callback does not
+know the organization's mode before the provider runs.
 
 Every request the callback sends to Watcher sets `withholds_refused_calls`,
 so Watcher records each refused call as `blocked` when it decides it.
 When the client receives a response in place of refused proposals, the
 callback's recording of that response names the calls it withheld in
 `withheld_tool_use_ids`: each refused call and the calls withheld with it from
-the same proposal. It never names a call already released to the client.
+the same proposal. It never names a call already released to the client, nor
+one the final stop-and-ask generation proposed, which Watcher never evaluates.
 Watcher uses the IDs to show those calls before the delivered response. It
 skips any call it never evaluated, such as one from a proposal the callback
 refused as a repeat without asking Watcher.
+
+If denial recovery ends after three refused proposals, the agent can end its
+turn. For autonomous workloads that must continue, re-prompt the same
+conversation with the denial message and ask the agent to use an allowed
+approach. Retry at most twice per task, then stop for a person if the task is
+still incomplete. Stop sooner if the agent repeats a blocked operation or
+makes no progress. Resumed calls are evaluated normally.
+
+After an escalation, stop the autonomous workload for a person to decide how
+to proceed. Do not automatically resume it with an alternative approach.
 
 ## Prerequisites
 
@@ -205,12 +300,14 @@ withheld.
   clients do not retry because the same request would fail again.
 - A provider stream that ends early or reports an error, or provider generation
   that fails during recovery: HTTP 502 before streaming starts. Clients may retry.
+  The final stop-and-ask generation is the exception: its failure ends the
+  response with a fixed question to the user instead.
 - An unsupported or malformed provider response, including a complete reply
   the callback cannot combine during recovery: HTTP 422 before streaming starts.
 - Once any stream has started, failures arrive as an error event in that API's
   streaming protocol. The pending call and unreleased content are withheld;
   previously released text and approved calls remain delivered. Policy denials
-  and escalations instead use the bounded alternative-generation flow above.
+  and escalations instead use the bounded recovery flow above.
 
 Before any denial, each tool evaluation has a **300-second wall-clock
 deadline**. It starts when evaluation begins; earlier provider generation does
@@ -219,11 +316,14 @@ evaluation.
 
 The first denial or escalation changes the scope: the rest of recovery shares
 that refused evaluation's existing deadline. Draining its provider stream,
-generating both possible alternatives and evaluating their calls all consume
-the remaining time. An evaluation that takes 120 seconds leaves at most
+generating both possible alternatives, evaluating their calls and the final
+text-only generation all consume the remaining time. An evaluation that takes 120 seconds leaves at most
 180 seconds for recovery. Alternatives do not get a fresh 300 seconds.
-Expiry reports a timeout and withholds pending calls. Keepalives do not extend
-either deadline.
+Expiry before the final generation reports a timeout and withholds pending
+calls. Expiry or a provider failure during the final generation is not an
+error: the response ends with the fixed question instead, so a client does not
+retry and regenerate the refused proposals. Keepalives do not extend either
+deadline.
 
 This is separate from Watcher's own per-stage timeouts. The callback overrides
 the SDK's 420-second raw-hook default and applies a total deadline in addition
@@ -290,8 +390,9 @@ uv run pytest tests/test_incremental_proxy.py tests/test_recovery_proxy.py \
 The tests start isolated HTTP provider and Watcher fixtures on free loopback
 ports. They check text arriving before evaluation, withholding during grading,
 release before the next evaluation, interleaved calls, keepalives, streamed
-alternatives after denial or escalation, retry limits, timeouts, disconnects
-and the withheld calls named when the delivered response is recorded.
+alternatives after denial, the final question after escalation, retry limits,
+timeouts, disconnects and the withheld calls named when the delivered response
+is recorded.
 The XML's `timing_seconds`, `timeout_seconds`,
 `keepalive_count` and `wire` properties retain client-observed timing and SSE
 frames; the temporary directory also contains the proxy log. The fast suite

@@ -1,219 +1,81 @@
-"""Validate gateway delivery and send original provider exchanges to Watcher."""
+"""Gateway-private webhook service: add Watcher's notice, grade responses and recover from refusals.
+
+The launcher (``gateway/server.mjs``) installs two Portkey ``default.webhook``
+guardrails on every client request. ``/validate`` runs before the provider
+call: it rejects requests outside this deployment's delivery limits and
+returns the request with Watcher's fixed system notice added, which Portkey
+sends to the provider and keeps for the response hook. ``/evaluate`` runs on
+the buffered provider response: it releases an allowed response unchanged,
+or, after a refusal, returns the composed reply (notices plus an approved
+alternative or the model's final question to the user) as Portkey's
+transformed response. A refusal in a reply the client asked to receive as
+JSON is denied with ``STRUCTURED_OUTPUT_DENIAL``, which the launcher turns into
+an explicit HTTP 403 error. Every failure to verify a decision withholds the
+response, which Portkey reports as its hook-denied HTTP 446 error. After a
+composed reply is returned, a background thread records it in Watcher with
+the calls withheld in its favour; that recording never delays or fails the
+reply.
+"""
 
 import asyncio
 import hmac
 import json
 import os
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import typer
 
+from watcher_portkey.alternatives import (
+    Delivery,
+    Gateway,
+    StructuredOutputRefused,
+    marker_key,
+    record_delivery,
+    respond,
+)
+from watcher_portkey.exchange import UnsupportedExchange, decode_json, string, validate_request
+from watcher_portkey.system_notice import with_system_notice
 from watcher_sdk import AsyncWatcherClient
 
 MAX_BODY = 8 * 1024 * 1024
-
-# Every conversation ID the gateway plugin generates starts with this prefix
-# (see gateway/server.mjs). Watcher labels sessions whose ID carries a
-# registered gateway prefix as Gateway, so the bridge refuses any other ID.
-CONVERSATION_PREFIX = "portkey:"
-
-
-class UnsupportedExchange(ValueError):
-    """The gateway cannot safely deliver this request or response."""
-
-
-def _object(pairs: list[tuple[str, Any]]) -> dict:
-    """Reject duplicate JSON keys rather than interpreting an ambiguous envelope."""
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise UnsupportedExchange("Duplicate JSON key")
-        result[key] = value
-    return result
+# One deadline for the original decision, every alternative and the final
+# generation. It stays below the launcher's webhook timeout (290 s) and below
+# the 300 s that Node's built-in fetch waits for response headers by default,
+# so the bridge always answers before Portkey abandons the webhook.
+DEADLINE_SECONDS = 280.0
+# Returned in a refused webhook reply's ``data``; Portkey copies it into the
+# 446 body's hook results, where the launcher (gateway/server.mjs) finds it and
+# answers the client with an explicit structured-output error instead.
+STRUCTURED_OUTPUT_DENIAL = {"watcher_withheld": "structured_output"}
+# Bounds recording a composed reply, which runs after the reply was returned.
+RECORDING_SECONDS = 60.0
 
 
-def decode_json(value: str | bytes) -> Any:
-    """Decode gateway envelopes and argument syntax without rewriting their bodies."""
+def gateway_url() -> str:
+    """The launcher's own Chat Completions URL, from the listener settings it reads too.
 
-    def invalid_constant(value: str) -> None:
-        raise UnsupportedExchange("Non-finite JSON number")
-
-    return json.loads(value, object_pairs_hook=_object, parse_constant=invalid_constant)
-
-
-def _string(value: Any, label: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise UnsupportedExchange(f"Missing or invalid {label}")
-    return value
-
-
-def _conversation_id(value: Any) -> str:
-    """Require the gateway's documented prefix followed by a nonempty identifier."""
-    identity = _string(value, "gateway conversation ID")
-    if not identity.startswith(CONVERSATION_PREFIX) or identity == CONVERSATION_PREFIX:
-        raise UnsupportedExchange("Gateway conversation ID lacks the documented prefix")
-    return identity
-
-
-def validate_request(request: Any, *, allow_stream: bool = False) -> None:
-    """Check this deployment's native delivery limits before provider invocation.
-
-    Watcher performs transcript conversion. This guard limits the example to one
-    Chat Completions choice, complete client-provided history and function tools.
-    Stream=true needs the native plugin's complete-response buffering path.
+    A wildcard listen address is reached through loopback.
     """
-    if not isinstance(request, dict):
-        raise UnsupportedExchange("Request must be an object")
-    _string(request.get("model"), "model")
-    if type(request.get("stream", False)) is not bool:
-        raise UnsupportedExchange("stream must be a boolean")
-    if request.get("stream") and not allow_stream:
-        raise UnsupportedExchange("Streaming is unavailable on this gateway route")
-    if type(request.get("n", 1)) is not int or request.get("n", 1) != 1:
-        raise UnsupportedExchange("Exactly one completion choice is required")
-    for key in ("functions", "function_call", "previous_response_id", "conversation", "audio"):
-        if request.get(key) is not None:
-            raise UnsupportedExchange(f"Unsupported request option: {key}")
-    if "audio" in (request.get("modalities") or []):
-        raise UnsupportedExchange("Audio output is unsupported")
-    tools = request.get("tools", [])
-    if not isinstance(tools, list) or any(
-        not isinstance(tool, dict) or tool.get("type") != "function" for tool in tools
-    ):
-        raise UnsupportedExchange("Only client function tools are supported")
-    messages = request.get("messages")
-    if not isinstance(messages, list) or not messages or any(not isinstance(message, dict) for message in messages):
-        raise UnsupportedExchange("A complete messages list is required")
+    host = os.environ.get("GATEWAY_HOST") or "127.0.0.1"
+    if host in {"0.0.0.0", "::"}:
+        host = "127.0.0.1"
+    port = int(os.environ.get("GATEWAY_PORT") or 8787)
+    return f"http://{f'[{host}]' if ':' in host else host}:{port}/v1/chat/completions"
 
 
-def client_calls(response: Any) -> dict[tuple[str | int, ...], str]:
-    """Inventory every executable proposal in the body the client would receive.
+def serve(host: str, port: int) -> None:
+    """Start an authenticated, gateway-private bridge using the public Watcher SDK.
 
-    This does not select calls for grading or convert the transcript. A call the
-    backend skips as superseded context still needs a decision before a gateway
-    releases it. Unique native IDs bind decisions to the calls being delivered.
+    Requires ``WATCHER_BRIDGE_TOKEN``, ``WATCHER_BASE_URL`` and a
+    ``WATCHER_API_KEY`` with ``sessions:ingest`` (checked first), then
+    ``GATEWAY_API_KEY`` for generating alternatives through the launcher at
+    ``gateway_url()``.
     """
-    choices = response.get("choices") if isinstance(response, dict) else None
-    if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
-        raise UnsupportedExchange("One complete response choice is required")
-    choice = choices[0]
-    if type(choice.get("index")) is not int or choice["index"] != 0:
-        raise UnsupportedExchange("Unexpected choice index")
-    message = choice.get("message")
-    if not isinstance(message, dict) or message.get("role") != "assistant":
-        raise UnsupportedExchange("Response must contain an assistant message")
-    if message.get("function_call") is not None or message.get("audio") is not None:
-        raise UnsupportedExchange("Unsupported executable or audio output")
-    calls = message.get("tool_calls", [])
-    if calls is None:
-        calls = []
-    if not isinstance(calls, list):
-        raise UnsupportedExchange("Invalid tool proposals")
-    reason = choice.get("finish_reason")
-    if reason not in ("stop", "tool_calls", "length", "content_filter"):
-        raise UnsupportedExchange("Unsupported completion finish reason")
-    if calls and reason not in ("stop", "tool_calls"):
-        raise UnsupportedExchange("Incomplete executable response")
-    paths: dict[tuple[str | int, ...], str] = {}
-    seen = set()
-    for index, call in enumerate(calls):
-        if not isinstance(call, dict) or call.get("type") != "function":
-            raise UnsupportedExchange("Unsupported client tool type")
-        identifier = _string(call.get("id"), "native call ID")
-        if identifier in seen:
-            raise UnsupportedExchange("Duplicate native call ID")
-        seen.add(identifier)
-        function = call.get("function")
-        if not isinstance(function, dict) or not isinstance(function.get("arguments"), str):
-            raise UnsupportedExchange("Invalid function proposal")
-        _string(function.get("name"), "function name")
-        if not isinstance(decode_json(function["arguments"]), dict):
-            raise UnsupportedExchange("Function arguments must be a JSON object")
-        paths[("choices", 0, "message", "tool_calls", index)] = identifier
-    return paths
-
-
-def releasable(value: dict) -> bool:
-    """Accept consistent applied allow/deferred; malformed provenance never grants release."""
-    decision, mode, source = value.get("decision"), value.get("enforcement_mode"), value.get("decision_source")
-    failure = value.get("grading_error")
-    if source == "grading_error":
-        if (
-            not isinstance(failure, dict)
-            or failure.get("code")
-            not in {"timeout", "at_capacity", "allowance_exhausted", "grader_failed", "no_result"}
-            or not isinstance(failure.get("message"), str)
-        ):
-            return False
-    elif failure is not None:
-        return False
-    if mode == "paused":
-        return decision == "deferred" and source == "bypass" and value.get("judged_decision") is None
-    if source not in {"threshold", "rule", "triage", "policy_gateway", "grading_error"}:
-        return False
-    if mode == "observe":
-        return decision == "deferred" and value.get("judged_decision") in {"allow", "deny", "escalate"}
-    return mode == "enforce" and decision == "allow" and value.get("judged_decision") == "allow"
-
-
-async def evaluate(
-    watcher: AsyncWatcherClient,
-    request: dict,
-    response: dict,
-    *,
-    conversation_id: str,
-    allow_stream: bool = False,
-    url: str = "/v1/chat/completions",
-    provider: str = "openai",
-    user_agent: str | None = None,
-) -> bool:
-    """Send the original exchange to Watcher; release only calls with matching native IDs.
-
-    No settings override is sent. Backend conversion and call selection are
-    authoritative for grading; the independent delivery inventory prevents a
-    skipped proposal reaching the client without permission. Empty results admit
-    text-only output, never an uncovered client tool. Ingestion remains asynchronous.
-    A conversation ID without ``CONVERSATION_PREFIX`` is refused before Watcher is called.
-    """
-    _conversation_id(conversation_id)
-    validate_request(request, allow_stream=allow_stream)
-    expected = set(client_calls(response).values())
-    if user_agent is not None and not isinstance(user_agent, str):
-        raise UnsupportedExchange("Invalid client User-Agent")
-    outcomes = await watcher.pre_tool_use_hook(
-        request_body=request,
-        response_body=response,
-        url=_string(url, "client-facing URL"),
-        provider=_string(provider, "provider"),
-        user_agent=user_agent,
-        external_ids={"other": conversation_id},
-    )
-    if not isinstance(outcomes, list):
-        return False
-    released = set()
-    for outcome in outcomes:
-        serialize = getattr(outcome, "to_dict", None)
-        if not callable(serialize):
-            return False
-        value = serialize()
-        identifier = value.get("tool_use_id")
-        if (
-            not isinstance(identifier, str)
-            or identifier not in expected
-            or identifier in released
-            or not releasable(value)
-        ):
-            return False
-        released.add(identifier)
-    return released == expected
-
-
-def serve(host: str, port: int, *, allow_stream: bool = False) -> None:
-    """Start an authenticated, gateway-private bridge using the public Watcher SDK."""
-    token = _string(os.environ.get("WATCHER_BRIDGE_TOKEN"), "bridge token")
-    api_url = _string(os.environ.get("WATCHER_BASE_URL"), "Watcher URL")
-    api_key = _string(os.environ.get("WATCHER_API_KEY"), "Watcher API key")
+    token = string(os.environ.get("WATCHER_BRIDGE_TOKEN"), "bridge token")
+    api_url = string(os.environ.get("WATCHER_BASE_URL"), "Watcher URL")
+    api_key = string(os.environ.get("WATCHER_API_KEY"), "Watcher API key")
 
     async def check_ingestion() -> None:
         async with AsyncWatcherClient(api_url, api_key=api_key) as watcher:
@@ -222,6 +84,39 @@ def serve(host: str, port: int, *, allow_stream: bool = False) -> None:
                 raise PermissionError("Watcher credential requires sessions:ingest")
 
     asyncio.run(check_ingestion())
+    gateway = Gateway(
+        url=gateway_url(),
+        client_key=string(os.environ.get("GATEWAY_API_KEY"), "gateway API key"),
+        marker_key=marker_key(token),
+        max_body=MAX_BODY,
+    )
+
+    def evaluate(request: Any, response: Any, metadata: Any) -> dict:
+        """Answer the response webhook: release unchanged, or substitute the composed reply."""
+        if not isinstance(metadata, dict):
+            raise UnsupportedExchange("Missing gateway metadata")
+
+        exchange = {
+            "conversation_id": metadata.get("watcher_conversation_id"),
+            "url": metadata.get("watcher_url"),
+            "provider": metadata.get("watcher_provider"),
+            "user_agent": metadata.get("watcher_user_agent"),
+        }
+
+        async def run() -> Delivery | None:
+            deadline = asyncio.get_running_loop().time() + DEADLINE_SECONDS
+            async with AsyncWatcherClient(api_url, api_key=api_key) as watcher:
+                return await respond(watcher, gateway, request, response, **exchange, deadline=deadline)
+
+        async def record(delivery: Delivery) -> None:
+            async with AsyncWatcherClient(api_url, api_key=api_key) as watcher:
+                await record_delivery(watcher, request, delivery, **exchange, timeout=RECORDING_SECONDS)
+
+        delivery = asyncio.run(run())
+        if delivery is None:
+            return {"verdict": True}
+        threading.Thread(target=asyncio.run, args=(record(delivery),), daemon=True).start()
+        return {"verdict": True, "transformedData": {"response": {"json": delivery.response}}}
 
     class Handler(BaseHTTPRequestHandler):
         """Validate bridge credentials without logging native transcript content."""
@@ -244,31 +139,19 @@ def serve(host: str, port: int, *, allow_stream: bool = False) -> None:
                 if isinstance(request, dict) and "json" in request:
                     request = request["json"]
                 if self.path == "/validate":
-                    validate_request(request, allow_stream=allow_stream)
-                    allowed = True
+                    validate_request(request)
+                    noticed = with_system_notice(request)
+                    reply: dict[str, object] = {"verdict": True}
+                    if noticed is not None:
+                        reply["transformedData"] = {"request": {"json": noticed}}
                 else:
                     response = body.get("response")
                     if isinstance(response, dict) and "json" in response:
                         response = response["json"]
-                    metadata = body.get("metadata", {})
-
-                    async def run() -> bool:
-                        async with AsyncWatcherClient(api_url, api_key=api_key) as watcher:
-                            return await evaluate(
-                                watcher,
-                                request,
-                                response,
-                                conversation_id=_string(
-                                    metadata.get("watcher_conversation_id"), "gateway conversation ID"
-                                ),
-                                allow_stream=allow_stream,
-                                url=metadata.get("watcher_url"),
-                                provider=metadata.get("watcher_provider"),
-                                user_agent=metadata.get("watcher_user_agent"),
-                            )
-
-                    allowed = asyncio.run(run())
-                self._reply(200, {"verdict": allowed})
+                    reply = evaluate(request, response, body.get("metadata"))
+                self._reply(200, reply)
+            except StructuredOutputRefused:
+                self._reply(200, {"verdict": False, "data": STRUCTURED_OUTPUT_DENIAL})
             except (ValueError, TypeError, KeyError):
                 self._reply(200, {"verdict": False})
             except Exception:
@@ -289,9 +172,9 @@ app = typer.Typer(invoke_without_command=True, no_args_is_help=True, pretty_exce
 
 
 @app.command("serve")
-def serve_command(host: str = "127.0.0.1", port: int = 8765, allow_buffered_stream: bool = False) -> None:
+def serve_command(host: str = "127.0.0.1", port: int = 8765) -> None:
     """Run the gateway-private bridge on the configured listener."""
-    serve(host, port, allow_stream=allow_buffered_stream)
+    serve(host, port)
 
 
 @app.command("help", hidden=True)

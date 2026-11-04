@@ -79,22 +79,8 @@ def sync_detailed(
 ) -> Response[Any | ApertureHookAccepted | HTTPValidationError]:
     """Aperture Entire Request Hook
 
-     Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous
-    monitoring.
-
-    Configure Aperture with events=["entire_request"] and
-    send=["request_body", "response_body"]. The API key must have
-    sessions:write:any so metadata.login_name can attribute the session.
-    Admin enforcement.mode selects observation or ingestion only (paused);
-    this asynchronous transport always caps enforcement at observe. Only tool
-    calls in the response are evaluated. Text-only turns are ingested too.
-
-    A 202 confirms admission, not completed grading or durable storage.
-    Unsupported formats and malformed provider bodies are logged after the
-    ACK. Captures require recognized coding-harness identity, using the
-    per-format markers documented in the hooks reference. Other applications
-    are skipped; those the raw capture already identifies are answered 202
-    without being admitted (see the module docstring).
+     Deprecated Tailscale Aperture observation alias for POST /v1/hooks/aperture/entire-request. Existing
+    subscriptions remain supported.
 
     Args:
         body (ApertureHookRequest): The fixed webhook envelope with both required send types
@@ -132,22 +118,8 @@ def sync(
 ) -> Any | ApertureHookAccepted | HTTPValidationError | None:
     """Aperture Entire Request Hook
 
-     Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous
-    monitoring.
-
-    Configure Aperture with events=["entire_request"] and
-    send=["request_body", "response_body"]. The API key must have
-    sessions:write:any so metadata.login_name can attribute the session.
-    Admin enforcement.mode selects observation or ingestion only (paused);
-    this asynchronous transport always caps enforcement at observe. Only tool
-    calls in the response are evaluated. Text-only turns are ingested too.
-
-    A 202 confirms admission, not completed grading or durable storage.
-    Unsupported formats and malformed provider bodies are logged after the
-    ACK. Captures require recognized coding-harness identity, using the
-    per-format markers documented in the hooks reference. Other applications
-    are skipped; those the raw capture already identifies are answered 202
-    without being admitted (see the module docstring).
+     Deprecated Tailscale Aperture observation alias for POST /v1/hooks/aperture/entire-request. Existing
+    subscriptions remain supported.
 
     Args:
         body (ApertureHookRequest): The fixed webhook envelope with both required send types
@@ -180,22 +152,8 @@ async def asyncio_detailed(
 ) -> Response[Any | ApertureHookAccepted | HTTPValidationError]:
     """Aperture Entire Request Hook
 
-     Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous
-    monitoring.
-
-    Configure Aperture with events=["entire_request"] and
-    send=["request_body", "response_body"]. The API key must have
-    sessions:write:any so metadata.login_name can attribute the session.
-    Admin enforcement.mode selects observation or ingestion only (paused);
-    this asynchronous transport always caps enforcement at observe. Only tool
-    calls in the response are evaluated. Text-only turns are ingested too.
-
-    A 202 confirms admission, not completed grading or durable storage.
-    Unsupported formats and malformed provider bodies are logged after the
-    ACK. Captures require recognized coding-harness identity, using the
-    per-format markers documented in the hooks reference. Other applications
-    are skipped; those the raw capture already identifies are answered 202
-    without being admitted (see the module docstring).
+     Deprecated Tailscale Aperture observation alias for POST /v1/hooks/aperture/entire-request. Existing
+    subscriptions remain supported.
 
     Args:
         body (ApertureHookRequest): The fixed webhook envelope with both required send types
@@ -231,22 +189,8 @@ async def asyncio(
 ) -> Any | ApertureHookAccepted | HTTPValidationError | None:
     """Aperture Entire Request Hook
 
-     Accept a supported coding-agent request/response capture from Tailscale Aperture for asynchronous
-    monitoring.
-
-    Configure Aperture with events=["entire_request"] and
-    send=["request_body", "response_body"]. The API key must have
-    sessions:write:any so metadata.login_name can attribute the session.
-    Admin enforcement.mode selects observation or ingestion only (paused);
-    this asynchronous transport always caps enforcement at observe. Only tool
-    calls in the response are evaluated. Text-only turns are ingested too.
-
-    A 202 confirms admission, not completed grading or durable storage.
-    Unsupported formats and malformed provider bodies are logged after the
-    ACK. Captures require recognized coding-harness identity, using the
-    per-format markers documented in the hooks reference. Other applications
-    are skipped; those the raw capture already identifies are answered 202
-    without being admitted (see the module docstring).
+     Deprecated Tailscale Aperture observation alias for POST /v1/hooks/aperture/entire-request. Existing
+    subscriptions remain supported.
 
     Args:
         body (ApertureHookRequest): The fixed webhook envelope with both required send types

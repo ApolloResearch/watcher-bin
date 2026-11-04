@@ -23,6 +23,8 @@ cp "$WATCHER_SDK_WHEEL" "$fixture_dir/context/"
 cp "$fixture_dir/dist/watcher_crewai_example-0.1.0-py3-none-any.whl" "$fixture_dir/context/"
 cp -R "$example_dir/demo" "$example_dir/tests" "$fixture_dir/context/"
 cp "$example_dir/pyproject.toml" "$example_dir/tests/native/Dockerfile" "$fixture_dir/context/"
+mkdir "$fixture_dir/context/_test_support"
+cp "$example_dir/../_test_support/pip_check.py" "$fixture_dir/context/_test_support/"
 image_tag="watcher-example-crewai:$(basename "$fixture_dir")"
 printf 'Native fixture artifacts: %s\n' "$fixture_dir"
 docker build --iidfile "$fixture_dir/evidence/image.id" --tag "$image_tag" "$fixture_dir/context" > "$fixture_dir/build-container.log" 2>&1

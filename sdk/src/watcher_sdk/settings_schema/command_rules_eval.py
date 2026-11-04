@@ -37,7 +37,7 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol
 
 import regex as regex_module
-from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, JsonValue, SkipValidation, TypeAdapter, ValidationError
 
 from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
     UNKNOWN_TOOL_THRESHOLD_KEY,
@@ -162,7 +162,7 @@ class ToolThresholdPair(BaseModel):
     deny_threshold: int
 
 
-type ToolInput = str | dict[str, Any] | list[Any] | None
+type ToolInput = JsonValue
 
 
 _SHELL_TOOL_NAMES = frozenset(
@@ -232,7 +232,7 @@ def is_shell_input(tool_name: str, tool_input: ToolInput) -> bool:
     return isinstance(tool_input, dict) and ("command" in tool_input or "cmd" in tool_input)
 
 
-def _stringify_tool_input(value: Any) -> str | None:
+def _stringify_tool_input(value: JsonValue) -> str | None:
     if value is None:
         return None
     if isinstance(value, str):
@@ -243,7 +243,7 @@ def _stringify_tool_input(value: Any) -> str | None:
         return str(value)
 
 
-def _extract_named_input(tool_input: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+def _extract_named_input(tool_input: dict[str, JsonValue], keys: tuple[str, ...]) -> str | None:
     for key in keys:
         value = tool_input.get(key)
         if value is not None:
@@ -563,9 +563,13 @@ def _compile_rule_pattern(pattern: str) -> _CompiledPattern | str:
     """
     if len(pattern) > MAX_RULE_PATTERN_LENGTH:
         return f"regex is longer than {MAX_RULE_PATTERN_LENGTH} characters"
+    # Conditional groups can corrupt the regex engine's group table in native code. Every conditional starts
+    # with the contiguous text "(?(", even under VERBOSE, so a substring test refuses them before parsing.
+    if "(?(" in pattern:
+        return "regex uses a conditional group, which rule patterns do not support"
     try:
         compiled: _CompiledPattern = regex_module.compile(pattern, regex_module.IGNORECASE)
-    except (regex_module.error, RecursionError, ValueError, OverflowError) as error:
+    except Exception as error:  # a third-party parser on user input raises more than regex.error
         return f"regex does not compile: {error}"
     return compiled
 
@@ -573,8 +577,8 @@ def _compile_rule_pattern(pattern: str) -> _CompiledPattern | str:
 def rule_pattern_error(pattern: str) -> str | None:
     """Why an active rule's ``pattern`` would suppress allow rules at evaluation, or ``None``.
 
-    An over-long pattern, or one the ``regex`` engine cannot compile under the
-    evaluator's flags, makes :func:`evaluate_command_rules` drop every allow rule
+    An over-long pattern, one with a conditional group, or one the ``regex`` engine
+    cannot compile under the evaluator's flags, makes :func:`evaluate_command_rules` drop every allow rule
     for the calls that rule applies to. Settings diagnostics call this to name the
     rule responsible; it is the same check evaluation runs.
     """

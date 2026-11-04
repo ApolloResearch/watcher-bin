@@ -24,7 +24,7 @@ uv export --project "$example_dir" --frozen --no-emit-project --no-emit-package 
 cp "$example_dir/pyproject.toml" "$example_dir/uv.lock" "$fixture_dir/context/"
 cp -R "$example_dir/tests" "$fixture_dir/context/tests"
 mkdir "$fixture_dir/context/_test_support"
-cp "$example_dir/../_test_support/readback.py" "$fixture_dir/context/_test_support/"
+cp "$example_dir/../_test_support/readback.py" "$example_dir/../_test_support/pip_check.py" "$fixture_dir/context/_test_support/"
 sha256sum "$fixture_dir/context/_test_support/readback.py" > "$fixture_dir/evidence/test-support-sha256.txt"
 for asset in "$example_dir"/tests/native/*; do
   if [ -f "$asset" ]; then cp "$asset" "$fixture_dir/context/"; fi

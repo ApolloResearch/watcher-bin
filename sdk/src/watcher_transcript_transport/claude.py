@@ -7,12 +7,20 @@ identify suffixes or partial tool cycles that cannot be uploaded independently.
 
 from __future__ import annotations
 
+from collections import deque
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from watcher_transcript_transport.upload import JsonEntry
 
-__all__ = ["TailTrimScan", "delta_needs_full_upload", "trim_incomplete_tail"]
+__all__ = [
+    "TailTrimScan",
+    "current_trajectory",
+    "current_trajectory_groups",
+    "delta_needs_full_upload",
+    "live_compaction_start",
+    "trim_incomplete_tail",
+]
 
 
 def trim_incomplete_tail(
@@ -149,8 +157,18 @@ def _prompt_text_key(prompt: str | list[JsonEntry]) -> tuple[str, ...]:
 
 def _drop_redelivered_queued_commands(chain: list[JsonEntry]) -> list[JsonEntry]:
     """Drop queued-command attachments later redelivered as ``user`` entries."""
+    dropped = {command for command, _ in _queued_command_redeliveries(chain)}
+    return [entry for index, entry in enumerate(chain) if index not in dropped]
+
+
+def _queued_command_redeliveries(chain: list[JsonEntry]) -> list[tuple[int, int]]:
+    """Pair each redelivered queued command with the ``user`` entry that redelivers it, as chain positions.
+
+    A command waits until the next assistant entry; the oldest waiting command
+    with the same text is the one a ``user`` entry redelivers.
+    """
     pending: dict[tuple[str, ...], list[int]] = {}
-    dropped: set[int] = set()
+    pairs: list[tuple[int, int]] = []
     for index, entry in enumerate(chain):
         if entry.get("type") == "assistant":
             pending.clear()
@@ -163,8 +181,8 @@ def _drop_redelivered_queued_commands(chain: list[JsonEntry]) -> list[JsonEntry]
             continue
         matches = pending.get(_user_entry_text_key(entry))
         if matches:
-            dropped.add(matches.pop(0))
-    return [entry for index, entry in enumerate(chain) if index not in dropped]
+            pairs.append((matches.pop(0), index))
+    return pairs
 
 
 def _parse_event_timestamp(entry: JsonEntry) -> float | None:
@@ -198,10 +216,10 @@ def _branch_head_message(
     chain walk. A global timestamp sort could choose a different first prompt
     and incorrectly classify a fork as a rewind. Cycles are visited once.
     """
-    queue = [branch_root]
+    queue = deque([branch_root])
     seen: set[str] = set()
     while queue:
-        current = queue.pop(0)
+        current = queue.popleft()
         uuid = current["uuid"]
         if uuid in seen:
             continue
@@ -219,6 +237,7 @@ def _branch_last_activity(
     children: dict[str, list[JsonEntry]],
     message_uuids: set[str],
     segments_by_owner: dict[str, list[JsonEntry]],
+    memo: dict[str, float | None],
 ) -> float | None:
     """Newest message timestamp on this branch, including its owned segments, or None.
 
@@ -227,22 +246,29 @@ def _branch_last_activity(
     ``segments_by_owner`` (owner-leaf UUID to continuing segment roots), even
     though those segments are separate roots in the physical transcript.
     """
-    last: float | None = None
-    queue = [branch_root]
-    seen: set[str] = set()
-    while queue:
-        current = queue.pop(0)
+    if branch_root["uuid"] in memo:
+        return memo[branch_root["uuid"]]
+    in_progress: set[str] = set()
+    stack = [(branch_root, False)]
+    while stack:
+        current, expanded = stack.pop()
         uuid = current["uuid"]
-        if uuid in seen:
+        if uuid in memo or (not expanded and uuid in in_progress):
             continue
-        seen.add(uuid)
-        if uuid in message_uuids:
-            timestamp = _parse_event_timestamp(current)
-            if timestamp is not None and (last is None or timestamp > last):
-                last = timestamp
-        queue.extend(child for child in children.get(uuid, []) if child["uuid"] not in seen)
-        queue.extend(seg for seg in segments_by_owner.get(uuid, []) if seg["uuid"] not in seen)
-    return last
+        below = [*children.get(uuid, []), *segments_by_owner.get(uuid, [])]
+        if not expanded:
+            in_progress.add(uuid)
+            stack.append((current, True))
+            stack.extend((child, False) for child in below if child["uuid"] not in memo)
+            continue
+        last = _parse_event_timestamp(current) if uuid in message_uuids else None
+        for child in below:
+            activity = memo.get(child["uuid"])
+            if activity is not None and (last is None or activity > last):
+                last = activity
+        memo[uuid] = last
+        in_progress.discard(uuid)
+    return memo[branch_root["uuid"]]
 
 
 def _drop_abandoned_rewind_branches(
@@ -250,6 +276,7 @@ def _drop_abandoned_rewind_branches(
     children: dict[str, list[JsonEntry]],
     message_uuids: set[str],
     segments_by_owner: dict[str, list[JsonEntry]],
+    activity_by_uuid: dict[str, float | None],
 ) -> list[JsonEntry]:
     """Filter a fork's children down to the live branch — the one the user continued.
 
@@ -268,9 +295,11 @@ def _drop_abandoned_rewind_branches(
         return siblings
 
     survivor = contenders[0]
-    survivor_activity = _branch_last_activity(siblings[survivor], children, message_uuids, segments_by_owner)
+    survivor_activity = _branch_last_activity(
+        siblings[survivor], children, message_uuids, segments_by_owner, activity_by_uuid
+    )
     for i in contenders[1:]:
-        activity = _branch_last_activity(siblings[i], children, message_uuids, segments_by_owner)
+        activity = _branch_last_activity(siblings[i], children, message_uuids, segments_by_owner, activity_by_uuid)
         if survivor_activity is None or (activity is not None and activity >= survivor_activity):
             survivor = i
             survivor_activity = activity
@@ -389,6 +418,7 @@ def _drop_abandoned_root_prompts(
     children: dict[str, list[JsonEntry]],
     message_uuids: set[str],
     segments_by_owner: dict[str, list[JsonEntry]],
+    activity_by_uuid: dict[str, float | None],
 ) -> list[JsonEntry]:
     """Drop the abandoned first-prompt roots when the first prompt was rewound.
 
@@ -420,9 +450,11 @@ def _drop_abandoned_root_prompts(
         if len(contenders) < 2 or len({prompt_keys[i] for i in contenders}) < 2:
             continue
         survivor = contenders[0]
-        survivor_activity = _branch_last_activity(roots[survivor], children, message_uuids, segments_by_owner)
+        survivor_activity = _branch_last_activity(
+            roots[survivor], children, message_uuids, segments_by_owner, activity_by_uuid
+        )
         for i in contenders[1:]:
-            activity = _branch_last_activity(roots[i], children, message_uuids, segments_by_owner)
+            activity = _branch_last_activity(roots[i], children, message_uuids, segments_by_owner, activity_by_uuid)
             if survivor_activity is None or (activity is not None and activity >= survivor_activity):
                 survivor = i
                 survivor_activity = activity
@@ -442,23 +474,86 @@ class _BranchSelection:  # noqa: B903
 class _LiveBranch:  # noqa: B903
     """The server parser's live branch of a Claude UUID tree, as the client replicates it.
 
-    ``order`` holds the uuids of the live branch's messages in the order the
-    server stores them; ``abandons_branch`` says whether the walk dropped a
-    rewound branch, which the server stores as an extra conversation.
+    ``entries`` holds the selected conversation before queued-command
+    redelivery deduplication. Keeping those attachments lets the server retain
+    their source-ID aliases when a compaction refers to them. ``order`` is the
+    deduplicated UUID sequence used by upload planning. ``abandons_branch``
+    reports whether historical ingestion would also emit abandoned branches.
     """
 
-    __slots__ = ("abandons_branch", "order", "visited", "alternatives")
+    __slots__ = ("abandons_branch", "entries", "order", "visited", "alternatives")
 
+    entries: list[JsonEntry]
     order: list[str]
     abandons_branch: bool
 
     def __init__(
-        self, order: list[str], abandons_branch: bool, visited: set[str], alternatives: list[_BranchSelection]
+        self, entries: list[JsonEntry], abandons_branch: bool, visited: set[str], alternatives: list[_BranchSelection]
     ) -> None:
-        self.order = order
+        self.entries = entries
+        self.order = [entry["uuid"] for entry in _drop_redelivered_queued_commands(entries)]
         self.abandons_branch = abandons_branch
         self.visited = visited
         self.alternatives = alternatives
+
+
+class _WalkTree:  # noqa: B903
+    """The tree a full walk built: what a proof about other pieces of the same file reuses.
+
+    ``roots`` are every root the walk sorted, in walk order and before any
+    rewind pruning; ``deferred`` says whether any compaction segment root had
+    to wait for its owner leaf.
+    """
+
+    __slots__ = ("entry_lookup", "message_uuids", "children", "roots", "segment_back_links", "deferred")
+
+    def __init__(
+        self,
+        entry_lookup: dict[str, JsonEntry],
+        message_uuids: set[str],
+        children: dict[str, list[JsonEntry]],
+        roots: list[JsonEntry],
+        segment_back_links: dict[str, str],
+        deferred: bool,
+    ) -> None:
+        self.entry_lookup = entry_lookup
+        self.message_uuids = message_uuids
+        self.children = children
+        self.roots = roots
+        self.segment_back_links = segment_back_links
+        self.deferred = deferred
+
+
+class _ChainWalk:  # noqa: B903
+    """One walk's message chain before queued-command deduplication (see ``_walk_chain``).
+
+    ``tree`` is None when the walk returned early: no messages, or no root
+    because every message has a message ancestor (a cycle).
+    """
+
+    __slots__ = ("chain", "abandons_branch", "visited", "alternatives", "tree")
+
+    def __init__(
+        self,
+        chain: list[JsonEntry],
+        abandons_branch: bool,
+        visited: set[str],
+        alternatives: list[_BranchSelection],
+        tree: _WalkTree | None,
+    ) -> None:
+        self.chain = chain
+        self.abandons_branch = abandons_branch
+        self.visited = visited
+        self.alternatives = alternatives
+        self.tree = tree
+
+    def live_branch(self) -> _LiveBranch:
+        return _LiveBranch(
+            self.chain,
+            self.abandons_branch,
+            self.visited,
+            self.alternatives,
+        )
 
 
 def _message_order(entries: list[JsonEntry]) -> list[str] | None:
@@ -471,11 +566,158 @@ def _message_order(entries: list[JsonEntry]) -> list[str] | None:
     return None if branch is None else branch.order
 
 
-def _live_branch(entries: list[JsonEntry]) -> _LiveBranch | None:
-    return _walk_branch(entries, _BranchSelection({}, None))
+def _current_compaction_boundaries(
+    entries: list[JsonEntry], selected: list[JsonEntry], *, include_sidechains: bool
+) -> list[JsonEntry]:
+    """Keep compaction ownership stable after discarding historical summaries.
+
+    A boundary marks one summary: its explicit anchor, otherwise the first
+    claimant in file order. Removing an abandoned owner must not transfer its
+    retained context to a live summary. Resolve ownership once over metadata,
+    then pin surviving owners explicitly and clear other boundaries' retained
+    context. No historical message contents are copied into the projection.
+    """
+    by_uuid = {entry["uuid"]: entry for entry in entries if entry.get("uuid")}
+    boundaries = [
+        entry for entry in entries if entry.get("type") == "system" and entry.get("subtype") == "compact_boundary"
+    ]
+    anchored: dict[str, JsonEntry] = {}
+    for boundary in boundaries:
+        boundary_metadata = boundary.get("compactMetadata")
+        if not isinstance(boundary_metadata, dict):
+            continue
+        for key in ("preservedMessages", "preservedSegment"):
+            section = boundary_metadata.get(key)
+            if isinstance(section, dict) and isinstance(section.get("anchorUuid"), str):
+                anchored[section["anchorUuid"]] = boundary
+    summaries: dict[str, JsonEntry] = {}
+    for entry in entries:
+        if (
+            entry.get("type") != "user"
+            or not entry.get("uuid")
+            or (entry.get("isSidechain") and not include_sidechains)
+        ):
+            continue
+        parent = by_uuid.get(entry.get("parentUuid"))
+        is_root = entry.get("parentUuid") is None or (
+            parent is not None and parent.get("type") == "system" and parent.get("subtype") == "compact_boundary"
+        )
+        if entry.get("isCompactSummary") or (is_root and _is_compaction_segment_root(entry)):
+            summaries[entry["uuid"]] = entry
+    owners = {id(anchored[uuid]): uuid for uuid in reversed(summaries) if uuid in anchored}
+    for uuid, entry in summaries.items():
+        boundary = anchored.get(uuid) or by_uuid.get(entry.get("parentUuid"))
+        if boundary is not None:
+            owners.setdefault(id(boundary), uuid)
+    selected_ids = {entry["uuid"] for entry in selected}
+    result: list[JsonEntry] = []
+    for boundary in boundaries:
+        owner = owners.get(id(boundary))
+        original = boundary.get("compactMetadata")
+        metadata: dict[str, Any] = {}
+        if owner in selected_ids and isinstance(original, dict):
+            preserved = original.get("preservedMessages")
+            segment = original.get("preservedSegment")
+            if isinstance(preserved, dict) and isinstance(preserved.get("uuids"), list):
+                metadata = {"preservedMessages": {"anchorUuid": owner, "uuids": preserved["uuids"]}}
+            elif isinstance(segment, dict) and isinstance(segment.get("headUuid"), str):
+                metadata = {"preservedSegment": {"anchorUuid": owner, "headUuid": segment["headUuid"]}}
+        result.append({**boundary, "compactMetadata": metadata})
+    return result
 
 
-def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _LiveBranch | None:
+def current_trajectory(entries: list[JsonEntry], *, include_sidechains: bool = False) -> list[JsonEntry]:
+    """Select the current conversation for grading, preserving native message facts.
+
+    The result is an ordered conversation, not another JSONL tree: consumers
+    must read its messages in the supplied order. Compaction boundary records
+    precede the messages so native conversion can retain the same context
+    markers as a full upload. Queued-command attachments remain until native
+    conversion deduplicates them and records their replacement aliases.
+    Message entries are borrowed without mutation; callers must treat them as
+    read-only. Boundary metadata is copied to preserve summary ownership.
+    Raises ``ValueError`` if the tree cannot be ordered safely.
+
+    One tree walk selects the live continuation, including parallel results
+    and owned compaction segments. It never reconstructs the shared prefix
+    separately for each abandoned branch.
+    Set ``include_sidechains`` only for a dedicated child transcript whose
+    native identity has been validated; root conversations exclude sidechains.
+    """
+    branch = _live_branch(entries, include_sidechains=include_sidechains)
+    if branch is None:
+        raise ValueError("Cannot select a current trajectory from a cyclic transcript")
+    boundaries = _current_compaction_boundaries(entries, branch.entries, include_sidechains=include_sidechains)
+    return [*boundaries, *branch.entries]
+
+
+def current_trajectory_groups(entries: list[JsonEntry], *, include_sidechains: bool = False) -> list[list[JsonEntry]]:
+    """Select current context in groups that can be converted independently.
+
+    Splitting an arbitrary entry sequence can detach a compaction boundary
+    from its summary or a queued command from its redelivery. Either changes
+    canonical message metadata and the context used for grading.
+
+    1. Select the current trajectory once, retaining native aliases.
+    2. Attach each summary's boundary to that summary, rather than putting all
+       boundaries at the beginning where a new compaction invalidates every
+       earlier checkpoint.
+    3. Keep a queued-command block together until the next assistant entry.
+       If a later user entry replaces a queued command, that group's contents
+       change, so a fingerprinted checkpoint cannot reuse the obsolete form.
+
+    Concatenating groups is equivalent to ``current_trajectory`` for ordered
+    native conversion. A group may contain an unfinished tool cycle; native
+    entries are independently converted and results can arrive in later groups.
+    ``include_sidechains`` follows ``current_trajectory``: enable it only for
+    a validated, dedicated child transcript.
+    """
+    selected = current_trajectory(entries, include_sidechains=include_sidechains)
+    boundaries: dict[str, JsonEntry] = {}
+    anchored: dict[str, JsonEntry] = {}
+    for entry in selected:
+        if entry.get("type") != "system" or entry.get("subtype") != "compact_boundary":
+            continue
+        if isinstance(entry.get("uuid"), str):
+            boundaries[entry["uuid"]] = entry
+        metadata = entry.get("compactMetadata")
+        if isinstance(metadata, dict):
+            for key in ("preservedMessages", "preservedSegment"):
+                section = metadata.get(key)
+                if isinstance(section, dict) and isinstance(section.get("anchorUuid"), str):
+                    anchored[section["anchorUuid"]] = entry
+
+    owners = {id(boundary): uuid for uuid, boundary in anchored.items()}
+    groups: list[list[JsonEntry]] = []
+    queued: list[JsonEntry] = []
+    for entry in selected:
+        if entry.get("type") == "system" and entry.get("subtype") == "compact_boundary":
+            continue
+        if entry.get("type") == "assistant" and queued:
+            groups.append(queued)
+            queued = []
+        uuid = cast(str, entry["uuid"])
+        parent = entry.get("parentUuid")
+        boundary = anchored.get(uuid) or (boundaries.get(parent) if isinstance(parent, str) else None)
+        if boundary is not None and owners.setdefault(id(boundary), uuid) != uuid:
+            boundary = {**boundary, "compactMetadata": {}}
+        group = [boundary, entry] if boundary is not None else [entry]
+        if queued or _queued_command_prompt(entry) is not None:
+            queued.extend(group)
+        else:
+            groups.append(group)
+    if queued:
+        groups.append(queued)
+    return groups
+
+
+def _live_branch(entries: list[JsonEntry], *, include_sidechains: bool = False) -> _LiveBranch | None:
+    return _walk_branch(entries, _BranchSelection({}, None), include_sidechains=include_sidechains)
+
+
+def _walk_branch(
+    entries: list[JsonEntry], selection: _BranchSelection, *, include_sidechains: bool = False
+) -> _LiveBranch | None:
     """Walk a Claude UUID tree the way the server parser walks its live branch.
 
     Besides the order (see ``_message_order``) this reports whether any rewound
@@ -485,16 +727,35 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
     parses to several conversations, which the append endpoint refuses.
     ``None`` means the tree cannot be ordered safely.
 
-    The Watcher client's transcript index walks reduced copies of entries that
-    keep only the fields read here (``walk_view`` in
-    ``apollo_monitor.agent_integrations.claude_code.transcript_index``), so
-    reading another field needs the same change there.
+    """
+    walk = _walk_chain(entries, selection, include_sidechains=include_sidechains)
+    return None if walk is None else walk.live_branch()
+
+
+def _live_chain_walk(entries: list[JsonEntry]) -> _ChainWalk | None:
+    """The live walk with its tree, for a caller that needs both the branch and the tree."""
+    return _walk_chain(entries, _BranchSelection({}, None))
+
+
+def _walk_chain(
+    entries: list[JsonEntry], selection: _BranchSelection, *, include_sidechains: bool = False
+) -> _ChainWalk | None:
+    """``_walk_branch`` before queued-command deduplication, keeping the tree it built.
+
+    Keep in sync with ``claude_splits._never_prunes`` and
+    ``claude_splits._prove_cuts``: they prove which cuts this walk preserves
+    from its rules for pruning rewound siblings, grouping and sorting roots,
+    and deferring compaction segments. A new or changed rule here can make
+    them prove a cut that is no longer safe, so update their conditions with
+    it.
     """
     choices = selection.choices
     entry_lookup = {
         entry["uuid"]: entry
         for entry in entries
-        if isinstance(entry.get("uuid"), str) and entry["uuid"] and not entry.get("isSidechain", False)
+        if isinstance(entry.get("uuid"), str)
+        and entry["uuid"]
+        and (include_sidechains or not entry.get("isSidechain", False))
     }
     message_entries = [
         entry
@@ -505,10 +766,10 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
         )
         and isinstance(entry.get("uuid"), str)
         and entry["uuid"]
-        and not entry.get("isSidechain", False)
+        and (include_sidechains or not entry.get("isSidechain", False))
     ]
     if not message_entries:
-        return _LiveBranch([], False, set(), [])
+        return _ChainWalk([], False, set(), [], None)
 
     message_uuids = {entry["uuid"] for entry in message_entries}
     children: dict[str, list[JsonEntry]] = {}
@@ -520,7 +781,7 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
             and parent_uuid in entry_lookup
             and isinstance(uuid, str)
             and uuid
-            and not entry.get("isSidechain", False)
+            and (include_sidechains or not entry.get("isSidechain", False))
         ):
             children.setdefault(parent_uuid, []).append(entry)
 
@@ -546,18 +807,15 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
             root_groups[id(entry)] = top_ancestor if parent_uuid is None else None
 
     if not roots:
-        return _LiveBranch(
-            [entry["uuid"] for entry in _drop_redelivered_queued_commands(message_entries)],
-            False,
-            set(entry_lookup),
-            [],
-        )
+        return _ChainWalk(message_entries, False, set(entry_lookup), [], None)
 
     roots.sort(key=_entry_walk_key)
+    sorted_roots = roots
     # Ownership resolves against every root (a segment can be owned by an
     # abandoned first-prompt version), so build the map before pruning roots.
     segment_back_links = _segment_back_links(roots, entry_lookup)
     segments_by_owner = _segments_by_owner(segment_back_links, entry_lookup)
+    activity_by_uuid: dict[str, float | None] = {}
     alternatives: list[_BranchSelection] = []
     root_positions = {root["uuid"]: i for i, root in enumerate(roots)}
     current_root_index = 0
@@ -590,7 +848,7 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
     for group in dict.fromkeys(root_groups.values()):
         grouped = [root for root in roots if root_groups[id(root)] == group]
         survivors = _drop_abandoned_root_prompts(
-            grouped, [group] * len(grouped), children, message_uuids, segments_by_owner
+            grouped, [group] * len(grouped), children, message_uuids, segments_by_owner, activity_by_uuid
         )
         live_roots.extend(select(grouped, survivors, f"root:{group}"))
     live_ids = {root["uuid"] for root in live_roots}
@@ -610,9 +868,9 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
 
     def walk_from(root: JsonEntry) -> None:
         nonlocal abandons_branch
-        queue = [root]
+        queue = deque([root])
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             uuid = current["uuid"]
             if uuid in visited:
                 continue
@@ -623,7 +881,9 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
             next_entries.sort(key=_entry_walk_key)
             live_entries = select(
                 next_entries,
-                _drop_abandoned_rewind_branches(next_entries, children, message_uuids, segments_by_owner),
+                _drop_abandoned_rewind_branches(
+                    next_entries, children, message_uuids, segments_by_owner, activity_by_uuid
+                ),
                 uuid,
             )
             abandons_branch = abandons_branch or len(live_entries) < len(next_entries)
@@ -637,6 +897,7 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
             deferred.append(root)
             continue
         walk_from(root)
+    any_deferred = bool(deferred)
 
     # Mirror of the server's deferred second pass (see _EntryTreeWalk._walk): an
     # untimestamped owner root sorts last (_entry_walk_key), so a segment's own
@@ -658,9 +919,8 @@ def _walk_branch(entries: list[JsonEntry], selection: _BranchSelection) -> _Live
                 remaining.append(root)
         deferred = remaining
 
-    return _LiveBranch(
-        [entry["uuid"] for entry in _drop_redelivered_queued_commands(chain)], abandons_branch, visited, alternatives
-    )
+    tree = _WalkTree(entry_lookup, message_uuids, children, sorted_roots, segment_back_links, any_deferred)
+    return _ChainWalk(chain, abandons_branch, visited, alternatives, tree)
 
 
 class _RewindReach:  # noqa: B903
@@ -734,10 +994,6 @@ def delta_needs_full_upload(entries: list[JsonEntry], cursor: int) -> bool:
     order would line up. Chunked uploads use this as their boundary guard too,
     so a rewind always lands in a full-ingest chunk rather than an append.
 
-    The Watcher client's transcript index reproduces this check from walks of
-    reduced entries (``ClaudeTranscriptIndexer._needs_full_upload`` in
-    ``apollo_monitor.agent_integrations.claude_code.transcript_index``), so a
-    change here needs the same change there.
     """
     if cursor <= _last_cursor_before_a_rewind(entries):
         return True
@@ -774,10 +1030,14 @@ def branch_indices(entries: list[JsonEntry]) -> list[list[int]]:
     as the live walk. Shared ancestors appear in each branch; the uploader can
     reuse their acknowledged hashes instead of sending them again.
     """
-    live = _walk_branch(entries, _BranchSelection({}, None))
+    return _branch_indices_from_walk(entries, _live_chain_walk(entries))
+
+
+def _branch_indices_from_walk(entries: list[JsonEntry], live_walk: _ChainWalk | None) -> list[list[int]]:
+    """``branch_indices`` for a caller that already holds ``_live_chain_walk(entries)``."""
+    live = None if live_walk is None else live_walk.live_branch()
     if live is None or not live.abandons_branch:
         return [list(range(len(entries)))]
-    lookup = {entry["uuid"]: entry for entry in entries if isinstance(entry.get("uuid"), str)}
     pending = list(live.alternatives)
     walks = []
     seen: set[tuple[str, ...]] = {tuple(live.order)}
@@ -788,13 +1048,95 @@ def branch_indices(entries: list[JsonEntry]) -> list[list[int]]:
         seen.add(tuple(walk.order))
         walks.append(walk)
         pending.extend(walk.alternatives)
-    result = []
-    for walk in [*walks, live]:
-        included = set(walk.visited)
-        for uid in list(included):
-            parent = lookup[uid].get("parentUuid")
-            while isinstance(parent, str) and parent in lookup and parent not in included:
-                included.add(parent)
-                parent = lookup[parent].get("parentUuid")
-        result.append([i for i, entry in enumerate(entries) if entry.get("uuid") in included or not entry.get("uuid")])
-    return result
+    return [_branch_indices(entries, walk) for walk in [*walks, live]]
+
+
+def current_branch_indices(entries: list[JsonEntry], *, include_sidechains: bool = False) -> list[int]:
+    """Source positions fingerprinted by the uploader for the current branch only.
+
+    Unlike current_trajectory, this retains native file order and bookkeeping.
+    Use it to match upload acknowledgments, not as an ordered grading payload.
+    No abandoned branch is reconstructed. A cyclic tree raises ValueError.
+    """
+    live = _live_branch(entries, include_sidechains=include_sidechains)
+    if live is None:
+        raise ValueError("Cannot select a current trajectory from a cyclic transcript")
+    return _branch_indices(entries, live) if live.abandons_branch else list(range(len(entries)))
+
+
+def _branch_indices(entries: list[JsonEntry], walk: _LiveBranch) -> list[int]:
+    """Keep the branch's visited records and transparent parents in source order."""
+    lookup = {entry["uuid"]: entry for entry in entries if isinstance(entry.get("uuid"), str)}
+    included = set(walk.visited)
+    for uid in list(included):
+        parent = lookup[uid].get("parentUuid")
+        while isinstance(parent, str) and parent in lookup and parent not in included:
+            included.add(parent)
+            parent = lookup[parent].get("parentUuid")
+    return [i for i, entry in enumerate(entries) if entry.get("uuid") in included or not entry.get("uuid")]
+
+
+def live_compaction_start(entries: list[JsonEntry]) -> int:
+    """Return where the agent's current context starts in the file: its live branch's last compaction, or 0.
+
+    Claude Code continues a compacted conversation from a ``compact_boundary``
+    system entry with no parent (older files: an ``isCompactSummary`` user entry
+    as the new root), and the server grades only what the last compaction kept.
+    Its ``compactMetadata`` may keep earlier messages too
+    (``preservedMessages.uuids``, or a ``preservedSegment`` from ``headUuid``
+    on), which sit before the boundary in the file, so the context starts at
+    the earliest of those. A summary is matched to its boundary by the
+    metadata's ``anchorUuid`` or by its parent link. A compaction on a rewound
+    branch is skipped: the live branch does not continue it.
+    """
+    live = branch_indices(entries)[-1]
+    positions = {entries[index].get("uuid"): index for index in live if isinstance(entries[index].get("uuid"), str)}
+    for index in reversed(live):
+        entry = entries[index]
+        if _is_boundary(entry):
+            boundary = index
+        elif entry.get("isCompactSummary"):
+            boundary = next(
+                (
+                    position
+                    for position in reversed(live[: live.index(index)])
+                    if _is_boundary(entries[position]) and _anchors(entries[position], entry)
+                ),
+                None,
+            )
+            if boundary is None:
+                return index
+        else:
+            continue
+        return min([boundary, *_kept_positions(entries[boundary], positions)])
+    return 0
+
+
+def _is_boundary(entry: JsonEntry) -> bool:
+    return entry.get("type") == "system" and entry.get("subtype") == "compact_boundary"
+
+
+def _anchors(boundary: JsonEntry, summary: JsonEntry) -> bool:
+    """Whether ``boundary`` belongs to ``summary``: its metadata anchors to it, or it is the summary's parent."""
+    uuid = summary.get("uuid")
+    if summary.get("parentUuid") == boundary.get("uuid"):
+        return True
+    metadata = boundary.get("compactMetadata")
+    return isinstance(metadata, dict) and any(
+        isinstance(metadata.get(key), dict) and metadata[key].get("anchorUuid") == uuid
+        for key in ("preservedMessages", "preservedSegment")
+    )
+
+
+def _kept_positions(boundary: JsonEntry, positions: dict[Any, int]) -> list[int]:
+    """The live-branch positions of the earlier messages ``boundary``'s compaction kept."""
+    metadata = boundary.get("compactMetadata")
+    if not isinstance(metadata, dict):
+        return []
+    preserved = metadata.get("preservedMessages")
+    if isinstance(preserved, dict) and isinstance(preserved.get("uuids"), list):
+        return [positions[uuid] for uuid in preserved["uuids"] if isinstance(uuid, str) and uuid in positions]
+    segment = metadata.get("preservedSegment")
+    if isinstance(segment, dict) and segment.get("headUuid") in positions:
+        return [positions[segment["headUuid"]]]
+    return []

@@ -11,3 +11,7 @@ It is test support, not part of an integration's runtime package.
 The helper polls an explicitly supplied SDK client and retains the responses
 in the caller's evidence directory. A successful hook response alone does not
 prove that a transcript or decision has been stored.
+
+`pip_check.py` runs `pip check` in a native fixture image, from the directory
+holding the example's `pyproject.toml`. It fails on every conflict except one
+whose installed version is an exact-pin `[tool.uv] override-dependencies` entry.

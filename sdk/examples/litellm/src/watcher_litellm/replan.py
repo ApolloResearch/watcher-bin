@@ -5,6 +5,14 @@ retain provider history and distinguish calls withheld by Watcher from calls
 already sent to the client. A released call has an unknown execution result;
 inventing its success or cancellation would give the next generation false
 context. Every generated alternative must pass the callback's tool gates.
+
+The texts follow the wording that kept agents working in Watcher's denial
+experiments. A denial's result says that working around the block is fine,
+because Watcher checks every call; inviting a text-only explanation instead
+ends the agent's turn, since harnesses only call the model again after tool
+results. An escalation's result asks the model to stop and put the decision to
+the user with labelled options. Client-visible notices say that Watcher, not
+the model, wrote them: the next request carries them in the model's own turn.
 """
 
 import json
@@ -19,7 +27,22 @@ from watcher_litellm.incremental import PROVIDER_ITEMS
 from watcher_litellm.streams import API
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
-_RETRY_INSTRUCTION = "Choose an alternative consistent with this result, or explain why you cannot continue."
+_ADDED_BY_WATCHER = "(added by Watcher, not written by the assistant)"
+_CONTINUE = (
+    "Continue the user's task another way; Watcher checks every call, "
+    "so you do not need permission to try a different approach."
+)
+_STOP_AFTER_CAP = "Several different approaches have now been blocked, so stop: tell the user what was blocked and ask how to proceed."
+_ASK_APPROVAL = (
+    "The user can approve it: stop and ask the user whether to allow it, with labelled options, "
+    "for example: A. allow this call, B. skip it, C. do something else."
+)
+_ASK_FIXED = (
+    "Stop, tell the user, and ask how to proceed with labelled options, for example: "
+    "A. skip it, B. do something else, C. ask an administrator to change the policy."
+)
+_HELD = "Watcher's policy holds {call} for a person's review, and it cannot be approved in this conversation."
+_SIBLING = "did not run because Watcher refused another call in the same response."
 _RELEASED_RESULT = (
     "Watcher approved this tool call and sent it to the client. "
     "Its execution result is not yet available. Do not repeat it."
@@ -53,6 +76,11 @@ class ToolDenial(ToolCall):
 
     reason: str = Field(min_length=1)
     is_escalation: bool
+    # Whether the user's answer can lead to approval of an escalation. Only
+    # Watcher's graders read the conversation; a rule, a threshold or the
+    # grading-failure policy decides again without it, so offering "allow"
+    # there would escalate the same call in a loop.
+    user_can_approve: bool = False
 
 
 class _LocalShellAction(BaseModel):
@@ -173,36 +201,127 @@ def client_tool_details(api: API, response: dict[str, Any]) -> list[ToolCall]:
     return calls
 
 
-def denial_notice(denials: list[ToolDenial], *, cancelled: list[ToolCall] | None = None) -> str:
-    """Describe withheld calls as ordinary text with exact IDs, arguments and public reasons.
-
-    ``cancelled`` contains unevaluated siblings that were withheld because of
-    another call's denial; never include an already released call in that list.
-    Escalations retain their identity and explanation despite there being no
-    gateway approval UI. This helper emits no executable provider tool blocks.
-    """
-    notice = (
-        "Watcher did not approve these client tool calls in this proposal; the gateway withheld them.\n\n"
-        + json.dumps(
-            [denial.model_dump(mode="json") for denial in denials], ensure_ascii=False, sort_keys=True, allow_nan=False
-        )
+def _call_text(call: ToolCall) -> str:
+    """Name a call with its exact arguments, as a reader would recognize it in the transcript."""
+    arguments = (
+        call.tool_input
+        if isinstance(call.tool_input, str)
+        else json.dumps(call.tool_input, ensure_ascii=False, sort_keys=True, allow_nan=False)
     )
-    if cancelled:
-        notice += (
-            "\n\nThe other client calls below were withheld because a sibling call was blocked. "
-            "They were not executed:\n\n"
-            + json.dumps([call.model_dump(mode="json") for call in cancelled], ensure_ascii=False, sort_keys=True)
+    return f"`{call.tool_name} {arguments}`"
+
+
+def _reason(denial: ToolDenial) -> str:
+    """Watcher's public explanation as one sentence, whether or not it ends with punctuation."""
+    reason = denial.reason.strip()
+    return reason if reason.endswith((".", "!", "?")) else reason + "."
+
+
+def denial_notice(denials: list[ToolDenial], *, cancelled: list[ToolCall] | None = None) -> str:
+    """Describe withheld calls to the user and to the model's later turns, one line per call.
+
+    Each line names the call with its exact arguments and Watcher's public
+    reason, and says Watcher added it, because the client's next request
+    carries it inside the model's own turn. A model that sees unexplained text
+    there tends to call it injected or its own mistake and disbelieve the
+    denial. Escalations are marked ``WATCHER ESCALATION``, denials ``WATCHER
+    NOTICE``. ``cancelled`` contains unevaluated siblings withheld because of
+    another call's refusal; never include an already released call in that
+    list. This helper emits no executable provider tool blocks.
+    """
+    lines = [
+        f"WATCHER NOTICE {_ADDED_BY_WATCHER}: Watcher blocked {_call_text(denial)}. "
+        f"Reason: {_reason(denial)} The call did not run."
+        if not denial.is_escalation
+        else f"WATCHER ESCALATION {_ADDED_BY_WATCHER}: {_call_text(denial)} needs the user's decision before it can run. "
+        f"Reason: {_reason(denial)} The call did not run."
+        if denial.user_can_approve
+        else f"WATCHER ESCALATION {_ADDED_BY_WATCHER}: {_HELD.format(call=_call_text(denial))} "
+        f"Reason: {_reason(denial)} The call did not run."
+        for denial in denials
+    ]
+    lines += [f"WATCHER NOTICE {_ADDED_BY_WATCHER}: {_call_text(call)} {_SIBLING}" for call in cancelled or []]
+    return "\n\n".join(lines)
+
+
+def stop_notice(denials: list[ToolDenial]) -> str:
+    """The fixed question to the user when the final generation's reply cannot stand alone.
+
+    ``denials`` are the refusals that triggered the final generation, which
+    was asked to stop and ask the user. This text follows its reply when the
+    reply proposed tool calls anyway (withheld unevaluated), had no text or
+    was cut off, and replaces it when the generation failed. It offers
+    approval only when every escalation can be approved in the conversation;
+    one "allow" answer cannot clear a call held by policy.
+    """
+    escalations = [denial for denial in denials if denial.is_escalation]
+    if escalations and all(denial.user_can_approve for denial in escalations):
+        return (
+            f"WATCHER ESCALATION {_ADDED_BY_WATCHER}: Watcher withheld further tool calls so that the user can decide. "
+            "Reply A to allow the escalated call (Watcher evaluates it again when the assistant proposes it), "
+            "B to skip it, or C to do something else."
         )
-    return notice
+    if escalations:
+        return (
+            f"WATCHER ESCALATION {_ADDED_BY_WATCHER}: Watcher withheld further tool calls. Watcher's policy holds the "
+            "escalated call for a person's review, and it cannot be approved in this conversation. Reply A to skip "
+            "it, B to do something else, or C to ask an administrator to change the policy."
+        )
+    return (
+        f"WATCHER NOTICE {_ADDED_BY_WATCHER}: Watcher blocked three proposals in a row and withheld further tool "
+        "calls. None of the blocked calls ran. How would you like to proceed?"
+    )
 
 
-def _tool_result(call_id: str, denials: dict[str, ToolDenial], released_ids: set[str]) -> str:
-    """Explain the call's actual delivery state without inventing a client execution result."""
+def _tool_result(
+    call_id: str,
+    denials: dict[str, ToolDenial],
+    released_ids: set[str],
+    *,
+    stop: bool,
+    escalated: bool,
+    approvable: bool,
+) -> str:
+    """Explain the call's actual delivery state without inventing a client execution result.
+
+    A refused call's result tells the model what to do next: keep working by
+    another approach, or, on the final generation, stop and ask the user. On
+    that final generation an escalation alone carries the ask, so a denied
+    sibling's result adds no instruction that could contradict it. Approval is
+    offered only when ``approvable``, meaning every escalation in the proposal
+    can be approved in the conversation, as in ``stop_notice``.
+    """
     if call_id in released_ids:
         return _RELEASED_RESULT
-    if call_id in denials:
-        return denial_notice([denials[call_id]]) + "\n\n" + _RETRY_INSTRUCTION
-    return "This client tool was not executed because another call in this response was blocked. " + _RETRY_INSTRUCTION
+    denial = denials.get(call_id)
+    if denial is None:
+        return f"This call {_SIBLING}"
+    if denial.is_escalation and denial.user_can_approve:
+        return (
+            f"WATCHER ESCALATION: this call needs the user's decision before it can run. "
+            f"Reason: {_reason(denial)} The call did not run. {_ASK_APPROVAL if approvable else _ASK_FIXED}"
+        )
+    if denial.is_escalation:
+        return (
+            f"WATCHER ESCALATION: {_HELD.format(call='this call')} "
+            f"Reason: {_reason(denial)} The call did not run. {_ASK_FIXED}"
+        )
+    result = f"WATCHER NOTICE: Watcher blocked this call. Reason: {_reason(denial)} The call did not run."
+    if not stop:
+        return f"{result} {_CONTINUE}"
+    return result if escalated else f"{result} {_STOP_AFTER_CAP}"
+
+
+def _forbid_tool_calls(api: API, request: dict[str, Any]) -> None:
+    """Set the API's no-call choice, in place, wherever the request offers tools.
+
+    Requests without tools are left alone: there is nothing to call, and
+    OpenAI rejects a tool choice without tools.
+    """
+    if request.get("tools"):
+        request["tool_choice"] = {"type": "none"} if api == "messages" else "none"
+    if api == "chat_completions" and request.get("functions"):
+        request["function_call"] = "none"
 
 
 def build_replan_request(
@@ -212,6 +331,7 @@ def build_replan_request(
     denials: list[ToolDenial],
     *,
     released_ids: set[str],
+    stop: bool = False,
 ) -> dict[str, Any]:
     """Append the original proposal and truthful results without mutating either input.
 
@@ -223,9 +343,15 @@ def build_replan_request(
     by this helper. On a subsequent replacement, pass that replacement response
     and its already extended request; previously released receipts remain history.
 
-    Existing history, system instructions, tools, tool-selection constraints,
-    cache controls, signed thinking, encrypted reasoning and metadata are copied
-    unchanged. Recovery must not enable tools excluded for this turn. Responses string
+    Without ``stop``, a denied call's result asks for another approach. With
+    ``stop`` (the callback's final generation, after an escalation or the last
+    allowed proposal), results ask the model to stop and put the decision or
+    the blocked approaches to the user instead, and the request's tool choice
+    becomes the API's no-call choice so the model answers in text.
+
+    Existing history, system instructions, tools, tool-selection constraints
+    (except with ``stop``), cache controls, signed thinking,
+    encrypted reasoning and metadata are copied unchanged. Recovery must not enable tools excluded for this turn. Responses string
     input becomes an equivalent user message. Provider-run output stays context.
     Native shell receipts use the API's ``id`` result field. A tool search has
     no textual result field: its incomplete result provides no tool definitions,
@@ -237,6 +363,12 @@ def build_replan_request(
     calls = client_tool_details(api, response)
     pending = {call.tool_use_id: call for call in calls}
     by_id = {denial.tool_use_id: denial for denial in denials}
+    escalated = any(denial.is_escalation for denial in denials)
+    approvable = all(denial.user_can_approve for denial in denials if denial.is_escalation)
+
+    def result_text(call_id: str) -> str:
+        return _tool_result(call_id, by_id, released_ids, stop=stop, escalated=escalated, approvable=approvable)
+
     if not by_id or len(by_id) != len(denials) or not by_id.keys() <= pending.keys():
         raise ValueError("Invalid replan denial identities")
     if not released_ids <= pending.keys() or released_ids & by_id.keys():
@@ -250,7 +382,13 @@ def build_replan_request(
 
     # 2. Preserve request controls: relaxing a forced choice could enable an
     # excluded provider-hosted tool, which executes before this callback sees it.
+    # The final generation must answer in text and must not run a provider-hosted
+    # tool either, which also executes before this callback sees it, so it gets
+    # the no-call choice. That narrows every choice, at the cost of the prompt
+    # cache for that one generation.
     result = deepcopy(request)
+    if stop:
+        _forbid_tool_calls(api, result)
 
     # 3. Represent the same delivery facts in each API's native tool-result shape.
     if api == "responses":
@@ -267,7 +405,7 @@ def build_replan_request(
                     {
                         "type": item["type"] + "_output",
                         "call_id": item["call_id"],
-                        "output": _tool_result(item["call_id"], by_id, released_ids),
+                        "output": result_text(item["call_id"]),
                     }
                 )
             elif item["type"] == "local_shell_call":
@@ -276,7 +414,7 @@ def build_replan_request(
                         "type": "local_shell_call_output",
                         "id": item["call_id"],
                         "status": "incomplete",
-                        "output": _tool_result(item["call_id"], by_id, released_ids),
+                        "output": result_text(item["call_id"]),
                     }
                 )
             elif item["type"] == "tool_search_call":
@@ -292,7 +430,7 @@ def build_replan_request(
                 search_receipts.append(
                     f"Gateway delivery receipt for tool call {item['call_id']}: "
                     "the incomplete tool_search_output supplies no tool definitions. "
-                    "It is not a completed search result. " + _tool_result(item["call_id"], by_id, released_ids)
+                    "It is not a completed search result. " + result_text(item["call_id"])
                 )
         if search_receipts:
             history.append({"role": "user", "content": "\n\n".join(search_receipts)})
@@ -306,7 +444,7 @@ def build_replan_request(
                     {
                         "type": "tool_result",
                         "tool_use_id": call.tool_use_id,
-                        "content": _tool_result(call.tool_use_id, by_id, released_ids),
+                        "content": result_text(call.tool_use_id),
                         **({"is_error": True} if call.tool_use_id not in released_ids else {}),
                     }
                     for call in calls
@@ -322,7 +460,7 @@ def build_replan_request(
                 if message.get("function_call")
                 else {"role": "tool", "tool_call_id": call.tool_use_id}
             )
-            result["messages"].append({**location, "content": _tool_result(call.tool_use_id, by_id, released_ids)})
+            result["messages"].append({**location, "content": result_text(call.tool_use_id)})
     return result
 
 

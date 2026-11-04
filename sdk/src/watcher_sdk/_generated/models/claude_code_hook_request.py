@@ -1,21 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Literal,
-    Self,
-    TypeVar,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 
 from attrs import define as _attrs_define
 
+from ..models.claude_code_hook_request_format import ClaudeCodeHookRequestFormat
 from ..models.claude_code_hook_request_mode import ClaudeCodeHookRequestMode
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.claude_code_current_trajectory import ClaudeCodeCurrentTrajectory
     from ..models.claude_code_hook_request_external_ids_type_0 import (
         ClaudeCodeHookRequestExternalIdsType0,
     )
@@ -40,23 +35,17 @@ class ClaudeCodeHookRequest:
     checked against the file's record of that ID when the file holds it, and
     judged from the report alone when the agent has not written it yet.
 
+    ``claude-code-trajectory`` supplies one already-selected conversation in
+    canonical order. This format permits an interior ``append_after`` under
+    hash scheme 3; leave ``fork`` unset. Older schemes keep the ordinary
+    non-leaf refusal. Complete-history recording belongs to the uploader.
+
         Attributes:
-            format_ (Literal['claude-code-jsonl']):
-            messages (ClaudeCodeTrajectory): A Claude Code JSONL file or delta, with a stable conversation identity.
-
-                ``session_id`` is the current Claude Code conversation ID, not a Watcher
-                session UUID. Send the same value on full uploads and deltas: it takes
-                precedence over historical ``sessionId`` values in copied entries. When
-                omitted or empty, each parsed branch uses its first entry's ``sessionId``.
-                Ownership checks still apply to the selected conversation, and hook
-                appends must name the same conversation as their stored anchor.
-
-                Supply ``agent`` on every child upload, including appends. Entry-level root
-                session and agent IDs must match it when present. Custom imports may omit
-                ``agentId`` on records containing a ``message`` or ``attachment`` only with
-                ``isSidechain: true``; metadata without either payload may omit both markers.
-                ``resolve_tool_calls`` requests message hashes for selected native calls,
-                including duplicate uploads.
+            format_ (ClaudeCodeHookRequestFormat):
+            messages (ClaudeCodeCurrentTrajectory | ClaudeCodeTrajectory): The Claude Code session file, or its selected
+                current trajectory in canonical message order. With append_after, send only the continuation after that
+                acknowledged message. Current-trajectory requests may branch from an earlier acknowledgment; the uploader
+                records other branches.
             append_after (HookAppendAnchor | None | Unset):
             input_ (list[MonitoringInput] | MonitoringInput | None | Unset):
             mode (ClaudeCodeHookRequestMode | Unset):  Default: ClaudeCodeHookRequestMode.FULL.
@@ -68,6 +57,12 @@ class ClaudeCodeHookRequest:
                 session; any non-null external IDs must already belong to that session.
             user (None | str | Unset):
             ephemeral (bool | Unset):  Default: False.
+            record_transcript (bool | Unset): Set false to grade without storing this request's messages or a decision,
+                while still storing the grades under the conversation the external IDs name, when that conversation is already
+                stored, and returning their IDs. For a caller that stores the agent's transcript file through its own uploads
+                and sends only part of it here: its decision upload cites the returned grade IDs once the call is stored. Only
+                with an agent's own transcript file (not format watcher); requires at least one non-null external ID; cannot be
+                combined with ephemeral or append_after. Default: True.
             force_regrade (bool | Unset): Evaluate again even when this session and tool-use ID have a completed judgment.
                 The new result may replace the recorded decision, including in observe mode. Otherwise a readable completed
                 judgment with matching tool arguments is reused, regardless of policy version, under the current enforcement
@@ -80,14 +75,15 @@ class ClaudeCodeHookRequest:
             fork (bool | Unset):  Default: False.
     """
 
-    format_: Literal["claude-code-jsonl"]
-    messages: ClaudeCodeTrajectory
+    format_: ClaudeCodeHookRequestFormat
+    messages: ClaudeCodeCurrentTrajectory | ClaudeCodeTrajectory
     append_after: HookAppendAnchor | None | Unset = UNSET
     input_: list[MonitoringInput] | MonitoringInput | None | Unset = UNSET
     mode: ClaudeCodeHookRequestMode | Unset = ClaudeCodeHookRequestMode.FULL
     external_ids: ClaudeCodeHookRequestExternalIdsType0 | None | Unset = UNSET
     user: None | str | Unset = UNSET
     ephemeral: bool | Unset = False
+    record_transcript: bool | Unset = True
     force_regrade: bool | Unset = False
     skip_rules: bool | Unset = False
     policy_version: None | str | Unset = UNSET
@@ -103,12 +99,17 @@ class ClaudeCodeHookRequest:
         from ..models.claude_code_hook_request_settings_overrides_type_1 import (
             ClaudeCodeHookRequestSettingsOverridesType1,
         )
+        from ..models.claude_code_trajectory import ClaudeCodeTrajectory
         from ..models.hook_append_anchor import HookAppendAnchor
         from ..models.monitoring_input import MonitoringInput
 
-        format_ = self.format_
+        format_ = self.format_.value
 
-        messages = self.messages.to_dict()
+        messages: dict[str, Any]
+        if isinstance(self.messages, ClaudeCodeTrajectory):
+            messages = self.messages.to_dict()
+        else:
+            messages = self.messages.to_dict()
 
         append_after: dict[str, Any] | None | Unset
         if isinstance(self.append_after, Unset):
@@ -152,6 +153,8 @@ class ClaudeCodeHookRequest:
 
         ephemeral = self.ephemeral
 
+        record_transcript = self.record_transcript
+
         force_regrade = self.force_regrade
 
         skip_rules = self.skip_rules
@@ -194,6 +197,8 @@ class ClaudeCodeHookRequest:
             field_dict["user"] = user
         if ephemeral is not UNSET:
             field_dict["ephemeral"] = ephemeral
+        if record_transcript is not UNSET:
+            field_dict["record_transcript"] = record_transcript
         if force_regrade is not UNSET:
             field_dict["force_regrade"] = force_regrade
         if skip_rules is not UNSET:
@@ -209,6 +214,7 @@ class ClaudeCodeHookRequest:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.claude_code_current_trajectory import ClaudeCodeCurrentTrajectory
         from ..models.claude_code_hook_request_external_ids_type_0 import (
             ClaudeCodeHookRequestExternalIdsType0,
         )
@@ -220,13 +226,26 @@ class ClaudeCodeHookRequest:
         from ..models.monitoring_input import MonitoringInput
 
         d = dict(src_dict)
-        format_ = cast(Literal["claude-code-jsonl"], d.pop("format"))
-        if format_ != "claude-code-jsonl":
-            raise ValueError(
-                f"format must match const 'claude-code-jsonl', got '{format_}'"
-            )
+        format_ = ClaudeCodeHookRequestFormat(d.pop("format"))
 
-        messages = ClaudeCodeTrajectory.from_dict(d.pop("messages"))
+        def _parse_messages(
+            data: object,
+        ) -> ClaudeCodeCurrentTrajectory | ClaudeCodeTrajectory:
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                messages_type_0 = ClaudeCodeTrajectory.from_dict(data)
+
+                return messages_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            if not isinstance(data, dict):
+                raise TypeError()
+            messages_type_1 = ClaudeCodeCurrentTrajectory.from_dict(data)
+
+            return messages_type_1
+
+        messages = _parse_messages(d.pop("messages"))
 
         def _parse_append_after(data: object) -> HookAppendAnchor | None | Unset:
             if data is None:
@@ -318,6 +337,8 @@ class ClaudeCodeHookRequest:
 
         ephemeral = d.pop("ephemeral", UNSET)
 
+        record_transcript = d.pop("record_transcript", UNSET)
+
         force_regrade = d.pop("force_regrade", UNSET)
 
         skip_rules = d.pop("skip_rules", UNSET)
@@ -367,6 +388,7 @@ class ClaudeCodeHookRequest:
             external_ids=external_ids,
             user=user,
             ephemeral=ephemeral,
+            record_transcript=record_transcript,
             force_regrade=force_regrade,
             skip_rules=skip_rules,
             policy_version=policy_version,

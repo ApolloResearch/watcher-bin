@@ -185,9 +185,11 @@ class TestProxy:
 
         expected = [("read_file", "toolu_0" if api == "messages" else "call_0")] if stream else []
         assert calls == expected
-        assert "Watcher did not approve" in text
+        assert "WATCHER NOTICE (added by Watcher" in text
         assert "rm is not allowed here." in text
-        assert len(provider_state.requests) == 3
+        # Three refused proposals, then one final generation whose call is withheld unevaluated.
+        assert "Watcher blocked three proposals in a row" in text
+        assert len(provider_state.requests) == 4
         _await_requests(watcher_state, 3 if stream else 2)
 
     def test_text_replies_are_recorded_and_released(
@@ -325,7 +327,7 @@ def test_incomplete_responses_stream_is_delivered_once(
         assert final.type == "response.completed" or final.type == "response.incomplete"
         assert not any(item.type == "function_call" for item in final.response.output)
         assert "rm is not allowed here." in final.response.output_text
-        assert len(provider_state.requests) == 3
+        assert len(provider_state.requests) == 4
         _await_requests(watcher_state, 2)
         return
     assert final.type == "response.incomplete"

@@ -22,6 +22,8 @@ from watcher_sdk._generated.models.agent_relationship_request import AgentRelati
 from watcher_sdk._generated.models.agent_relationship_response import AgentRelationshipResponse
 from watcher_sdk._generated.models.aperture_hook_accepted import ApertureHookAccepted
 from watcher_sdk._generated.models.aperture_log import ApertureLog
+from watcher_sdk._generated.models.aperture_pre_request_response import AperturePreRequestResponse
+from watcher_sdk._generated.models.aperture_pre_response_response import AperturePreResponseResponse
 from watcher_sdk._generated.models.auth_client_config import AuthClientConfig
 from watcher_sdk._generated.models.claude_code_trajectory import ClaudeCodeTrajectory
 from watcher_sdk._generated.models.codex_trajectory import CodexTrajectory
@@ -38,6 +40,7 @@ from watcher_sdk._generated.models.health_response import HealthResponse
 from watcher_sdk._generated.models.hook_append_response import HookAppendResponse
 from watcher_sdk._generated.models.hook_call_error import HookCallError
 from watcher_sdk._generated.models.ingest_response import IngestResponse
+from watcher_sdk._generated.models.installation_report_response import InstallationReportResponse
 from watcher_sdk._generated.models.message_detail_response import MessageDetailResponse
 from watcher_sdk._generated.models.models_config import ModelsConfig
 from watcher_sdk._generated.models.monitor_customization_response import MonitorCustomizationResponse
@@ -59,6 +62,7 @@ from watcher_sdk._generated.models.session_filter_options_response import Sessio
 from watcher_sdk._generated.models.session_list_response import SessionListResponse
 from watcher_sdk._generated.models.session_summary import SessionSummary
 from watcher_sdk._generated.models.subagent_list_response import SubagentListResponse
+from watcher_sdk._generated.models.tool_call_decision_batch_response import ToolCallDecisionBatchResponse
 from watcher_sdk._generated.models.tool_call_detail_response import ToolCallDetailResponse
 from watcher_sdk._generated.models.tool_call_findings_response import ToolCallFindingsResponse
 from watcher_sdk._generated.models.tool_call_list_response import ToolCallListResponse
@@ -79,6 +83,7 @@ from watcher_sdk.client import (
     SessionDetailResponse,
     _HookInputMapping,
 )
+from watcher_sdk.installation_report import InstallationReport
 
 class WatcherClient:
     _async_client: AsyncWatcherClient
@@ -117,7 +122,7 @@ class WatcherClient:
     def auth_device_authorize(self) -> DeviceAuthorizationResponse: ...
     def auth_device_token(self, device_code: str) -> DeviceTokenResponse: ...
     def check_permissions(self, permissions: list[str] | tuple[str, ...]) -> PermissionCheckResponse: ...
-    def _ingest_incremental(self, body: bytes) -> IngestResponse: ...
+    def _ingest_incremental(self, body: bytes, *, format: str) -> IngestResponse: ...
     def ingest(
         self, source: str, trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog]
     ) -> IngestResponse: ...
@@ -132,6 +137,9 @@ class WatcherClient:
         source: str,
         trajectory: ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory,
     ) -> IngestResponse: ...
+    def upload_tool_call_decisions_batch(
+        self, *, session_id: str, decisions: list[dict[str, Any]]
+    ) -> ToolCallDecisionBatchResponse: ...
     def grade(
         self,
         *,
@@ -169,6 +177,7 @@ class WatcherClient:
         tool_use_id: str | None = None,
         user: str | None = None,
         ephemeral: bool | None = None,
+        record_transcript: bool | None = None,
         mode: str | None = None,
         force_regrade: bool = False,
         timeout: float | None = None,
@@ -192,6 +201,7 @@ class WatcherClient:
         tool_use_id: str | None = None,
         user: str | None = None,
         ephemeral: bool | None = None,
+        record_transcript: bool | None = None,
         mode: str | None = None,
         force_regrade: bool = False,
         timeout: float | None = None,
@@ -215,6 +225,7 @@ class WatcherClient:
         tool_use_id: None = None,
         user: str | None = None,
         ephemeral: bool | None = None,
+        record_transcript: bool | None = None,
         mode: str | None = None,
         force_regrade: bool = False,
         timeout: float | None = None,
@@ -246,6 +257,10 @@ class WatcherClient:
         withholds_refused_calls: bool | None = None,
     ) -> list[PreToolUseHookResponse | HookCallError]: ...
     def aperture_entire_request_hook(self, payload: Mapping[str, Any]) -> ApertureHookAccepted: ...
+    def aperture_pre_request_hook(self, payload: Mapping[str, Any]) -> AperturePreRequestResponse: ...
+    def aperture_pre_response_hook(
+        self, payload: Mapping[str, Any], *, timeout: float = 310.0
+    ) -> AperturePreResponseResponse: ...
     @overload
     def pre_tool_use(
         self,
@@ -367,6 +382,9 @@ class WatcherClient:
     def get_org_managed_settings_monitors(self, path: str = "settings.yaml") -> ActivatedMonitorsResponse: ...
     def get_monitor_customization(self) -> MonitorCustomizationResponse: ...
     def update_monitor_customization(self, instructions: str) -> MonitorCustomizationResponse: ...
+    def send_installation_report(
+        self, installation_id: UUID, report: InstallationReport
+    ) -> InstallationReportResponse: ...
     def get_grading_usage(
         self,
         start_date: datetime | None = None,

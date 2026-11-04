@@ -22,7 +22,8 @@ async def capture(watcher, request, response, **kwargs):
     path = root / (str(uuid4()) + ".json")
     try:
         result = await evaluate(watcher, request, response, **kwargs)
-        receipt["permitted"] = result
+        receipt["permitted"] = result.released
+        receipt["denied"] = [denial.tool_use_id for denial in result.denials]
         return result
     except Exception as error:
         receipt["error"] = {"type": type(error).__name__, "message": str(error)}

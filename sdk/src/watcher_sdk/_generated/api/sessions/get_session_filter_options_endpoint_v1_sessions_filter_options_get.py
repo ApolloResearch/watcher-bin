@@ -50,7 +50,7 @@ def sync_detailed(
 ) -> Response[SessionFilterOptionsResponse]:
     """Get Session Filter Options Endpoint
 
-     List category filter options from the score definitions of session-visible graders.
+     List filter options: grader score categories and the machine hostnames on readable sessions.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -75,7 +75,7 @@ def sync(
 ) -> SessionFilterOptionsResponse | None:
     """Get Session Filter Options Endpoint
 
-     List category filter options from the score definitions of session-visible graders.
+     List filter options: grader score categories and the machine hostnames on readable sessions.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -96,7 +96,7 @@ async def asyncio_detailed(
 ) -> Response[SessionFilterOptionsResponse]:
     """Get Session Filter Options Endpoint
 
-     List category filter options from the score definitions of session-visible graders.
+     List filter options: grader score categories and the machine hostnames on readable sessions.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -119,7 +119,7 @@ async def asyncio(
 ) -> SessionFilterOptionsResponse | None:
     """Get Session Filter Options Endpoint
 
-     List category filter options from the score definitions of session-visible graders.
+     List filter options: grader score categories and the machine hostnames on readable sessions.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

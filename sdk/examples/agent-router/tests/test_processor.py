@@ -15,7 +15,7 @@ from envoy.service.ext_proc.v3 import external_processor_pb2 as ext_proc
 from envoy.service.ext_proc.v3 import external_processor_pb2_grpc as ext_proc_grpc
 from typer.testing import CliRunner
 from watcher_agent_router.alternatives import Gateway, Recovery, marker_key, sign_marker, verify_marker
-from watcher_agent_router.exchange import withheld_notice
+from watcher_agent_router.notices import ALTERNATIVE_FAILED, SYSTEM_NOTICE, with_system_notice, withheld_notice
 from watcher_agent_router.processor import MAX_BODY, WatcherProcessor, _Exchange, app
 
 from watcher_sdk import AsyncWatcherClient
@@ -102,6 +102,11 @@ def immediate(reply: ext_proc.ProcessingResponse) -> tuple[int, dict, dict]:
     return response.status.code, header_values, json.loads(response.body)
 
 
+def sent_bytes(reply: ext_proc.ProcessingResponse) -> bytes:
+    """The request body a processor reply sends upstream in place of the client's."""
+    return reply.request_body.response.body_mutation.body
+
+
 async def run_exchange(processor_: WatcherProcessor, *messages: ext_proc.ProcessingRequest):
     exchange = _Exchange()
     return exchange, [await processor_.handle(exchange, message) for message in messages]
@@ -127,7 +132,10 @@ async def test_allowed_exchange_passes_through_with_conversation_header():
         "accept-encoding",
         "x-watcher-alternative",
     ]
-    assert replies[1].HasField("request_body") and not replies[1].request_body.response.HasField("body_mutation")
+    sent = json.loads(replies[1].request_body.response.body_mutation.body)
+    assert sent == with_system_notice(REQUEST), "the provider receives the request with Watcher's notice"
+    [length] = replies[1].request_body.response.header_mutation.set_headers
+    assert (length.header.key, length.header.raw_value) == ("content-length", str(len(sent_bytes(replies[1]))).encode())
     [header] = replies[2].response_headers.response.header_mutation.set_headers
     assert header.header.key == "x-watcher-conversation-id"
     assert header.header.raw_value.decode() == exchange.conversation_id
@@ -135,6 +143,7 @@ async def test_allowed_exchange_passes_through_with_conversation_header():
     assert replies[3].HasField("response_body") and not replies[3].response_body.response.HasField("body_mutation")
     assert seen[0]["external_ids"] == {"other": exchange.conversation_id}
     assert seen[0]["user_agent"] == "fixture/1.0"
+    assert seen[0]["request_body"] == sent, "Watcher grades the request the provider received"
 
 
 @pytest.mark.parametrize("verdict", ["deny", "escalate"])
@@ -155,8 +164,8 @@ async def test_refused_call_becomes_an_ordinary_response_without_it(verdict):
     assert length.header.key == "content-length" and int(length.header.raw_value) == len(common.body_mutation.body)
     choice = delivered["choices"][0]
     assert choice["finish_reason"] == "stop" and "tool_calls" not in choice["message"]
-    assert "Watcher did not approve" in choice["message"]["content"]
-    assert json.loads(choice["message"]["content"].split("\n\n", 1)[1])[0]["is_escalation"] is (verdict == "escalate")
+    marker = "WATCHER ESCALATION" if verdict == "escalate" else "WATCHER NOTICE"
+    assert choice["message"]["content"].startswith(f"{marker} (added by Watcher, not written by the assistant)")
     assert logs == [
         {
             "event": "tool_calls_withheld",
@@ -316,7 +325,7 @@ async def test_response_without_a_status_is_evaluated_not_passed_through():
         exchange = _Exchange(conversation_id="agent-router:x", request=REQUEST, encoding="identity")
         reply = await processor_.handle(exchange, body("response_body", RESPONSE))
     assert (
-        "Watcher did not approve"
+        "WATCHER NOTICE (added by Watcher"
         in json.loads(reply.response_body.response.body_mutation.body)["choices"][0]["message"]["content"]
     )
 
@@ -605,7 +614,7 @@ async def test_refused_streamed_call_ends_the_stream_normally_with_an_explanatio
     )
     assert chunk_body(replies[3]) == STREAM_TEXT
     notice, finish, done = parse_events(chunk_body(replies[4]))
-    assert notice["choices"][0]["delta"]["content"].startswith("\n\nWatcher did not approve")
+    assert notice["choices"][0]["delta"]["content"].startswith("\n\nWATCHER NOTICE (added by Watcher")
     assert "tool_calls" not in notice["choices"][0]["delta"] and "error" not in notice
     assert finish["choices"][0]["finish_reason"] == "stop" and done == b"[DONE]"
     assert logs[-1]["event"] == "tool_calls_withheld"
@@ -615,7 +624,7 @@ async def test_refused_stream_without_prior_text_starts_the_assistant_message():
     _, replies, _ = await stream_exchange(lambda _: httpx.Response(200, json=decision("deny")), STREAM_TOOL)
     notice, _finish, _done = parse_events(chunk_body(replies[3]))
     assert notice["choices"][0]["delta"]["role"] == "assistant"
-    assert notice["choices"][0]["delta"]["content"].startswith("Watcher did not approve")
+    assert notice["choices"][0]["delta"]["content"].startswith("WATCHER NOTICE (added by Watcher")
 
 
 async def test_text_only_stream_is_recorded_without_holding_text():
@@ -755,8 +764,8 @@ async def test_denied_body_is_bounded_whatever_the_identifiers(monkeypatch):
     compact = json.loads(processor._denied_body(response, evaluation, recovery))
     assert compact["choices"][0]["message"] == {
         "role": "assistant",
-        "content": "Watcher did not approve 1 tool calls, so the gateway withheld them and 1 other calls"
-        " from the same response. None of them were run.",
+        "content": "WATCHER NOTICE (added by Watcher, not written by the assistant): Watcher refused 1 tool calls,"
+        " so the gateway withheld them and 1 other calls from the same response. None of them ran.",
     }
     assert len(compact["id"]) == 256
 
@@ -794,7 +803,7 @@ async def test_streamed_denial_falls_back_to_a_short_notice_near_the_reply_limit
     monkeypatch.setattr(processor, "_GRPC_MESSAGE_LIMIT", processor._REPLY_HEADROOM + 100)
     _, replies, _ = await stream_exchange(lambda _: httpx.Response(200, json=decision("deny")), STREAM_TOOL)
     notice = parse_events(chunk_body(replies[3]))[0]["choices"][0]["delta"]["content"]
-    assert notice.startswith("Watcher did not approve 1 tool calls") and "{" not in notice
+    assert "Watcher refused 1 tool calls" in notice and "{" not in notice
 
 
 MARKER_KEY = marker_key("fixture-watcher-key")
@@ -910,14 +919,14 @@ async def test_refused_buffered_proposal_is_replaced_by_an_approved_alternative(
     assert delivered["finish_reason"] == "tool_calls"
     assert delivered["message"]["tool_calls"] == ALTERNATIVE["choices"][0]["message"]["tool_calls"]
     content = delivered["message"]["content"]
-    assert content.startswith("Watcher did not approve") and content.endswith("\n\nReading instead.")
+    assert content.startswith("WATCHER NOTICE (added by Watcher") and content.endswith("\n\nReading instead.")
     assert hooks[0]["external_ids"] == {"other": exchange.conversation_id}
     assert hooks[1]["external_ids"]["other"] != exchange.conversation_id
     assert len(sent) == 1 and verify_marker(MARKER_KEY, sent[0].headers["x-watcher-alternative"], sent[0].content)
 
 
 async def test_refused_stream_continues_with_an_approved_alternative():
-    handler, _ = alternative_watcher("escalate")
+    handler, _ = alternative_watcher("deny")
     reasoning = json.loads(json.dumps(ALTERNATIVE))
     reasoning["choices"][0]["message"]["reasoning_content"] = "Safer."
     async with (
@@ -942,7 +951,7 @@ async def test_refused_stream_continues_with_an_approved_alternative():
         "role" not in content["choices"][0]["delta"] and content["choices"][0]["delta"]["reasoning_content"] == "Safer."
     )
     text = content["choices"][0]["delta"]["content"]
-    assert text.startswith("\n\nWatcher did not approve") and text.endswith("\n\nReading instead.")
+    assert text.startswith("\n\nWATCHER NOTICE (added by Watcher") and text.endswith("\n\nReading instead.")
     [call] = calls["choices"][0]["delta"]["tool_calls"]
     assert call == {
         "index": 0,
@@ -970,8 +979,50 @@ async def test_alternative_too_large_for_the_stream_reply_falls_back_to_a_short_
             body("response_body", STREAM_TOOL),
         )
     events = parse_events(chunk_body(replies[-1]))
-    assert events[0]["choices"][0]["delta"]["content"].endswith("The approved alternative was too large to deliver.")
+    content = events[0]["choices"][0]["delta"]["content"]
+    assert content.endswith("The approved alternative was too large to deliver.\n\n" + ALTERNATIVE_FAILED)
     assert not any(event["choices"] and "tool_calls" in event["choices"][0]["delta"] for event in events[:-1])
+
+
+async def test_failed_alternative_keeps_its_question_when_the_stream_reply_is_shortened(monkeypatch):
+    monkeypatch.setattr(processor, "_GRPC_MESSAGE_LIMIT", processor._REPLY_HEADROOM + 600)
+    handler, _ = alternative_watcher()
+    async with (
+        fake_watcher(handler) as client,
+        httpx.AsyncClient(
+            base_url="http://gateway.invalid",
+            transport=httpx.MockTransport(lambda _: httpx.Response(502, json={"error": {}})),
+        ) as http,
+    ):
+        _, replies = await run_exchange(
+            WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http)),
+            chat_request_headers(),
+            body("request_body", STREAM_REQUEST),
+            response_headers(content_type="text/event-stream"),
+            body("response_body", STREAM_TOOL),
+        )
+    events = parse_events(chunk_body(replies[-1]))
+    content = events[0]["choices"][0]["delta"]["content"]
+    assert "Watcher refused 1 tool calls" in content and content.endswith(ALTERNATIVE_FAILED)
+    assert "No alternative was delivered" not in content
+    assert not any(event["choices"] and "tool_calls" in event["choices"][0]["delta"] for event in events[:-1])
+
+
+def test_failed_recovery_keeps_its_question_when_the_buffered_body_is_shortened(monkeypatch):
+    from watcher_agent_router.exchange import Denial, Evaluation
+
+    evaluation = Evaluation(
+        verified=True,
+        denials=[Denial(tool_use_id="call-1", tool_name="write_file", tool_input={}, reason="no", is_escalation=False)],
+    )
+    monkeypatch.setattr(processor, "MAX_BODY", 200)
+    recovery = Recovery(
+        notices=["no", "No alternative was delivered because the time limit was reached.", ALTERNATIVE_FAILED],
+        question=ALTERNATIVE_FAILED,
+    )
+    delivered = json.loads(processor._denied_body(RESPONSE, evaluation, recovery))["choices"][0]
+    assert delivered["finish_reason"] == "stop" and "tool_calls" not in delivered["message"]
+    assert delivered["message"]["content"].endswith("None of them ran.\n\n" + ALTERNATIVE_FAILED)
 
 
 def test_alternative_too_large_for_the_buffered_body_falls_back_to_a_short_notice(monkeypatch):
@@ -1009,7 +1060,7 @@ async def test_refused_proposal_with_content_parts_gets_a_controlled_reply(alter
     message = json.loads(replies[-1].response_body.response.body_mutation.body)["choices"][0]["message"]
     parts = message["content"]
     assert parts[0] == {"type": "text", "text": "Let me write it."}
-    assert parts[1]["text"].startswith("Watcher did not approve")
+    assert parts[1]["text"].startswith("WATCHER NOTICE (added by Watcher")
     assert [call["id"] for call in message.get("tool_calls", [])] == (["call-9"] if alternatives else [])
 
 
@@ -1041,4 +1092,140 @@ async def test_alternatives_use_what_the_first_decision_left_of_one_deadline(mon
         elapsed = loop.time() - started
     message = json.loads(replies[-1].response_body.response.body_mutation.body)["choices"][0]["message"]
     assert "tool_calls" not in message and elapsed < 0.5
-    assert message["content"].endswith("No alternative was delivered because the time limit was reached.")
+    assert message["content"].endswith(
+        "No alternative was delivered because the time limit was reached.\n\n" + ALTERNATIVE_FAILED
+    )
+
+
+async def test_escalated_stream_ends_with_a_final_reply_that_asks_the_user():
+    """An escalation is not retried: one final, tool-free generation asks the user, and it is not graded."""
+    hooks: list = []
+
+    def handler(request):
+        hooks.append(json.loads(request.content))
+        return httpx.Response(200, json=[{**decision("escalate")[0], "decision_source": "policy_gateway"}])
+
+    final = {
+        "id": "chatcmpl-final",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "Allow it? A. allow, B. skip"},
+            }
+        ],
+    }
+    sent: list = []
+    async with (
+        fake_watcher(handler) as client,
+        httpx.AsyncClient(
+            base_url="http://gateway.invalid", transport=httpx.MockTransport(gateway_handler(sent, final))
+        ) as http,
+    ):
+        processor_ = WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http))
+        _, replies = await run_exchange(
+            processor_,
+            chat_request_headers(),
+            body("request_body", STREAM_REQUEST),
+            response_headers(content_type="text/event-stream"),
+            body("response_body", STREAM_TEXT, end_of_stream=False),
+            body("response_body", STREAM_TOOL),
+        )
+    assert len(hooks) == 1, "the final reply is not sent to Watcher"
+    [asked] = [json.loads(request.content) for request in sent]
+    assert asked["tool_choice"] == "none" and asked["stream"] is False
+    assert asked["messages"][-1]["content"].endswith("A. allow this call, B. skip it, C. do something else.")
+    assert asked["messages"][0]["content"] == SYSTEM_NOTICE, "the continuation keeps the notice the provider saw"
+    events = parse_events(chunk_body(replies[-1]))
+    text = events[0]["choices"][0]["delta"]["content"]
+    assert text.startswith("\n\nWATCHER ESCALATION (added by Watcher") and text.endswith("Allow it? A. allow, B. skip")
+    assert events[1]["choices"][0]["finish_reason"] == "stop" and events[-1] == b"[DONE]"
+    assert not any("tool_calls" in event["choices"][0]["delta"] for event in events[:-1] if event.get("choices"))
+
+
+async def test_request_already_carrying_the_notice_goes_unchanged():
+    request_body = {**REQUEST, "messages": [{"role": "system", "content": SYSTEM_NOTICE}, *REQUEST["messages"]]}
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json=decision("allow"))
+
+    async with fake_watcher(handler) as client:
+        _, replies = await run_exchange(
+            WatcherProcessor(client, CLIENT_KEY),
+            chat_request_headers(),
+            body("request_body", request_body),
+            response_headers(),
+            body("response_body", RESPONSE),
+        )
+    assert not replies[1].request_body.response.HasField("body_mutation")
+    assert seen[0]["request_body"] == request_body
+
+
+@pytest.mark.parametrize("room,refused", [(1400, False), (600, True)])
+async def test_request_must_have_room_for_the_notice(room, refused):
+    """A request is sent only with the notice; one too large to take it is refused before the provider."""
+    data = json.dumps({**REQUEST, "messages": [{"role": "user", "content": ""}]}, separators=(",", ":")).encode()
+    padded = {**REQUEST, "messages": [{"role": "user", "content": "x" * (MAX_BODY - room - len(data))}]}
+    async with fake_watcher(lambda _: pytest.fail("Watcher must not be called")) as client:
+        _, replies = await run_exchange(
+            WatcherProcessor(client, CLIENT_KEY), chat_request_headers(), body("request_body", padded)
+        )
+    if refused:
+        status, _headers, payload = immediate(replies[1])
+        assert status == 413 and "notice" in payload["error"]["message"]
+    else:
+        sent = json.loads(sent_bytes(replies[1]))
+        assert sent["messages"][0] == {"role": "system", "content": SYSTEM_NOTICE}
+        assert len(sent_bytes(replies[1])) <= MAX_BODY
+
+
+@pytest.mark.parametrize("kind", ["json_object", "json_schema"])
+async def test_refusal_on_a_structured_output_request_is_an_error(kind):
+    """Watcher's text notice would break requested JSON content, so the refusal is an explicit error."""
+    request_body = {**REQUEST, "response_format": {"type": kind}}
+    async with (
+        fake_watcher(lambda _: httpx.Response(200, json=decision("deny"))) as client,
+        httpx.AsyncClient(
+            base_url="http://gateway.invalid", transport=httpx.MockTransport(lambda _: pytest.fail("no alternative"))
+        ) as http,
+    ):
+        _, replies = await run_exchange(
+            WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http)),
+            chat_request_headers(),
+            body("request_body", request_body),
+            response_headers(),
+            body("response_body", RESPONSE),
+        )
+    status, _headers, payload = immediate(replies[-1])
+    assert status == 403 and "structured output" in payload["error"]["message"]
+
+
+async def test_streamed_refusal_on_a_structured_output_request_ends_with_an_error_event():
+    request_body = {**STREAM_REQUEST, "response_format": {"type": "json_object"}}
+    async with fake_watcher(lambda _: httpx.Response(200, json=decision("deny"))) as client:
+        _, replies = await run_exchange(
+            WatcherProcessor(client, CLIENT_KEY),
+            chat_request_headers(),
+            body("request_body", request_body),
+            response_headers(content_type="text/event-stream"),
+            body("response_body", STREAM_TEXT, end_of_stream=False),
+            body("response_body", STREAM_TOOL),
+        )
+    data = chunk_body(replies[-1])
+    assert b"structured output" in data and b"tool_calls" not in data
+
+
+async def test_text_format_request_still_gets_the_notice():
+    request_body = {**REQUEST, "response_format": {"type": "text"}}
+    async with fake_watcher(lambda _: httpx.Response(200, json=decision("deny"))) as client:
+        _, replies = await run_exchange(
+            WatcherProcessor(client, CLIENT_KEY),
+            chat_request_headers(),
+            body("request_body", request_body),
+            response_headers(),
+            body("response_body", RESPONSE),
+        )
+    delivered = json.loads(replies[-1].response_body.response.body_mutation.body)
+    assert delivered["choices"][0]["message"]["content"].startswith("WATCHER NOTICE")

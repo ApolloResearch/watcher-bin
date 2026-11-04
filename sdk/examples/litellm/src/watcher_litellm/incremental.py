@@ -19,7 +19,7 @@ the same ordered conversation; they are never sent back to the model provider.
 """
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -115,6 +115,7 @@ class IncrementalStream:
         self.messages = MessageAssembler()
         self.items: list[dict[str, Any]] = []
         self.done_items: set[int] = set()
+        self.argument_phase: dict[int, Literal["streaming", "done"]] = {}
         self.chat_chunks: list[Any] = []
         self.chat_calls: dict[int, dict[str, Any]] = {}
         self.chat_legacy: dict[str, Any] | None = None
@@ -326,10 +327,22 @@ class IncrementalStream:
                 field = "arguments" if item["type"] == "function_call" else "input"
                 family = "function_call_arguments" if field == "arguments" else "custom_tool_call_input"
                 if kind == f"response.{family}.delta":
+                    if self.argument_phase.get(index) == "done":
+                        raise UnsupportedStream("Responses arguments changed after completion")
                     item[field] = item.get(field, "") + data["delta"]
+                    self.argument_phase[index] = "streaming"
                 elif kind == f"response.{family}.done":
-                    if item.get(field, "") != data[field] or data.get("name", item["name"]) != item["name"]:
+                    # Providers may send the whole input only at done. Once any
+                    # input was supplied, even an empty delta/done, it must agree.
+                    has_arguments = item.get(field, "") != "" or index in self.argument_phase
+                    if (
+                        not isinstance(data[field], str)
+                        or (has_arguments and item.get(field, "") != data[field])
+                        or data.get("name", item["name"]) != item["name"]
+                    ):
                         raise UnsupportedStream("Responses done changed streamed arguments")
+                    item[field] = data[field]
+                    self.argument_phase[index] = "done"
                 else:
                     raise UnsupportedStream("Unexpected event for a client tool")
             elif kind == "response.content_part.added":

@@ -22,6 +22,7 @@ from watcher_litellm.replan import (
     client_tool_details,
     complete_replan,
     denial_notice,
+    stop_notice,
 )
 from watcher_litellm.streams import API, as_dict, assemble
 
@@ -144,6 +145,7 @@ def denial() -> ToolDenial:
         tool_input={"path": "blocked.txt"},
         reason="This path needs approval.",
         is_escalation=True,
+        user_can_approve=True,
     )
 
 
@@ -184,29 +186,176 @@ def test_continuation_preserves_original_history_and_distinguishes_delivery_stat
         "Watcher approved this tool call and sent it to the client. "
         "Its execution result is not yet available. Do not repeat it."
     )
-    assert '"tool_use_id": "denied"' in texts[1]
-    assert '"tool_input": {"path": "blocked.txt"}' in texts[1]
-    assert '"is_escalation": true' in texts[1]
-    assert "This path needs approval." in texts[1]
-    assert "Choose an alternative" in texts[1]
-    assert "not executed because another call" in texts[2]
+    assert texts[1] == (
+        "WATCHER ESCALATION: this call needs the user's decision before it can run. "
+        "Reason: This path needs approval. The call did not run. The user can approve it: stop and ask the user "
+        "whether to allow it, with labelled options, for example: A. allow this call, B. skip it, C. do something else."
+    )
+    assert texts[2] == "This call did not run because Watcher refused another call in the same response."
     result[history_key][0]["mutated"] = True
     assert value.model_dump() == before
 
 
-def test_notice_preserves_public_denial_evidence_and_cancelled_sibling_details() -> None:
-    text = denial_notice([denial()], cancelled=[ToolCall(tool_use_id="later", tool_name="read", tool_input={"p": "f"})])
-    assert json.loads(text.split("\n\n")[1]) == [
-        {
-            "tool_use_id": "denied",
-            "tool_name": "read_file",
-            "tool_input": {"path": "blocked.txt"},
-            "reason": "This path needs approval.",
-            "is_escalation": True,
-        }
+def _blocked(reason: str = "Denied by rule: Restricted operation") -> ToolDenial:
+    return ToolDenial(
+        tool_use_id="blocked",
+        tool_name="Bash",
+        tool_input={"command": "make reset"},
+        reason=reason,
+        is_escalation=False,
+    )
+
+
+def test_notice_names_each_withheld_call_and_says_watcher_added_it() -> None:
+    later = ToolCall(tool_use_id="later", tool_name="apply_patch", tool_input="*** patch ***")
+
+    text = denial_notice([_blocked(), denial()], cancelled=[later])
+
+    assert text.split("\n\n") == [
+        "WATCHER NOTICE (added by Watcher, not written by the assistant): Watcher blocked "
+        '`Bash {"command": "make reset"}`. Reason: Denied by rule: Restricted operation. The call did not run.',
+        "WATCHER ESCALATION (added by Watcher, not written by the assistant): "
+        '`read_file {"path": "blocked.txt"}` needs the user\'s decision before it can run. '
+        "Reason: This path needs approval. The call did not run.",
+        "WATCHER NOTICE (added by Watcher, not written by the assistant): `apply_patch *** patch ***` "
+        "did not run because Watcher refused another call in the same response.",
     ]
-    assert '"tool_use_id": "later"' in text
-    assert "sibling call was blocked" in text
+
+
+def _held() -> ToolDenial:
+    """An escalation from a rule, threshold or grading-failure policy, which the user cannot approve in chat."""
+    return denial().model_copy(update={"user_can_approve": False})
+
+
+@pytest.mark.parametrize(
+    ("refusals", "expected"),
+    [
+        ([_blocked(), denial()], "Reply A to allow the escalated call"),
+        ([_held()], "it cannot be approved in this conversation. Reply A to skip it"),
+        ([denial(), _held()], "it cannot be approved in this conversation. Reply A to skip it"),
+        ([_blocked(), _held()], "it cannot be approved in this conversation. Reply A to skip it"),
+        ([_blocked()], "Watcher blocked three proposals in a row and withheld further tool calls."),
+    ],
+    ids=["approvable", "held", "approvable-and-held", "denied-and-held", "cap"],
+)
+def test_stop_notice_puts_the_question_to_the_user(refusals: list[ToolDenial], expected: str) -> None:
+    assert expected in stop_notice(refusals)
+
+
+def test_held_escalation_offers_no_approval() -> None:
+    notice = denial_notice([_held()])
+    result = _results([_held()], stop=True)[1]
+
+    assert "Watcher's policy holds `read_file" in notice and "cannot be approved in this conversation" in notice
+    assert result.startswith("WATCHER ESCALATION: Watcher's policy holds this call for a person's review")
+    assert result.endswith("A. skip it, B. do something else, C. ask an administrator to change the policy.")
+    assert "allow this call" not in result
+
+
+def test_grader_escalation_offers_no_approval_beside_a_held_sibling() -> None:
+    held = _blocked("Escalated by rule: Sensitive operation").model_copy(
+        update={"is_escalation": True, "user_can_approve": False}
+    )
+
+    results = _results([held, denial()], stop=True)
+
+    assert "allow this call" not in " ".join(results)
+    assert results[1].startswith("WATCHER ESCALATION: this call needs the user's decision before it can run.")
+    assert results[1].endswith("A. skip it, B. do something else, C. ask an administrator to change the policy.")
+
+
+def _results(denials: list[ToolDenial], *, stop: bool) -> list[str]:
+    """Chat tool-result texts for a response proposing the blocked call and then a sibling."""
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {"name": name, "arguments": json.dumps(arguments)},
+                        }
+                        for call_id, name, arguments in [
+                            ("blocked", "Bash", {"command": "make reset"}),
+                            ("denied", "read_file", {"path": "blocked.txt"}),
+                            ("sibling", "Bash", {"command": "ls"}),
+                        ]
+                    ],
+                }
+            }
+        ]
+    }
+    result = build_replan_request(
+        "chat_completions", {"messages": []}, response, denials, released_ids=set(), stop=stop
+    )
+    return [message["content"] for message in result["messages"][1:]]
+
+
+_DENIED = (
+    "WATCHER NOTICE: Watcher blocked this call. Reason: Denied by rule: Restricted operation. The call did not run."
+)
+
+
+def test_denied_result_invites_another_approach_until_the_final_generation() -> None:
+    assert _results([_blocked()], stop=False)[0] == (
+        f"{_DENIED} Continue the user's task another way; Watcher checks every call, "
+        "so you do not need permission to try a different approach."
+    )
+    assert _results([_blocked()], stop=True)[0] == (
+        f"{_DENIED} Several different approaches have now been blocked, so stop: "
+        "tell the user what was blocked and ask how to proceed."
+    )
+
+
+def test_final_generation_after_an_escalation_lets_the_escalation_carry_the_ask() -> None:
+    texts = _results([_blocked(), denial()], stop=True)
+
+    assert texts[0] == _DENIED
+    assert texts[1].startswith("WATCHER ESCALATION:") and texts[1].endswith("C. do something else.")
+    assert texts[2] == "This call did not run because Watcher refused another call in the same response."
+
+
+@pytest.mark.parametrize(
+    ("api", "controls", "expected"),
+    [
+        (
+            "messages",
+            {"tools": [{"name": "Bash"}], "tool_choice": {"type": "tool", "name": "Bash"}},
+            {"tool_choice": {"type": "none"}},
+        ),
+        ("messages", {"tools": [{"name": "Bash"}]}, {"tool_choice": {"type": "none"}}),
+        ("chat_completions", {"tools": [{"type": "function"}], "tool_choice": "required"}, {"tool_choice": "none"}),
+        (
+            "chat_completions",
+            {"functions": [{"name": "Bash"}], "function_call": {"name": "Bash"}},
+            {"function_call": "none"},
+        ),
+        ("responses", {"tools": [{"type": "web_search"}], "tool_choice": "auto"}, {"tool_choice": "none"}),
+        ("responses", {"tools": [], "tool_choice": "auto"}, {"tool_choice": "auto"}),
+        ("chat_completions", {"tools": [], "tool_choice": "auto"}, {"tool_choice": "auto"}),
+    ],
+)
+def test_final_generation_offers_no_tool_calls(api: API, controls: dict[str, Any], expected: dict[str, Any]) -> None:
+    value = exchange(api)
+    request = {**value.request, **controls}
+    denials = [
+        ToolDenial(**call.model_dump(), reason="Blocked.", is_escalation=True)
+        for call in client_tool_details(api, value.response)[1:2]
+    ]
+
+    final = build_replan_request(api, request, value.response, denials, released_ids={"released"}, stop=True)
+    alternative = build_replan_request(api, request, value.response, denials, released_ids={"released"})
+
+    assert {key: final.get(key) for key in expected} == expected
+    assert {key: alternative.get(key) for key in controls} == controls
+    assert request == {**value.request, **controls}
+
+
+@pytest.mark.parametrize("reason", ["Not allowed!", "Allowed?", "  Spaced.  "])
+def test_reason_keeps_its_own_final_punctuation(reason: str) -> None:
+    assert f"Reason: {reason.strip()} The call did not run." in denial_notice([_blocked(reason)])
 
 
 @pytest.mark.parametrize(
@@ -360,7 +509,8 @@ def test_responses_namespaces_match_watcher_without_changing_raw_history(
     result = build_replan_request("responses", {"input": []}, response, [denied], released_ids=set())
 
     assert result["input"][0] == item and response == before
-    assert expected in result["input"][1]["output"]
+    assert "Blocked." in result["input"][1]["output"]
+    assert f"`{expected} " in denial_notice([denied])
 
 
 def test_same_bare_response_tool_in_two_namespaces_remains_two_operations() -> None:
@@ -412,7 +562,7 @@ def test_native_receipts_validate_against_the_exact_sdk_input_schema(kind: str) 
         assert [receipt["status"] for receipt in receipts] == ["incomplete", "incomplete", "incomplete"]
         assert "execution result is not yet available" in receipts[0]["output"]
         assert "Needs human approval." in receipts[1]["output"]
-        assert "not executed because another call" in receipts[2]["output"]
+        assert "did not run because Watcher refused another call" in receipts[2]["output"]
         assert calls[0].tool_input == {
             "type": "exec",
             "command": ["pwd"],
@@ -453,7 +603,7 @@ def test_native_receipts_validate_against_the_exact_sdk_input_schema(kind: str) 
         assert "not a completed search result" in explanation["content"]
         assert "execution result is not yet available" in explanation["content"]
         assert "Needs human approval." in explanation["content"]
-        assert "not executed because another call" in explanation["content"]
+        assert "did not run because Watcher refused another call" in explanation["content"]
 
 
 @pytest.mark.parametrize("arguments", [{"query": "lookup"}, '{"query":"lookup"}'])

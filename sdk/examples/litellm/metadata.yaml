@@ -3,13 +3,14 @@ schema_version: 2
 slug: litellm
 name: LiteLLM proxy
 summary: Proxy callback that streams content until a tool call needs evaluation,
-  then releases each permitted call in order. Denials and escalations can prompt
-  two evaluated alternatives; refused calls never become client-executable events.
+  then releases each permitted call in order. Denials can prompt two evaluated
+  alternatives; escalations end with the model asking the user. Refused calls never
+  become client-executable events.
 category: gateway
 direction: to-watcher
 upstream_url: https://github.com/BerriAI/litellm
 support_status: experimental
-updated_at: '2026-10-06'
+updated_at: '2026-10-28'
 capabilities:
   observe:
     implemented: true
@@ -30,11 +31,13 @@ capabilities:
     recording: optional
     failure_behavior: fail-closed
     failure_details: Each normal evaluation has a 300-second deadline, excluding
-      earlier provider generation. A denial or escalation withholds the call and
-      can trigger two alternatives. Recovery shares that evaluation's deadline,
-      including remaining provider generation and further evaluations. Exhausting
-      three proposals returns explanatory text; transport, protocol and timeout
-      failures end delivery with an error. Earlier released calls cannot be retracted.
+      earlier provider generation. A denial withholds the call and can trigger two
+      alternatives. An escalation, or a third refused proposal, triggers one final
+      generation whose tool calls are withheld. Recovery shares that evaluation's
+      deadline, including remaining provider generation and further evaluations.
+      Transport, protocol and timeout failures end delivery with an error, except
+      in the final generation, which falls back to a fixed question to the user.
+      Earlier released calls cannot be retracted.
       Grading failures inside Watcher follow on_grading_failure, which can allow.
 manifests:
 - pyproject.toml

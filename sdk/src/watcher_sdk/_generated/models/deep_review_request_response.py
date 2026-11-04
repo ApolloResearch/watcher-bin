@@ -19,8 +19,7 @@ class DeepReviewRequestResponse:
     ``queued`` and ``running`` are in progress. ``succeeded`` means the review
     finished; its report is published as the session's deep-review grade unless
     a newer review already replaced it. ``failed`` means the review gave up after
-    its retries or was cancelled; send the request again to start a new review
-    (refused with 409 once this transcript has failed too many times).
+    its retries or was cancelled; send the request again to start a new review.
 
         Attributes:
             operation_id (UUID):

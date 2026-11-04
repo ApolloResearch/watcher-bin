@@ -190,7 +190,10 @@ def sync_detailed(
     once along with successful judgments.
     Decisions attach to each input's `tool_use_id`. For evaluated requests,
     `ephemeral` skips transcript, decision, and grade persistence while retaining
-    usage accounting. Enforce and observe both return completed judgments,
+    usage accounting. `record_transcript=false` skips only transcript and
+    decision persistence: grades are stored under the conversation's stored
+    session, when there is one, for the caller's own decision upload to cite.
+    Enforce and observe both return completed judgments,
     including when ephemeral or the caller cannot record sessions.
 
     An append cannot be ephemeral and requires authority to write its parent
@@ -307,7 +310,10 @@ def sync(
     once along with successful judgments.
     Decisions attach to each input's `tool_use_id`. For evaluated requests,
     `ephemeral` skips transcript, decision, and grade persistence while retaining
-    usage accounting. Enforce and observe both return completed judgments,
+    usage accounting. `record_transcript=false` skips only transcript and
+    decision persistence: grades are stored under the conversation's stored
+    session, when there is one, for the caller's own decision upload to cite.
+    Enforce and observe both return completed judgments,
     including when ephemeral or the caller cannot record sessions.
 
     An append cannot be ephemeral and requires authority to write its parent
@@ -418,7 +424,10 @@ async def asyncio_detailed(
     once along with successful judgments.
     Decisions attach to each input's `tool_use_id`. For evaluated requests,
     `ephemeral` skips transcript, decision, and grade persistence while retaining
-    usage accounting. Enforce and observe both return completed judgments,
+    usage accounting. `record_transcript=false` skips only transcript and
+    decision persistence: grades are stored under the conversation's stored
+    session, when there is one, for the caller's own decision upload to cite.
+    Enforce and observe both return completed judgments,
     including when ephemeral or the caller cannot record sessions.
 
     An append cannot be ephemeral and requires authority to write its parent
@@ -533,7 +542,10 @@ async def asyncio(
     once along with successful judgments.
     Decisions attach to each input's `tool_use_id`. For evaluated requests,
     `ephemeral` skips transcript, decision, and grade persistence while retaining
-    usage accounting. Enforce and observe both return completed judgments,
+    usage accounting. `record_transcript=false` skips only transcript and
+    decision persistence: grades are stored under the conversation's stored
+    session, when there is one, for the caller's own decision upload to cite.
+    Enforce and observe both return completed judgments,
     including when ephemeral or the caller cannot record sessions.
 
     An append cannot be ephemeral and requires authority to write its parent

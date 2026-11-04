@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import httpx
 import pytest
-from watcher_portkey.bridge import UnsupportedExchange, evaluate
+from watcher_portkey.exchange import UnsupportedExchange, UnverifiedDecision, decide
 
 from watcher_sdk import AsyncWatcherClient
 
@@ -71,10 +71,12 @@ async def test_id_only_decisions_cover_every_delivered_call(case):
     ) as watcher:
         if case == "reused-response-id":
             with pytest.raises(UnsupportedExchange, match="Duplicate"):
-                await evaluate(watcher, request, response, conversation_id="portkey:fixture-exchange")
+                await decide(watcher, request, response, conversation_id="portkey:fixture-exchange")
             assert sent == []
         else:
-            assert await evaluate(watcher, request, response, conversation_id="portkey:fixture-exchange") is (
-                case == "reverse"
-            )
+            if case == "reverse":
+                assert await decide(watcher, request, response, conversation_id="portkey:fixture-exchange") == []
+            else:
+                with pytest.raises(UnverifiedDecision):
+                    await decide(watcher, request, response, conversation_id="portkey:fixture-exchange")
             assert len(sent) == 1

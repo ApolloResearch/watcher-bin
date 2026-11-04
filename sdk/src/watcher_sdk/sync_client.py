@@ -82,9 +82,9 @@ class WatcherClient:
             raise RuntimeError("Client is not open. Use 'with WatcherClient() as client:' or call client.open()")
         return self._portal.call(lambda: coro)
 
-    def _ingest_incremental(self, body: bytes) -> IngestResponse:
+    def _ingest_incremental(self, body: bytes, *, format: str) -> IngestResponse:
         """Send an internal exact-byte upload using the sync client's portal."""
-        return self._run(self._async_client._ingest_incremental(body))
+        return self._run(self._async_client._ingest_incremental(body, format=format))
 
     def __getattr__(self, name: str):  # pyright: ignore[reportUnknownParameterType]
         """Auto-delegate API method calls to the async client.

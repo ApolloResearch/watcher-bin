@@ -1,8 +1,8 @@
 FROM python:3.12.13-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/fixture
-COPY pyproject.toml uv.lock requirements.txt *.whl ./
-RUN python -m pip install --no-cache-dir --require-hashes --no-deps -r requirements.txt && python -m pip install --no-deps ./*.whl && python -m pip check
+COPY pyproject.toml uv.lock requirements.txt *.whl _test_support/pip_check.py ./
+RUN python -m pip install --no-cache-dir --require-hashes --no-deps -r requirements.txt && python -m pip install --no-deps ./*.whl && python pip_check.py
 COPY . /opt/fixture
 ENV TIKTOKEN_CACHE_DIR=/opt/tiktoken-cache
 RUN python -c 'import tiktoken; tiktoken.get_encoding("o200k_base"); tiktoken.get_encoding("cl100k_base")'

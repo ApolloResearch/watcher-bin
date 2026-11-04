@@ -113,6 +113,12 @@ class PreToolUseHookRequest:
                 session; any non-null external IDs must already belong to that session.
             user (None | str | Unset):
             ephemeral (bool | Unset):  Default: False.
+            record_transcript (bool | Unset): Set false to grade without storing this request's messages or a decision,
+                while still storing the grades under the conversation the external IDs name, when that conversation is already
+                stored, and returning their IDs. For a caller that stores the agent's transcript file through its own uploads
+                and sends only part of it here: its decision upload cites the returned grade IDs once the call is stored. Only
+                with an agent's own transcript file (not format watcher); requires at least one non-null external ID; cannot be
+                combined with ephemeral or append_after. Default: True.
             force_regrade (bool | Unset): Evaluate again even when this session and tool-use ID have a completed judgment.
                 The new result may replace the recorded decision, including in observe mode. Otherwise a readable completed
                 judgment with matching tool arguments is reused, regardless of policy version, under the current enforcement
@@ -134,6 +140,7 @@ class PreToolUseHookRequest:
     external_ids: None | PreToolUseHookRequestExternalIdsType0 | Unset = UNSET
     user: None | str | Unset = UNSET
     ephemeral: bool | Unset = False
+    record_transcript: bool | Unset = True
     force_regrade: bool | Unset = False
     skip_rules: bool | Unset = False
     policy_version: None | str | Unset = UNSET
@@ -205,6 +212,8 @@ class PreToolUseHookRequest:
 
         ephemeral = self.ephemeral
 
+        record_transcript = self.record_transcript
+
         force_regrade = self.force_regrade
 
         skip_rules = self.skip_rules
@@ -265,6 +274,8 @@ class PreToolUseHookRequest:
             field_dict["user"] = user
         if ephemeral is not UNSET:
             field_dict["ephemeral"] = ephemeral
+        if record_transcript is not UNSET:
+            field_dict["record_transcript"] = record_transcript
         if force_regrade is not UNSET:
             field_dict["force_regrade"] = force_regrade
         if skip_rules is not UNSET:
@@ -387,6 +398,8 @@ class PreToolUseHookRequest:
         user = _parse_user(d.pop("user", UNSET))
 
         ephemeral = d.pop("ephemeral", UNSET)
+
+        record_transcript = d.pop("record_transcript", UNSET)
 
         force_regrade = d.pop("force_regrade", UNSET)
 
@@ -524,6 +537,7 @@ class PreToolUseHookRequest:
             external_ids=external_ids,
             user=user,
             ephemeral=ephemeral,
+            record_transcript=record_transcript,
             force_regrade=force_regrade,
             skip_rules=skip_rules,
             policy_version=policy_version,

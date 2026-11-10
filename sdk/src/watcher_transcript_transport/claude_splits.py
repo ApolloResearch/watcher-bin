@@ -9,23 +9,34 @@ asks about cuts all through the file, so planning a long first upload chunk by
 chunk is quadratic in its length.
 
 `ClaudeSplitIndex` walks the tree once and proves, for every cut at once, the
-order check true. It only ever proves: a cut it cannot prove still gets the
-exact check from the caller, so a missing proof costs time, never correctness.
+order check true. A cut it cannot prove still gets the exact check from the
+caller, so a missing proof costs time, never correctness; on a file whose walk
+holds prompts back, where that time is exact parses of nearly the whole file,
+the planner prefers a proven cut. It can also refute a
+cut, from the whole file's live order alone, where the exact check is certain
+to fail, which spares that check.
 `TailCompleteness` answers the tool-cycle check for every end of one slice with
 a single left fold.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from itertools import accumulate
 
 from watcher_transcript_transport.claude import (
+    SplitOrderCheck,
+    SuffixOrders,
     _ChainWalk,
+    _Clock,
     _entry_walk_key,
+    _HeldWalk,
+    _late_prompt_witnesses,
     _live_chain_walk,
     _queued_command_redeliveries,
     _user_entry_text_key,
     _WalkTree,
+    _written_age,
 )
 from watcher_transcript_transport.upload import JsonEntry
 
@@ -114,8 +125,8 @@ class ClaudeSplitIndex:
                   prefix piece         suffix piece
 
     1. The whole tree must be one the walk never prunes, in any piece: unique
-       uuids, no cycles, no deferred compaction segment, no rewound first
-       prompts and no node with two children that could head competing user
+       uuids, no cycles, no deferred compaction segment, no compaction
+       summary moved back into place, no rewound first prompts and no node with two children that could head competing user
        prompts once a piece cuts their subtrees. Then each piece's walk is the
        whole walk restricted to that piece, provided the cut keeps the shape:
     2. no entry before the cut hangs below an entry after it (nor a
@@ -130,28 +141,111 @@ class ClaudeSplitIndex:
        after the cut, so the suffix walk visits it first as the whole walk does;
     6. no queued command before the cut is redelivered by a ``user`` entry
        after it, so deduplicating the pieces separately drops the same
-       entries as deduplicating the whole chain.
+       entries as deduplicating the whole chain (for a walk that held prompts
+       back, in the final holding round's chain too, which is the one
+       deduplicated);
 
-    Facts 2, 3 and 6 are counted for all cuts at once with difference arrays
-    over each offending interval of cuts; 4 with a running maximum and a
-    suffix minimum of chain positions; 5 per cut from the sorted roots.
+    Facts 1 to 6 are checked against the breadth-first chain. They make each
+    piece's breadth-first chain a slice of the whole one. Most files have no
+    late prompt (``claude._late_prompt_witnesses``: a typed prompt that an
+    older reply or tool result follows later in its compaction segment), and
+    every walk is plain breadth-first. A file that has some is walked again
+    holding back each late prompt (``claude._walk_chain``), in rounds that
+    add any prompt a release left before older work; each piece does the same
+    with the late prompts it finds. Then a cut also needs, of every round's
+    walk:
+
+    7. it visits every entry before the cut ahead of every entry after it,
+       so whatever held a prompt back before the cut was itself before the
+       cut. Only entries with a message at or below them count, here and in
+       fact 8: any other emits nothing, waits with no age and never holds a
+       prompt back, so where the walk visits it changes nothing. No entry after the cut is older (by ``claude._age_on_clock``)
+       than a prompt held before the cut, since none is older than a prompt
+       written before it (fact 10 keeps that so in each piece), so no age a
+       waiting entry takes from below it (``claude._HoldAges``) changes a
+       decision there;
+    8. if it held a prompt after the cut, at most one entry after the cut has
+       its parent before it, and that one is a message, so the walk after the
+       cut starts from that message alone, as the suffix walk does from its
+       root. (Without a held prompt there, entries the suffix walk never
+       reaches only sat in the queue, and their age decides nothing.)
+    9. the cut does not fall between a late prompt and the first older entry
+       after it (its witness), nor between a queued command and its
+       redelivery, in the chain the round started from, so each piece dates
+       each redelivery by its command as the whole file does, and flags
+       exactly the file's late prompts that fall in it;
+    10. the cut does not fall between an entry and what it is dated by
+       when stamped older than that (``claude._age_on_clock``): its newest
+       ancestor stamped when written, or the newest typed prompt written
+       before it in the file, so each piece dates it the same as the whole
+       file does.
+
+    Facts 2, 3, 6, 8 and 10 are counted for all cuts at once with difference
+    arrays over each offending interval of cuts; 4 and 7 with a
+    running maximum and a suffix minimum of walk positions; 5 per cut from the
+    sorted roots; 9 with a difference array over each prompt-to-witness span.
+
+    The index also keeps the whole snapshot's live order. Where the snapshot
+    is known to split (a proven cut, or one whose receipt check passed), the
+    order of the rest of the file is that order's tail (`window_order`), and a
+    cut of the rest that would put an entry after it ahead of one before it in
+    that order cannot keep it (`window_refutation`). Both spare exact parses on
+    a file whose late prompts leave many cuts unproven.
     """
 
-    __slots__ = ("entries", "count", "valid", "_proven", "_acknowledgement_tail")
+    __slots__ = (
+        "entries",
+        "count",
+        "valid",
+        "moves_summaries",
+        "holds_prompts",
+        "receipts",
+        "whole_split",
+        "_proven",
+        "_acknowledgement_tail",
+        "_order",
+        "_order_at",
+        "_order_before",
+        "_later_order_min",
+        "suffix_orders",
+    )
 
     def __init__(self, entries: list[JsonEntry], walk: _ChainWalk | None) -> None:
         """Build from ``walk``, which must be ``_live_chain_walk(entries)`` (see `build`)."""
         self.entries = entries
         self.count = len(entries)
+        # Whether this snapshot's chain had compaction summaries moved back into place.
+        # The index then proves no interior cut (fact 1), but can still be valid.
+        self.moves_summaries = walk is not None and walk.tree is not None and walk.tree.summaries_moved
+        # Whether this snapshot's walk held prompts back, known even when nothing is proven.
+        self.holds_prompts = walk is not None and walk.held is not None
+        # Answers ``incremental._claude_acknowledgement_is_safe`` already computed for this snapshot, by
+        # end. Like the proofs, they hold only while ``entries`` and its entry dicts stay unchanged.
+        self.receipts: dict[int, bool] = {}
+        # The exact order check for cuts of the whole snapshot, which parses it once for every cut asked.
+        self.whole_split = SplitOrderCheck(entries)
         self._acknowledgement_tail: TailCompleteness | None = None
+        # The whole snapshot's live order, and where each entry sits in it, for `window_order` and
+        # `window_refutation`. A proven tree has unique uuids, so each uuid in the order names one entry.
+        self._order: list[str] | None = None
+        self._order_at: list[int] = []
+        self._order_before: list[int] = []
+        self._later_order_min: list[int] = []
         try:
             proven = _prove_cuts(entries, walk)
+            if proven is not None and walk is not None:
+                self._order = walk.live_branch().order
+                self._order_at, self._order_before, self._later_order_min = _order_positions(entries, self._order)
         except Exception:  # noqa: BLE001
             # Any unexpected input shape means the index proves nothing and the
             # planner keeps its exact checks, which handle that input as before.
-            proven = None
+            proven = self._order = None
         self.valid = proven is not None
         self._proven = proven if proven is not None else bytearray()
+        # The order after any cut, shared by the planner's checks of the rest of the file and of the whole.
+        self.suffix_orders = SuffixOrders(entries, self.window_order)
+        if self._order is not None:
+            self.whole_split = SplitOrderCheck(entries, self._order, suffixes=self.suffix_orders)
 
     @classmethod
     def build(cls, entries: list[JsonEntry]) -> ClaudeSplitIndex:
@@ -169,6 +263,47 @@ class ClaudeSplitIndex:
         """Prove ``split_preserves_order(entries[start:], cut - start)``, for ``0 <= start < cut <= count``."""
         return self.proves(start) and self.proves(cut)
 
+    def _splits_at(self, start: int) -> bool:
+        """Whether a valid index knows the whole snapshot splits at ``start <= count``: proven, or its receipt passed."""
+        return start == 0 or bool(self._proven[start]) or self.receipts.get(start) is True
+
+    def window_order(self, start: int) -> list[str] | None:
+        """``_live_branch(entries[start:]).order`` without parsing, or None when that is not known.
+
+        It is known when the whole snapshot splits at ``start`` (`_splits_at`): the whole order is then the
+        order before ``start`` followed by this one, and with unique uuids the entries before ``start`` are
+        exactly the first ``_order_before[start]`` of it.
+        """
+        if self._order is None or not self._splits_at(start):
+            return None
+        return self._order[self._order_before[start] :]
+
+    def window_refutation(self, start: int) -> Callable[[int], bool]:
+        """Return ``refutes(cut)``: true only when ``split_preserves_order(entries[start:], cut - start)`` is false.
+
+        False means only "not refuted". When the whole snapshot splits at ``start``, the order of
+        ``entries[start:]`` is the whole order restricted to those entries (see `window_order`). Two
+        pieces that keep it emit every entry before the cut ahead of every entry after it, so a cut is
+        refuted when the whole order puts some entry after the cut ahead of an entry between ``start``
+        and the cut: a running maximum of order positions from ``start`` against a suffix minimum.
+        The running maximum lives in the returned function, so it is safe to share the index.
+        """
+        if self._order is None or not self._splits_at(start):
+            return _never_refuted
+        order_at, later_min, count = self._order_at, self._later_order_min, self.count
+        running_max: list[int] = []
+
+        def refutes(cut: int) -> bool:
+            if not start < cut < count:
+                return False
+            top = running_max[-1] if running_max else -1
+            for index in range(start + len(running_max), cut):
+                top = max(top, order_at[index])
+                running_max.append(top)
+            return running_max[cut - start - 1] > later_min[cut]
+
+        return refutes
+
     def acknowledgement_complete(self, end: int) -> bool:
         """``len(trim_incomplete_tail(entries[:end], allow_trailing_assistant_text=True)) == end``."""
         if self._acknowledgement_tail is None:
@@ -176,8 +311,36 @@ class ClaudeSplitIndex:
         return self._acknowledgement_tail.complete(end)
 
 
+def _never_refuted(cut: int) -> bool:
+    return False
+
+
+def _order_positions(entries: list[JsonEntry], order: list[str]) -> tuple[list[int], list[int], list[int]]:
+    """For a proven snapshot's live ``order``: each entry's position in it (-1 if absent), by file index; how
+    many entries before each file index it holds; and the smallest position at or after each file index
+    (``len(order)`` if none). A uuid in ``order`` that names no main-chain entry raises KeyError.
+    """
+    index_of = {
+        entry["uuid"]: index
+        for index, entry in enumerate(entries)
+        if isinstance(entry.get("uuid"), str) and entry["uuid"] and not entry.get("isSidechain", False)
+    }
+    order_at = [-1] * len(entries)
+    for position, uuid in enumerate(order):
+        order_at[index_of[uuid]] = position
+    later_min = [len(order)] * (len(entries) + 1)
+    for index in range(len(entries) - 1, -1, -1):
+        position = order_at[index]
+        later_min[index] = position if 0 <= position < later_min[index + 1] else later_min[index + 1]
+    return order_at, [0, *accumulate(position >= 0 for position in order_at)], later_min
+
+
 def _prove_cuts(entries: list[JsonEntry], walk: _ChainWalk | None) -> bytearray | None:
     """Return ``proven[cut]`` for cuts ``0..len(entries)``, or None when the tree fails fact 1.
+
+    A tree that fails fact 1 only because compaction summaries were moved gets an
+    all-false array instead of None: nothing is proven, but the snapshot passed the
+    checks that make the index ``valid``.
 
     The steps match the numbered facts in `ClaudeSplitIndex`.
     """
@@ -198,7 +361,14 @@ def _prove_cuts(entries: list[JsonEntry], walk: _ChainWalk | None) -> bytearray 
                 return None
             index_of[uuid] = index
             _entry_walk_key(entry)
-    chain = walk.chain
+    # A chain whose compaction summaries were moved can be repaired differently in
+    # each piece, so none of its cuts follow from the tree facts below: prove none,
+    # but stay valid, since the exact checks still cannot raise. Pieces of an
+    # unrepaired chain need no repair: each keeps a subsequence of its order.
+    if tree.summaries_moved:
+        return bytearray(count + 1)
+    held = walk.held
+    chain = walk.chain if held is None else held.breadth_first
     if len(index_of) != len(lookup) or len(chain) != len(message_uuids) or not _never_prunes(tree):
         return None
 
@@ -269,6 +439,13 @@ def _prove_cuts(entries: list[JsonEntry], walk: _ChainWalk | None) -> bytearray 
         straddling[redelivery + 1] -= 1
     straddled = list(accumulate(straddling))
 
+    clock = walk.clock or {}
+    held_failures = (
+        _held_walk_failures(count, held, clock, index_of, chain_position, tree) if held is not None else None
+    )
+    # Fact 10: the clock can rule out every late prompt, leaving nothing held; it binds the cuts all the same.
+    clock_failures = _clock_failures(count, clock, index_of, lookup) if clock else None
+
     proven = bytearray(count + 1)
     proven[0] = 1
     proven[count] = 1
@@ -289,6 +466,8 @@ def _prove_cuts(entries: list[JsonEntry], walk: _ChainWalk | None) -> bytearray 
         # With fact 4, the chain's first messages_before messages are exactly those before the cut.
         if hanging or crossing > 1 or earlier_max >= later_min[cut] or straddled[messages_before]:
             continue
+        if (held_failures is not None and held_failures[cut]) or (clock_failures is not None and clock_failures[cut]):
+            continue
         # With fact 4, the roots before the cut are exactly the first roots_before in walk order.
         if crossing == 1 and roots_before < len(roots):
             crossing_entry = entries[crossing_total]
@@ -296,6 +475,134 @@ def _prove_cuts(entries: list[JsonEntry], walk: _ChainWalk | None) -> bytearray 
                 continue
         proven[cut] = 1
     return proven
+
+
+def _clock_failures(count: int, clock: _Clock, index_of: dict[str, int], lookup: dict[str, JsonEntry]) -> bytearray:
+    """Mark each cut that fails fact 10 by ``clock``, what the walk's clock recorded.
+
+    An entry and what dates it fall in the same piece. A suffix holding that
+    ancestor holds the path from it down (fact 2), so it dates the entry the
+    same; a suffix holding that prompt holds every entry between the two, so
+    no newer prompt written before the entry is missing from it either. A
+    prefix holds everything written before its entries. This holds whether or
+    not the walk then held anything back: without the entry that dates it, a
+    piece could find a prompt late that the whole file does not.
+    """
+    spans = [0] * (count + 2)
+    for uuid, index in index_of.items():
+        above = clock.get(uuid)
+        if above is not None and _written_age(lookup[uuid]) < above[0] and index_of[above[1]] < index:
+            spans[index_of[above[1]] + 1] += 1
+            spans[index + 1] -= 1
+    return bytearray(depth > 0 for depth in accumulate(spans[: count + 1]))
+
+
+def _held_walk_failures(
+    count: int,
+    held_walk: _HeldWalk,
+    clock: _Clock,
+    index_of: dict[str, int],
+    chain_position: list[int],
+    tree: _WalkTree,
+) -> bytearray:
+    """Mark each cut that fails fact 7, 8 or 9 in some holding round of ``held_walk``, or fact 6 in the last.
+
+    ``clock`` is what the walk's breadth-first walk recorded, ``index_of`` maps
+    each walked uuid to its file index and ``chain_position`` each file index
+    to its breadth-first chain position (-1 for non-messages).
+    """
+    lookup, message_uuids = tree.entry_lookup, tree.message_uuids
+    failed = bytearray(count + 1)
+    leads_to_message = _leading_to_messages(tree)
+    first = held_walk.rounds[0]
+    entry_at = {index: uuid for uuid, index in index_of.items()}
+    messages_before = [0, *accumulate(position >= 0 for position in chain_position)]
+
+    def parent_index(uuid: str) -> int | None:
+        parent = lookup[uuid].get("parentUuid")
+        return index_of[parent] if isinstance(parent, str) and parent in index_of else None
+
+    # Fact 8's crossing entries depend only on the tree: every round visits the same entries.
+    crossing_cuts = [0] * (count + 2)
+    crossing_sum = [0] * (count + 2)
+    for uuid in first.emitted:
+        if uuid not in leads_to_message:
+            continue
+        index, parent = index_of[uuid], parent_index(uuid)
+        if parent is not None and parent < index:
+            crossing_cuts[parent + 1] += 1
+            crossing_cuts[index + 1] -= 1
+            crossing_sum[parent + 1] += index
+            crossing_sum[index + 1] -= index
+    crossing = list(accumulate(crossing_cuts))
+    crossing_index = list(accumulate(crossing_sum))
+    starting_chain = held_walk.breadth_first
+    for hold_round in held_walk.rounds:
+        # Fact 7: a running maximum of walk positions before each cut against a suffix minimum after it.
+        emitted_at = [-1] * count
+        for position, uuid in enumerate(hold_round.emitted):
+            if uuid in leads_to_message:
+                emitted_at[index_of[uuid]] = position
+        later = len(hold_round.emitted)
+        later_emitted = [later] * (count + 1)
+        for index in range(count - 1, -1, -1):
+            if 0 <= emitted_at[index] < later:
+                later = emitted_at[index]
+            later_emitted[index] = later
+        earlier = -1
+        held_indexes = sorted(index_of[uuid] for uuid in hold_round.held)
+        next_held = 0
+        # Fact 9: a piece flags a late prompt only with its first witness, so no cut may fall between
+        # them; and it dates a redelivery by its command only with both, so fact 6 holds here too.
+        between = [0] * (len(starting_chain) + 2)
+        for prompt, witness in _late_prompt_witnesses(starting_chain, clock):
+            between[prompt + 1] += 1
+            between[witness + 1] -= 1
+        for command, redelivery in _queued_command_redeliveries(starting_chain):
+            between[command + 1] += 1
+            between[redelivery + 1] -= 1
+        separates = list(accumulate(between))
+        for cut in range(1, count):
+            earlier = max(earlier, emitted_at[cut - 1])
+            while next_held < len(held_indexes) and held_indexes[next_held] < cut:
+                next_held += 1
+            held_after = len(held_indexes) - next_held
+            before = messages_before[cut]
+            if (
+                earlier >= later_emitted[cut]
+                or (
+                    held_after
+                    and (
+                        crossing[cut] > 1 or (crossing[cut] == 1 and entry_at[crossing_index[cut]] not in message_uuids)
+                    )
+                )
+                or separates[before]
+            ):
+                failed[cut] = 1
+        starting_chain = hold_round.chain
+    # Fact 6 in the chain that is deduplicated: holding can bring a redelivery before the
+    # assistant reply that used to clear its queued command. With fact 7, the first
+    # messages_before[cut] messages of that chain are the ones before the cut.
+    straddling = [0] * (len(starting_chain) + 2)
+    for command, redelivery in _queued_command_redeliveries(starting_chain):
+        straddling[command + 1] += 1
+        straddling[redelivery + 1] -= 1
+    straddled = list(accumulate(straddling))
+    for cut in range(count + 1):
+        if straddled[messages_before[cut]]:
+            failed[cut] = 1
+    return failed
+
+
+def _leading_to_messages(tree: _WalkTree) -> set[str]:
+    """Every uuid with a message at or below it, climbing from each message until an entry already found."""
+    found: set[str] = set()
+    for uuid in tree.message_uuids:
+        current: object = uuid
+        while isinstance(current, str) and current in tree.entry_lookup and current not in found:
+            found.add(current)
+            current = tree.entry_lookup[current].get("parentUuid")
+    return found
 
 
 def _tool_ids_hashable(entry: JsonEntry) -> bool:

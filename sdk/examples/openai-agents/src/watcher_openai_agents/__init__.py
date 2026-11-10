@@ -5,8 +5,8 @@ conversation. Demos show registration, completed history and failure handling.
 """
 
 from watcher_openai_agents.adapter import IncompleteObservationError, messages_for_watcher, observe
-from watcher_openai_agents.monitoring import ApprovalRequired, Monitor, ToolBlocked
-from watcher_openai_agents.native import WatcherHooks, execute_tool
+from watcher_openai_agents.monitoring import ApprovalRequired, Monitor, StatusNotRecorded, ToolBlocked
+from watcher_openai_agents.native import WatcherHooks, execute_tool, failure_error_function
 
 __all__ = [
     "IncompleteObservationError",
@@ -15,6 +15,8 @@ __all__ = [
     "Monitor",
     "ToolBlocked",
     "ApprovalRequired",
+    "StatusNotRecorded",
     "execute_tool",
+    "failure_error_function",
     "WatcherHooks",
 ]

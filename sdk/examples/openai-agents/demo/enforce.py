@@ -9,7 +9,7 @@ from uuid import uuid4
 from agents import Agent, RunConfig, Runner, function_tool
 from watcher_openai_agents.adapter import messages_for_watcher
 from watcher_openai_agents.monitoring import Monitor
-from watcher_openai_agents.native import WatcherHooks, execute_tool
+from watcher_openai_agents.native import WatcherHooks, execute_tool, failure_error_function
 
 from demo.observe import DeterministicModel
 from watcher_sdk import AsyncWatcherClient
@@ -36,9 +36,13 @@ async def run_dispatch_conversation(monitor, effect=lambda value: str(value * 2)
 
 
 async def run_conversation(monitor, effect=lambda value: str(value * 2)):
-    """Run native Runner with parallel tools; the lifecycle hook gates their bodies."""
+    """Run native Runner with parallel tools; the lifecycle hook gates their bodies.
 
-    @function_tool(failure_error_function=None)
+    A tool exception reaches the model as Agents' default error text, and the
+    Monitor marks that call failed so the recorded result carries ``error``.
+    """
+
+    @function_tool(failure_error_function=failure_error_function(monitor))
     def double(value: int) -> str:
         """Double an integer."""
         return effect(value)

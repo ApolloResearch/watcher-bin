@@ -8,6 +8,8 @@ waits for results, so this adapter never prevents a tool's side effects.
 import json
 from copy import deepcopy
 
+from google.adk.flows.llm_flows.functions import REQUEST_CONFIRMATION_FUNCTION_CALL_NAME
+from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 
 from watcher_sdk import AsyncWatcherClient
@@ -38,45 +40,131 @@ def validate(messages):
     return messages
 
 
-def messages_for_watcher(messages):
+def confirmation_answers(messages):
+    """Find ADK tool confirmations: which calls asked, and where and how each was answered.
+
+    A tool that requires confirmation makes ADK emit an ``adk_request_confirmation``
+    call naming the original call in ``originalFunctionCall``; the answer is that
+    request's function response, read as ADK reads it
+    (``ToolConfirmation.from_response_dict``). Returns ``(asked, answers)``: the
+    IDs of original calls that asked, and original call ID to its answers in
+    order, each ``(position, confirmed)``, where a position is ``(message index,
+    part index)``. Malformed requests and answers without a request raise.
+    """
+    requests, asked, answers = {}, set(), {}
+    for message_index, message in enumerate(messages):
+        if not isinstance(message, types.Content):
+            raise ValueError("Expected Google Content")
+        for part_index, part in enumerate(message.parts or []):
+            call, response = part.function_call, part.function_response
+            if call is not None and call.name == REQUEST_CONFIRMATION_FUNCTION_CALL_NAME:
+                original = (call.args or {}).get("originalFunctionCall")
+                if not isinstance(original, dict) or not isinstance(original.get("id"), str):
+                    raise ValueError("ADK confirmation request without its original call")
+                requests[call.id] = original["id"]
+                asked.add(original["id"])
+            elif response is not None and response.name == REQUEST_CONFIRMATION_FUNCTION_CALL_NAME:
+                if response.id not in requests:
+                    raise ValueError("ADK confirmation answer without its request")
+                confirmed = ToolConfirmation.from_response_dict(response.response or {}).confirmed
+                answers.setdefault(requests[response.id], []).append(((message_index, part_index), confirmed))
+    return asked, answers
+
+
+def messages_for_watcher(messages, confirmations=None):
     """Convert session.events Content objects after ADK completes a run.
 
     Function responses retain their actual IDs. Dictionary results become JSON;
     ADK result envelopes are unwrapped and absent arguments become empty objects.
     Only text/function parts are
     accepted; thought, executable-code, media and grounding content need mappings.
+
+    A response with a truthy top-level ``error`` key keeps its content and also
+    gets the tool message's ``error`` (Inspect ``ToolCallError``, type
+    ``unknown``): that key is how ADK reports a call that failed while running,
+    such as missing arguments or a dictionary an ``on_tool_error_callback``
+    returned. Watcher records a call it let through whose result has no
+    ``error`` as completed, so a tool that signals failure any other way (MCP
+    ``isError``, a ``status`` field) is recorded as having run unless the
+    integration adds ``error`` itself.
+
+    Tool confirmations are framework protocol, not tool results, so the
+    ``adk_request_confirmation`` call and its answers are left out, and so are
+    the responses ADK gives the original call before any answer (the request
+    for confirmation) and after the call's result (ADK's response to a
+    replayed answer). Until an answer arrives the call has no result.
+
+    A call's result is ADK's refusal of a rejected confirmation, which keeps its
+    text and gets no ``error`` (a refusal is not an execution failure; the
+    callback in native.py reports the call to Watcher as blocked instead), or
+    the outcome of an approved run, whose ``error`` marks a failure. Chronology
+    cannot tell them apart: a replayed answer the callback refused can land
+    between an approval and its run's result. ``confirmations`` is the
+    callback's own record of the answer that took effect for each call
+    (Monitor.confirmations: True for an admitted approval, False for an
+    accepted rejection), and the result is a refusal exactly when it says
+    False; a call it does not name keeps its ``error``. Without it, a result
+    counts as a refusal only when every answer before it is a rejection, so an
+    ambiguous history keeps its ``error``.
     """
+    asked, answers = confirmation_answers(messages)
+    settled = set()
     result = []
-    for message in messages:
-        if not isinstance(message, types.Content):
-            raise ValueError("Expected Google Content")
+    for message_index, message in enumerate(messages):
         item: dict = {"role": "assistant" if message.role == "model" else message.role, "content": ""}
         calls = []
-        has_response = False
-        for part in message.parts or []:
+        # Function parts produce tool calls and results, never a message of their own.
+        structured = False
+        for part_index, part in enumerate(message.parts or []):
             if part.thought:
                 raise ValueError("Thought parts are unsupported")
             if part.text is not None:
                 item["content"] += part.text
             elif part.function_call is not None:
                 call = part.function_call
+                structured = True
+                if call.name == REQUEST_CONFIRMATION_FUNCTION_CALL_NAME:
+                    continue
                 calls.append(
                     {"id": call.id, "function": call.name, "arguments": {} if call.args is None else call.args}
                 )
             elif part.function_response is not None:
                 response = part.function_response
+                structured = True
+                if response.name == REQUEST_CONFIRMATION_FUNCTION_CALL_NAME:
+                    continue
+                refused = False
+                if response.id in asked:
+                    earlier = [
+                        confirmed
+                        for position, confirmed in answers.get(response.id, [])
+                        if position < (message_index, part_index)
+                    ]
+                    if not earlier or response.id in settled:
+                        continue
+                    settled.add(response.id)
+                    if confirmations is None:
+                        refused = not any(earlier)
+                    else:
+                        refused = confirmations.get(response.id) is False
                 content = response.response
                 if not isinstance(content, dict):
                     raise ValueError("Expected an ADK function response object")
                 payload = content["result"] if set(content) == {"result"} else content
                 text = payload if isinstance(payload, str) else json.dumps(payload)
-                result.append({"role": "tool", "content": text, "tool_call_id": response.id})
-                has_response = True
+                tool: dict = {"role": "tool", "content": text, "tool_call_id": response.id}
+                # Truthiness matches ADK's own FunctionTool error check, so an
+                # explicit "error": None or "" still reads as a successful run.
+                failure = content.get("error")
+                if failure and not refused:
+                    detail = failure if isinstance(failure, str) else json.dumps(failure)
+                    tool["error"] = {"type": "unknown", "message": detail}
+                result.append(tool)
             else:
                 raise ValueError("Unsupported Google content")
         if calls:
             item["tool_calls"] = calls
-        if item["content"] or calls or not has_response:
+        if item["content"] or calls or not structured:
             result.append(item)
     return validate(result)
 
@@ -183,5 +271,14 @@ async def observe(client: AsyncWatcherClient, conversation_id: str, messages):
     bypasses. It raises on invalid outcomes and attempts final recording even when
     assessment fails. No response is treated as proof of historical execution. Reuse conversation_id and native
     tool IDs for full snapshots of the same conversation.
+
+    A history with a rejected tool confirmation raises ValueError before
+    anything is sent. Its result is ADK's refusal without ``error``, and this
+    observer cannot report the call blocked, so Watcher would record a call it
+    let through as completed. Record such a conversation through Monitor, whose
+    callback reports the rejection as it happens.
     """
+    _, answers = confirmation_answers(messages)
+    if not all(confirmed for given in answers.values() for _, confirmed in given):
+        raise ValueError("A rejected tool confirmation must be reported through Monitor, not imported here")
     return await observe_transcript(client, conversation_id, messages_for_watcher(messages))

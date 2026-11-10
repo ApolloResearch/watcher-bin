@@ -7,7 +7,7 @@ summary: Monitor ordinary gateway clients through a native plugin and the public
 category: gateway
 upstream_url: https://developer.konghq.com/plugins/ai-proxy/examples/openai-chat-route/
 support_status: experimental
-updated_at: '2026-10-01'
+updated_at: '2026-10-28'
 capabilities:
   observe:
     implemented: true
@@ -16,16 +16,22 @@ capabilities:
     example: gateway/kong.yaml
   enforce:
     implemented: true
-    scope: Withhold the complete gateway response until every returned client tool
-      proposal is allowed under server enforcement.
+    scope: Withhold every client tool proposal in a response until all are allowed
+      under server enforcement. A refusal returns Watcher's notice and up to two graded
+      alternatives generated through the same Kong route, or, after an escalation or
+      a third refusal, the model's text-only question to the user.
     example: gateway/kong.yaml
     boundary: gateway-response-delivery
     context: complete exchange snapshot
     recording: optional
     failure_behavior: follows-server-policy
-    failure_details: Bridge, transport and malformed-response errors withhold delivery;
-      server grading-error decisions follow administrator policy. Hook success acknowledges
-      submission, not durable storage.
+    failure_details: Bridge, transport and malformed-response errors on the client's
+      response withhold delivery; server grading-error decisions follow administrator
+      policy. One 300-second default deadline covers the decision and every alternative;
+      a failed, unverifiable or late alternative is never released, and the response
+      ends with the notices, a sentence saying why and a question asking the user how
+      to proceed. Hook success acknowledges submission,
+      not durable storage.
 manifests:
 - pyproject.toml
 verification:
@@ -63,8 +69,26 @@ limitations:
 - id: approval
   mode: enforce
   cause: integration-scope
-  description: Escalation withholds the response. This example has no human approval
-    interface or resume mechanism.
+  description: Escalation withholds the call, and the model is asked to put the decision
+    to the user in the conversation; "allow" is offered only for grader escalations.
+    This example has no approval interface or resume mechanism; Watcher grades the
+    call again when the model proposes it.
+- id: whole-response-withheld
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: When any tool call in a response is refused, every tool call in that
+    response is withheld. At most three proposals and four model calls are made per
+    client request; usage in the delivered response covers the first model call only.
+- id: alternative-loopback
+  mode: enforce
+  cause: integration-scope
+  kind: constraint
+  description: The bridge needs a reachable Kong proxy URL and forwards the client's
+    credential header, Host header and the matched route's header predicates to request
+    alternatives through the same route; routes chosen by SNI or source address need
+    distinct paths. Alternatives are graded in the client request's Watcher session,
+    and the delivered reply is recorded there naming every withheld call.
 - id: exchange-identity
   mode: both
   cause: integration-scope

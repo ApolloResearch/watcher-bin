@@ -44,6 +44,55 @@ _TEXT_FIELDS = ("refusal", "reasoning", "reasoning_content")
 _DETAIL_TEXT = ("text", "summary", "data")
 
 
+def _assemble(chunks: list[dict]) -> dict:
+    """Assemble streamed chunks into a ``chat.completion`` body (see ``StreamGate.completion``)."""
+    message: dict = {"role": "assistant", "content": None}
+    calls: dict[int, dict] = {}
+    details: list[dict] = []
+    finish_reason = None
+    usage = None
+    first: dict = {}
+    for chunk in chunks:
+        first = first or chunk
+        if chunk.get("usage") is not None:
+            usage = chunk["usage"]
+        for choice in chunk.get("choices") or []:
+            if not isinstance(choice, dict) or choice.get("index") != 0:
+                raise UnsupportedExchange("Exactly one streamed choice is required")
+            delta = choice.get("delta") or {}
+            if not isinstance(delta, dict):
+                raise UnsupportedExchange("Invalid stream delta")
+            if delta.get("function_call") is not None:
+                message["function_call"] = delta["function_call"]
+            if isinstance(delta.get("content"), str):
+                message["content"] = (message["content"] or "") + delta["content"]
+            # The text fields Watcher's converter reads from a buffered message,
+            # so a streamed refusal or reasoning trace is graded too.
+            for key in _TEXT_FIELDS:
+                if isinstance(delta.get(key), str):
+                    message[key] = message.get(key, "") + delta[key]
+            for detail in _items(delta.get("reasoning_details"), "reasoning details"):
+                _merge_detail(details, detail)
+            for fragment in _items(delta.get("tool_calls"), "tool calls"):
+                _merge_call(calls, fragment)
+            if choice.get("finish_reason") is not None:
+                finish_reason = choice["finish_reason"]
+    if calls:
+        message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    if details:
+        message["reasoning_details"] = details
+    completion = {
+        "id": first.get("id"),
+        "object": "chat.completion",
+        "created": first.get("created"),
+        "model": first.get("model"),
+        "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
+    }
+    if usage is not None:
+        completion["usage"] = usage
+    return completion
+
+
 class StreamGate:
     """Track one streamed response: what may be released now and what is held for Watcher."""
 
@@ -60,6 +109,8 @@ class StreamGate:
         self.released_text = False
         self.released_role = False
         self.chunks: list[dict] = []
+        # The parsed chunks the client has already received, in order.
+        self._released_chunks: list[dict] = []
 
     def feed(self, data: bytes, final: bool = False) -> bytes:
         """Accept the next provider bytes; return the complete events that may go to the client now.
@@ -84,6 +135,7 @@ class StreamGate:
         released = bytearray()
         for event in complete.split(_EVENT_END)[:-1]:
             raw = event + _EVENT_END
+            parsed = len(self.chunks)
             kind = self._record(event)
             if kind == "tool":
                 self.holding = True
@@ -91,6 +143,7 @@ class StreamGate:
                 self._held += raw
             else:
                 released += raw
+                self._released_chunks += self.chunks[parsed:]
         return bytes(released)
 
     def release_held(self) -> bytes:
@@ -156,51 +209,20 @@ class StreamGate:
         """
         if self._tail.strip():
             raise UnsupportedExchange("The stream ended inside an event")
-        message: dict = {"role": "assistant", "content": None}
-        calls: dict[int, dict] = {}
-        details: list[dict] = []
-        finish_reason = None
-        usage = None
-        first: dict = {}
-        for chunk in self.chunks:
-            first = first or chunk
-            if chunk.get("usage") is not None:
-                usage = chunk["usage"]
-            for choice in chunk.get("choices") or []:
-                if not isinstance(choice, dict) or choice.get("index") != 0:
-                    raise UnsupportedExchange("Exactly one streamed choice is required")
-                delta = choice.get("delta") or {}
-                if not isinstance(delta, dict):
-                    raise UnsupportedExchange("Invalid stream delta")
-                if delta.get("function_call") is not None:
-                    message["function_call"] = delta["function_call"]
-                if isinstance(delta.get("content"), str):
-                    message["content"] = (message["content"] or "") + delta["content"]
-                # The text fields Watcher's converter reads from a buffered message,
-                # so a streamed refusal or reasoning trace is graded too.
-                for key in _TEXT_FIELDS:
-                    if isinstance(delta.get(key), str):
-                        message[key] = message.get(key, "") + delta[key]
-                for detail in _items(delta.get("reasoning_details"), "reasoning details"):
-                    _merge_detail(details, detail)
-                for fragment in _items(delta.get("tool_calls"), "tool calls"):
-                    _merge_call(calls, fragment)
-                if choice.get("finish_reason") is not None:
-                    finish_reason = choice["finish_reason"]
-        if calls:
-            message["tool_calls"] = [calls[index] for index in sorted(calls)]
-        if details:
-            message["reasoning_details"] = details
-        completion = {
-            "id": first.get("id"),
-            "object": "chat.completion",
-            "created": first.get("created"),
-            "model": first.get("model"),
-            "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
-        }
-        if usage is not None:
-            completion["usage"] = usage
-        return completion
+        return _assemble(self.chunks)
+
+    def released_completion(self) -> dict:
+        """The ``chat.completion`` body whose message holds only what was already released to the client.
+
+        After a refusal the held events are dropped, including any text that
+        arrived with or after the first tool call, so this, not
+        ``completion``, is what the client's reply starts with. The envelope
+        (ID, model, usage) comes from the whole stream: a stream whose first
+        event proposes a tool released nothing, yet the reply still needs it.
+        """
+        whole = _assemble(self.chunks)
+        message = _assemble(self._released_chunks)["choices"][0]["message"]
+        return {**whole, "choices": [{**whole["choices"][0], "message": message}]}
 
     def denial_events(self, notice: str, alternative: dict | None = None) -> bytes:
         """Events that end the stream normally after Watcher refused a call.

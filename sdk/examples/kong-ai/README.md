@@ -7,7 +7,9 @@ the public Watcher SDK. Watcher converts the exchange and selects its tool calls
 Chat Completions API and do not import Watcher.
 
 The same integration follows the administrator's Watcher settings. Enforce mode
-withholds responses containing denied tool calls. Observe mode records and grades
+withholds denied or escalated tool calls and keeps the agent working: the model
+is told why and asked for another approach, or, after an escalation, to ask the
+user. Observe mode records and grades
 calls without withholding them. Paused mode submits transcripts without hook
 grading; separately configured trailing review can still review those sessions.
 The plugin never changes the client's own tool permissions.
@@ -36,11 +38,20 @@ Configure the bridge and start it:
 export WATCHER_BASE_URL='https://your-watcher-server/api'
 export WATCHER_API_KEY='your-watcher-api-key'
 export WATCHER_BRIDGE_TOKEN='a-long-random-private-secret'
-uv run watcher-kong-bridge serve --host 127.0.0.1 --port 8765
+uv run watcher-kong-bridge serve --host 127.0.0.1 --port 8765 \
+  --gateway-url http://127.0.0.1:8000
 ```
 
 Use the public API base URL, including `/api` for Watcher Cloud or the self-hosted
 Analyzer hostname. A direct local API listener can have a different prefix.
+
+`--gateway-url` is the base URL at which the bridge reaches Kong's proxy
+listener. After a refusal the bridge asks the model for an alternative by
+sending a request back through the same Kong route (see
+[Enforcement and limits](#enforcement-and-limits)). `--deadline-seconds`
+(default 300) bounds the decision plus every alternative for one client
+request; keep it below the plugin's `timeout_ms` (default 420000, 7 minutes).
+Clients must allow responses that take this long.
 
 The bridge checks ingestion permission at startup. It does not expose Watcher
 credentials to clients. Use TLS when the bridge crosses a network trust boundary;
@@ -50,6 +61,9 @@ Copy `gateway/kong.yaml` to your deployment configuration and replace its provid
 URL, model, provider key, bridge token and gateway client key. Set `bridge_url` to
 an address Kong can reach; `127.0.0.1` means Kong's own network namespace. Keep
 Kong's Admin API private and apply the plugin to every AI route you expose.
+The plugin's `credential_header` (default `apikey`) must name the header your
+clients authenticate with, as in key-auth's `key_names`; the bridge forwards
+that credential on the alternative requests it sends for the same client.
 
 The supplied configuration uses Kong's native `ai-proxy` and `key-auth` plugins.
 Start the custom image with `KONG_DATABASE=off`, `KONG_DECLARATIVE_CONFIG` pointing
@@ -142,14 +156,101 @@ which gateway supplied the capture.
 Kong waits for every tool decision before releasing the response. A consistent
 `allow` in enforce mode, or a valid `deferred` result in observe or paused mode,
 preserves ordinary client behavior. Malformed or contradictory decisions withhold
-delivery. A valid `allow` from the administrator's grading-failure policy still
-releases the response. `deny` and `escalate` withhold the entire response with
-HTTP 403. An unattended client therefore cannot execute a
-tool that requires human approval. This gateway example has no approval screen
-or mechanism to resume an escalated call.
+delivery with HTTP 403. A valid `allow` from the administrator's grading-failure
+policy still releases the response.
+
+Every request the provider receives carries a fixed system message, added after
+the client's own leading system and developer messages. It tells the model that
+Watcher checks its tool calls and that `WATCHER NOTICE` and `WATCHER ESCALATION`
+text in its earlier replies was written by Watcher. The text is identical on
+every request, so it does not break prompt caching, and a request that already
+carries it is left unchanged. Watcher receives the same request.
+
+A `deny` or `escalate` withholds every tool call in that response, since calls
+in one response often depend on each other. Instead of an error, the client
+receives HTTP 200 with one completion:
+
+- After a denial, the model is shown the refused calls with Watcher's reasons
+  as tool results and asked to continue another way. Each alternative is graded
+  before any of it is released. An approved alternative is delivered after the
+  original text and a notice naming each refused call, with the alternative's
+  own tool calls. At most three proposals are made per client request: the
+  original and two alternatives. A call repeating a refused one, under any call
+  ID, is refused again without being graded.
+- After an escalation, or a third refused proposal, the model makes one final
+  generation with `tool_choice: "none"` and is asked to stop and ask the user,
+  with labelled options. Its text is delivered after the notices. If it proposes
+  tool calls anyway, they are withheld without being graded and a closing notice
+  asks the user how to proceed. The same notice ends a final reply that asks the
+  user nothing (empty, cut off by the token limit or the provider's content
+  filter, or with no question mark), and follows a sentence saying why when the
+  final generation fails outright. A complete final reply that already asks a
+  question is delivered unchanged. The model offers "allow this call" only when
+  Watcher's grader escalated the call (decision source `policy_gateway` or
+  `triage`). An escalation from a rule, a threshold or the grading-failure policy
+  cannot be approved in the conversation, so the options are to skip it, do
+  something else, or ask an administrator.
+
+A refusal in a request whose `response_format` is `json_object` or
+`json_schema` cannot carry a text notice, so it returns HTTP 403 with
+`{"error": {"message": "Watcher refused a tool call in this response, and its notice cannot be delivered inside the requested structured output format", "type": "watcher_withheld", "code": 403}}`
+and no alternative is requested; `text` or no `response_format` behaves as above.
+
+So one client request makes at most four model calls, and only the first three
+can release tool calls. The original response's ID, model and usage are kept;
+usage covers the first model call only.
+
+Alternatives are generated by requests the bridge sends back through the same
+Kong route, with the client's own credential, so Kong's routing, consumer
+identity, provider credentials and other plugins apply to them as they do to the
+client. To reach the same route when several share a path, these requests carry
+the client's original `Host` header and the client's values for the header names
+the matched route requires (its `headers` predicates, at most 16); no other
+client header is forwarded. A `Content-Type` predicate naming JSON is sent as the
+client sent it. If a predicate cannot be sent (for example a non-JSON
+`Content-Type` or the credential header), ordinary decisions and delivery are
+unaffected, but a refusal ends with the notice, "No alternative was
+delivered because the gateway cannot send an alternative to the client's route."
+and the same fixed question asking the user how to proceed.
+Routes selected by anything else, such as SNI or
+source address, are not distinguished: give each such route its own path.
+Each carries an `X-Watcher-Alternative` header: an expiry and an
+HMAC-SHA256 over the expiry and the exact request body, keyed from the bridge's
+Watcher API key. On such a request the plugin asks the bridge to verify the
+header, then passes the exchange through without the system notice or grading
+(the bridge grades the alternative itself) and removes the header before the
+request goes upstream. A missing, malformed, expired or forged header, or one
+signed for a different body, returns HTTP 403. Each alternative is graded in the
+client request's own Watcher session, under the same `kong:` ID. Its history
+repeats the refused calls with the gateway's refusal receipts as their results;
+because Watcher already holds a decision for each of those calls, it does not
+record them as calls that ran. Every Watcher request declares that the gateway
+withholds refused calls (`withholds_refused_calls`), so an enforced refusal is
+recorded as blocked rather than waiting for an answer. After Kong has the reply,
+the bridge records the delivered completion in the same session, naming every
+call it withheld (`withheld_tool_use_ids`: refused calls and their siblings,
+never a delivered call), so the Analyzer can show them before that reply. That
+recording never delays or changes the client's response; a failure is only
+logged. A Watcher server older than these fields rejects them, and the bridge
+then sends the same request once more without them, leaving refusals pending.
+The final generation is not graded; its calls are withheld unevaluated and are
+not named, since Watcher never saw them. Watcher stores exchanges
+asynchronously; if it stores an alternative before the original proposal, an
+allowed call withheld with the refused one can still end up recorded as
+completed. A refused call is recorded as blocked either way.
+
+If an alternative cannot be obtained or graded (a provider or Kong failure, a
+response the bridge cannot verify, a Watcher error, or the deadline), nothing
+from that attempt reaches the client. The response ends with the notices so far,
+a sentence saying why no alternative was delivered and a fixed question asking
+the user how to proceed, so the agent's turn never ends on a notice alone.
+
+This gateway example has no approval screen or mechanism to resume an escalated
+call: the user answers in the conversation, and Watcher grades the call again
+when the model proposes it.
 
 The route accepts buffered OpenAI Chat Completions and client function tools.
-Streaming, multiple alternatives, hidden provider history and other API routes
+Streaming, multiple choices, hidden provider history and other API routes
 are rejected. Requests carrying an `Upgrade` header return HTTP 400 before the
 plugin contacts the bridge or provider. The response gate requires buffered HTTP,
 so WebSockets and other protocol upgrades are unsupported. Keep the
@@ -168,18 +269,21 @@ tools that already ran at the provider, prove that a client executed a released
 tool, or capture results the client never sends in a later request. It does not
 monitor unrelated Kong routes or direct calls that bypass Kong.
 
-Permanent Watcher request rejections, such as an unconvertible exchange, withhold
-the model response with HTTP 403. Connection errors, timeouts, rate limits and
-server failures return HTTP 503. A decision produced by an administrator's
-grading-error policy follows that policy. Tool-call IDs must be unique across
-the full conversation; reusing an earlier ID for a new call is rejected.
-The bridge has no durable delivery queue or automatic replay.
+Permanent Watcher request rejections of the client's response, such as an
+unconvertible exchange, withhold it with HTTP 403. Connection errors, timeouts,
+rate limits and server failures return HTTP 503. A decision produced by an
+administrator's grading-error policy follows that policy. Tool-call IDs must be
+unique across the full conversation; reusing an earlier ID for a new call is
+rejected. The bridge has no durable delivery queue or automatic replay.
 
 ## Tests and packaging
 
-`src/watcher_kong_ai/bridge.py` contains the SDK boundary. `gateway/` contains the
-native plugin and deployment configuration. `tests/` covers conversion and
-decision handling; `tests/native/` exercises installed Kong with local fixtures.
+`src/watcher_kong_ai/bridge.py` is the bridge's HTTP endpoint and
+`exchange.py` the SDK boundary; `alternatives.py` and `notices.py` build the
+replacement response after a refusal. `gateway/` contains the
+native plugin and deployment configuration. `tests/` covers conversion,
+decision handling and recovery after refusals; `tests/native/` exercises
+installed Kong with local fixtures.
 `metadata.yaml` records verified versions and test scope.
 
 ```sh

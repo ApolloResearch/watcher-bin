@@ -1,6 +1,7 @@
 """A returned human choice finishes its bounded audit before cancellation propagates."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +23,8 @@ class AuditClient:
         self.uploads = []
         self.confirmed = False
         self.active = False
+        # Only a test that grades a call sets this hook.
+        self.pre_tool_use_hook: Callable[..., Awaitable[object]] | None = None
 
     async def search_sessions(self, **kwargs):
         return value(total=1, sessions=[value(session_id="session", latest_trajectory_id="trajectory")])

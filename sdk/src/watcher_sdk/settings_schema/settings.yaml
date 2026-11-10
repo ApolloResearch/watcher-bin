@@ -222,6 +222,14 @@ tool_thresholds:
     flag_threshold: 7
     deny_threshold: 11
 command_rules:
+  # A quoted argument can span lines and is still one shell word of the same command, so an option
+  # after it must stay visible to the scans that look for it. Allow rules, whose matches count only
+  # per command, write `.*` as `(?s:.*)`. Triage rules are also matched against the whole multi-line
+  # command, where an unquoted newline starts the next command. The find and fd triage rules, which
+  # take back an allow, span (?:[^\n'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")*: quoted
+  # text and escapes, across newlines, but never past an unquoted one, so `fd -e py` followed by
+  # `ls -lax` on the next line keeps its allow. The other triage rules cover commands no allow rule
+  # approves and keep a single-line `.*`.
   rules:
   - id: bash-literal-read-pipeline-guard
     tool_name: Bash
@@ -253,11 +261,16 @@ command_rules:
     regex: ^(cat|head|tail|less|more|bat|file|stat|readlink)\b[^|&;]*(\s[\\"']*(~|/|\.\.|\$\{?HOME\b)|/\.\.)
     decision: triage
     priority: 140
+  # `tree -o` writes its listing to a file and `tree -R` writes 00Tree.html into every directory it
+  # visits; `file -C` compiles a magic file to disk. Those spellings are graded, inside a cluster of
+  # short options too (`tree -ao FILE`). `-R` and `-C` are case-sensitive because `tree -r` (reverse
+  # sort) and `file -c` (check a magic file) only read;
+  # `file` also takes `-C` after a digit option (`-0C`) and abbreviates `--compile` to `--co`.
   - id: bash-read-only-filesystem
     tool_name: Bash
     name: Read-only filesystem
     category: file_directory
-    regex: ^(?:(?:ls|cat|head|tail|wc|find|stat|file|du|readlink)\b|tree\b(?!.*\s-o))
+    regex: ^(?:(?:ls|cat|head|tail|wc|find|stat|du|readlink)\b|file\b(?!(?s:.*)\s['"]?(?:(?-i:-[A-Za-z0-9]*C)|--co[a-z]*))|tree\b(?!(?s:.*)\s['"]?(?-i:-[A-Za-z]*[oR])))
     decision: allow
     priority: 300
   - id: bash-environment-info
@@ -271,13 +284,17 @@ command_rules:
     regex: ^(pwd|cd|echo|which|uname|whoami|date|hostname|id)\b|^env(?:[ \t]*(?:\d*(?:>>|>\||>&|>|<<<|<<|<&|<)|&>>|&>)[ \t]*(?:&\d+|&-|[^ \t<>|&;]+)?)*[ \t]*$
     decision: allow
     priority: 301
-  # yq --split-exp (-s) writes each result to a file its expression names, so it is graded, quoted
-  # (`'--split-exp'`, `"-s"`) or not.
+  # Options that write or run something are graded, quoted (`'--split-exp'`, `"-s"`) or not: yq
+  # --split-exp (-s) writes each result to a file its expression names and -i/--inplace (--in-place in
+  # the Python yq) rewrites the input; csvtool -o writes a file and its `call` command runs a program
+  # per row; xmllint -o/--output writes a file and --shell (or -shell) takes write commands from
+  # stdin. The Python yq abbreviates --in-place (argparse), so any `--in-` prefix counts. yq's short
+  # options are matched case-sensitively so `-I` (indent) keeps the allow.
   - id: bash-data-format-tools
     tool_name: Bash
     name: Data format tools
     category: file_directory
-    regex: ^(?:(?:jq|csvtool)\b|yq\b(?!.*\s['"]?(?:-[a-z]*s|--split-exp(?![\w-])))|xmllint\b(?!.*(?:\s['"]?-o|--output(?![\w-]))))
+    regex: ^(?:jq\b|csvtool\b(?!(?s:.*)\s['"]?(?:-o|call(?![\w.-])))|yq\b(?!(?s:.*)\s['"]?(?:(?-i:-[A-Za-z]*[is])|--(?:split-exp(?![\w-])|inplace(?![\w-])|in-[a-z-]*)))|xmllint\b(?!(?s:.*)(?:\s['"]?-o|--output(?![\w-])|\s['"]?--?shell(?![\w-]))))
     decision: allow
     priority: 302
   - id: bash-stdin-sort-uniq
@@ -485,11 +502,16 @@ command_rules:
     regex: \.gitlab-ci\.yml$|\.circleci/|(^|/)Jenkinsfile$|\.travis\.yml$|azure-pipelines\.yml$|\.drone\.yml$|bitbucket-pipelines\.yml$|\.gitea/
     decision: triage
     priority: 119
+  # Options that run another program are graded: rg --pre (a preprocessor per file) and
+  # --hostname-bin, and the --pager of ag and ack, which both accept it abbreviated to --pag. ack's
+  # --ackrc (matched from `--ackr`, which no other option starts with) reads options, a pager among
+  # them, from a file the command line names, which can be standard input; ag has no such option.
+  # `--ackmate`, in either tool, only formats output. fd's --exec has its own triage rule below.
   - id: bash-search-tools
     tool_name: Bash
     name: Search tools
     category: search
-    regex: ^(grep|rg|ag|fd|egrep|fgrep|ack)\b
+    regex: ^(?:(?:grep|egrep|fgrep|fd)\b|rg\b(?!(?s:.*)\s['"]?--(?:pre|hostname-bin)(?![\w-]))|ag\b(?!(?s:.*)\s['"]?--pag[a-z]*)|ack\b(?!(?s:.*)\s['"]?--(?:pag|ackr)[a-z]*))
     decision: allow
     priority: 320
   # Only a print-only script is approved: one script (quoted, or a bare word) built from addresses,
@@ -506,11 +528,31 @@ command_rules:
     regex: '^sed\s+-[ersuz]*n[ersuz]*(?:\s+-[ersuz]+)*\s+(?:-e\s+)?(?:''\s*(?:(?:(?:(?:\d+(?:~\d+)?|\$|/(?:[^/''\\\n]|\\[^''\n])*/I?)(?:,(?:(?:\d+(?:~\d+)?|\$|/(?:[^/''\\\n]|\\[^''\n])*/I?)|[+~]\d+))?\s*)?(?:!\s*)?(?:[pl=dnghxz]|q\d*|s/(?:[^/''\\\n]|\\[^''\n])*/(?:[^/''\\\n]|\\[^''\n])*/[gpim\d]*|\{)|\})(?:(?:\s*[;\n]\s*|(?<=\{)\s*|\s*(?=\}))|(?=\s*;?\s*'')))+\s*;?\s*''|"\s*(?:(?:(?:(?:\d+(?:~\d+)?|\$|/(?:[^/"$`\\\n]|\\.)*/I?)(?:,(?:(?:\d+(?:~\d+)?|\$|/(?:[^/"$`\\\n]|\\.)*/I?)|[+~]\d+))?\s*)?(?:!\s*)?(?:[pl=dnghxz]|q\d*|s/(?:[^/"$`\\\n]|\\.)*/(?:[^/"$`\\\n]|\\.)*/[gpim\d]*|\{)|\})(?:(?:\s*[;\n]\s*|(?<=\{)\s*|\s*(?=\}))|(?=\s*;?\s*")))+\s*;?\s*"|(?:(?:(?:(?:\d+(?:~\d+)?|\$|/(?:[^/''"\s;&|<>()$`\\\n]|\\.)*/I?)(?:,(?:(?:\d+(?:~\d+)?|\$|/(?:[^/''"\s;&|<>()$`\\\n]|\\.)*/I?)|[+~]\d+))?)?(?:!)?(?:[pl=dnghxz]|q\d*|s/(?:[^/''"\s;&|<>()$`\\\n]|\\.)*/(?:[^/''"\s;&|<>()$`\\\n]|\\.)*/[gpim\d]*|\{)|\})(?:(?:(?<=\{)|(?=\}))|(?=\s|$)))+)(?:\s+(?:[^\s''"\\;&|<>()$`-][^\s''"\\;&|<>()$`]*|\d*(?:>>?|&>)\s*[^\s''"\\;&|<>()$`]+|\d*>&\d+|<\s*[^\s''"\\;&|<>()$`-][^\s''"\\;&|<>()$`]*))*\s*$'
     decision: allow
     priority: 321
+  # `git branch` lists branches, but its options also delete, force-move, rename, copy and re-track
+  # them, and --edit-description opens an editor; any of those (short options in any cluster, as in
+  # `-rd`) is graded. Git accepts any unambiguous prefix of a long option (`--dele`, `--forc`), so
+  # the long forms are matched by their shortest unambiguous prefix among `git branch` options.
+  # Creating a branch by naming one stays allowed: it changes no existing ref. A word straight after
+  # `--sort` is its key, so `--sort -committerdate` keeps the allow; git reads that word as the key
+  # even when it looks like an option, so `--sort -D x` deletes nothing.
+  # `git fetch --upload-pack` (from `--upl`) runs the named command for a local or ssh remote, so it
+  # is graded, and so is `--set-upstream` (from `--set`), which rewrites the current branch's
+  # upstream like `git branch -u`. A refspec with a colon (`+feature:main`,
+  # `refs/heads/*:refs/heads/*`) writes local refs and, with --prune, deletes them, so a colon
+  # anywhere after the remote is graded, as are --refmap, --stdin (refspecs the command line does not
+  # show) and --prune-tags / -P (deletes local tags). The remote, which may itself be
+  # `git@host:repo`, is the first word that is not an option or the value of one (`--depth 1`,
+  # `--shallow-since '1 month ago'`, with a quoted value read as one word either way,
+  # `--shallow-since="1 month ago"`), a lone `-`, or the word after `--` or `--end-of-options`. Only
+  # the exact names of the options `git fetch -h` lists as taking a separate value are skipped with
+  # their value, inside an atomic group: a no-value option counted as taking one would hide the real
+  # remote and let a refspec pass as the remote. `--output` needs no prefix form: every prefix of it
+  # is also a prefix of --output-indicator-*, which git rejects as ambiguous.
   - id: bash-git-read-only
     tool_name: Bash
     name: Git read-only
     category: git
-    regex: ^git\s+(status|diff|log|show|branch|fetch|ls-tree|ls-files|blame|shortlog|describe|tag\s+-l)\b(?!.*--output(?![\w-]))
+    regex: ^git\s+(status|diff|log|show|branch\b(?!(?:(?s:.*)\s(?!--so[a-z]*\s)\S+)?\s+['"]?-(?:[a-z]*[cdfmtu]|-(?:d|forc|mo|cop|cr|se|u|e|t)[a-z-]*))|fetch\b(?!(?s:.*)\s['"]?(?:--(?:upl|refm|st|prune-|set)[a-z-]*|(?-i:-[a-zA-Z0-9]*P)))(?!\s+(?>(?:(?:--(?:jobs|depth|shallow-since|shallow-exclude|deepen|server-option|negotiation-tip|filter|submodule-prefix|recurse-submodules-default)|(?-i:-[jo]))\s+(?:[^\s'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")+\s+|--(?!end-of-options\s)(?:[^\s'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")+\s+|-[^\s-](?:[^\s'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")*\s+)*)(?:--(?:end-of-options)?\s+\S+|-(?=\s)|[^\s-]\S*)\s(?s:.*):)|ls-tree|ls-files|blame|shortlog|describe|tag\s+-l)\b(?!(?s:.*)--output(?![\w-]))
     decision: allow
     priority: 330
   - id: bash-github-cli-read-only
@@ -577,50 +619,115 @@ command_rules:
   # The test, lint and build allow rules below approve by name, but the repository defines what runs
   # (Makefile, conftest.py, package.json scripts, build.rs, the project build behind `uv run`), so an
   # approved run can change anything, Watcher's settings included. Accepted risk: no grader sees
-  # those files either, and isolation or MDM protection of Watcher's files is what limits it.
+  # those files either, and isolation or MDM protection of Watcher's files is what limits it. An
+  # organization that wants them graded sets each to `triage` with `permission: locked` in its managed
+  # settings (customer docs: concepts/organization-settings.md, "Grading test, lint and build commands").
+  # Options that write or delete at a path the command line names, or upload, lose the allow even so:
+  # those need no repository file. That covers pytest's --junitxml, --basetemp (emptied before the
+  # run), --log-file, --debug, -o/--override-ini (which can set those paths) and --pastebin (uploads
+  # results); the report paths of pytest-cov (`--cov-report=xml:PATH`), pytest-html and
+  # pytest-reportlog; go's -o and profile outputs; swift's --xunit-output; libtest's --logfile;
+  # mypy's report options (`--linecount-report DIR` writes DIR/linecount.txt; every `--*-report`),
+  # --junit-xml, the hidden --timing-stats / --line-checking-stats files and --cache-map (cache
+  # files at the paths it names); flake8's --output-file; ty's --update-baseline; and tsc's trace,
+  # profile and build-info files, or any emit once `--noEmit false` turns it back on.
+  # mypy and flake8 accept any unambiguous prefix of a long option, so each mypy option is matched
+  # from its shortest unambiguous prefix among mypy's options (`--ti`, `--ht`, `--con`) or a shorter
+  # stem it shares with other matched options: mypy rejects `--line` and `--xs` as ambiguous, but
+  # every option they begin (`--linecount-report`, `--line-checking-stats`, `--xslt-txt-report`) is
+  # one to grade. flake8 reads --config, --append-config and --output-file in a first pass that
+  # knows only a few options, where `--c` and `--co` already mean --config, so every prefix of
+  # those three is matched while --count and --color keep the allow.
+  # Build-output directories (swift's --scratch-path / --build-path, Cargo's --target-dir) stay
+  # allowed: they pick where the tool keeps its own build tree, not a file to overwrite.
+  # Go's -gcflags, -asmflags and -gccgoflags hand options to the compiler and assembler, several of
+  # which write files at a named path or read an import config, so they lose the allow. Each
+  # -ldflags must be followed by a value made only of -s, -w, -X NAME=VALUE and -buildid=ID
+  # (optionally after a `pattern=` prefix, flags case-sensitive as Go reads them, no escapes; Go
+  # splits the value itself, so inside a quoted value an -X operand may sit in the other kind of
+  # quote, `-ldflags="-X 'main.v=1.2.3'"`); any other -ldflags value is graded.
+  # Options that name a program to run lose it for the same reason: go's -exec, -toolexec and
+  # -extld, Cargo's --config (a test runner or rustc wrapper), mypy's --python-executable and
+  # pyright's --pythonpath (each runs the named interpreter to find installed packages), mypy's
+  # --install-types (runs pip to install stub packages), flake8's --config and --append-config
+  # (a `[flake8:local-plugins]` section imports a module from a named directory), swift's
+  # --toolset, --destination, SDK and toolchain options and its -X… pass-through options
+  # (-Xswiftc, -Xcc, -Xlinker, which hand flags to the compiler or linker), npm's --node-options and
+  # --script-shell (npm expands `--scr`), and npm's --userconfig and --globalconfig, whose file can
+  # set the script shell; `npm run build` and `swift build` (under Build commands) lose the allow
+  # for these too.
+  # pytest's -c / --config-file names an ini file whose addopts can carry any of the pytest options
+  # above, like make's -f; mypy's --config-file (down to `--con`) is graded the same way, since its
+  # file can set python_executable and the report directories. Options that point a runner at another
+  # project are graded for the same reason: go's -C, -overlay (source files replaced by others) and
+  # -modfile, Cargo's --manifest-path, swift's --package-path and npm's --prefix / -C. npm strips any
+  # number of leading dashes (`-prefix=DIR`, `---prefix=DIR`, `--C DIR`) and expands a cluster of
+  # short aliases (`-sC DIR`, `--sC DIR`), so those spellings are matched too. The -C check walks the
+  # words after the script name (`test:unit` and `build:prod` included; quotes and backslash escapes
+  # keep a word together) and stops at a standalone `--`, after which npm passes words to the script
+  # untouched (`npm test -- --collectCoverage`); a `--` inside a quoted or escaped value does not
+  # stop it. Test paths given to pytest are not graded: agents routinely pass absolute paths into
+  # their own repository. pytest, mypy, ruff, ty and tsc also read arguments from a file named with
+  # a leading `@` (`pytest @args.txt`), which can hold any option above, and so does rustdoc for the
+  # words after `cargo test --` when it runs doctests (`--logfile` inside the file), so an `@` word
+  # loses the allow for them and for cargo.
   - id: bash-python-tests
     tool_name: Bash
     name: Python tests
     category: testing_build
-    regex: ^(uv\s+run\s+pytest|python\s+-m\s+pytest|pytest)\b(?!.*--junit-?xml(?![\w-]))
+    regex: ^(uv\s+run\s+pytest|python\s+-m\s+pytest|pytest)\b(?!(?s:.*)(?:--(?:junit-?xml|basetemp|log-file|debug|override-ini|pastebin|html|report-log|json-report-file)(?![\w-])|--cov-report['"]?(?:=|\s+)['"]?(?!term)[a-z]+:|--config-file(?![\w-])|\s['"]?-o|\s['"]?(?-i:-c)|\s['"]?@))
     decision: allow
     priority: 340
   - id: bash-js/ts-tests-lint
     tool_name: Bash
     name: JS/TS tests & lint
     category: testing_build
-    regex: ^(?:npm\s+test|npm\s+run\s+(?:test|lint|check)|npx\s+(?:jest|vitest|prettier)|npx\s+eslint(?!.*\s-o))\b(?!.*--output-?file(?![\w-]))
+    regex: ^(?:(?:npm\s+test|npm\s+run\s+(?:test|lint|check))\b(?!(?:[^\s'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")*(?:\s+(?!--(?:\s|$))(?:[^\s'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")+)*?\s+['"]?(?-i:-+[a-zA-Z]*C))|npx\s+(?:jest|vitest|prettier)|npx\s+eslint(?!(?s:.*)\s-o))\b(?!(?s:.*)(?:--output-?file(?![\w-])|[\s'"]-+(?:node-o|scr|userc|globalc|prefi)[a-z-]*))
     decision: allow
     priority: 341
   - id: bash-compiled-language-tests
     tool_name: Bash
     name: Compiled language tests
     category: testing_build
-    regex: ^(cargo\s+(test|check|clippy)|go\s+test|swift\s+test)\b
+    regex: ^(cargo\s+(test|check|clippy)\b(?!(?s:.*)(?:--(?:config|logfile|manifest-path)(?![\w-])|\s['"]?@))|go\s+test\b(?!(?s:.*)\s['"]?--?(?:test\.)?(?:o|(?:cover|cpu|mem|block|mutex)profile|trace|outputdir|exec|toolexec|overlay|modfile)(?![\w-]))(?!(?s:.*)-extld)(?!(?s:.*)\s['"]?--?(?:gc|asm|gccgo)flags(?![\w-]))(?!(?s:.*)[\s'"]-?-ldflags(?!['"]?(?:=|\s+)(?:'(?:[^\s'"=\\-][^\s'"=\\]*=)?(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-X\s+"[^\s'"\\-][^'"\\]*"|-buildid=[^\s'"\\]*)(?:\s+(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-X\s+"[^\s'"\\-][^'"\\]*"|-buildid=[^\s'"\\]*))*'|\"(?:[^\s'"=\\-][^\s'"=\\]*=)?(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-X\s+'[^\s'"\\-][^'"\\]*'|-buildid=[^\s'"\\]*)(?:\s+(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-X\s+'[^\s'"\\-][^'"\\]*'|-buildid=[^\s'"\\]*))*"|(?:[^\s'"=\\-][^\s'"=\\]*=)?(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-buildid=[^\s'"\\]*))(?=\s|$)))(?!(?s:.*)\s['"]?(?-i:--?C)(?![\w-]))|swift\s+test\b(?!(?s:.*)(?:--(?:xunit-output|package-path)(?![\w-])|--(?:toolset|destination|(?:experimental-)?swift-sdks?(?:-path)?|sdk|toolchain)(?![\w-])|\s['"]?(?-i:-+X[a-z]))))\b
     decision: allow
     priority: 342
   - id: bash-python-linters
     tool_name: Bash
     name: Python linters
     category: testing_build
-    regex: ^(?:uv\s+run\s+(?:ruff|pyright|ty|mypy|flake8|black)|ruff\b|pyright\b|ty\b|mypy\b)(?!.*(?:\s-o|--output-file(?![\w-])|--junit-xml(?![\w-])))
+    regex: ^(?!(?:uv\s+run\s+)?mypy\b(?s:.*)\s['"]?--(?:con|python-e|junit-x|ti|line|ins|cache-m|an|cob|ht|tx|xm|xs))(?!(?:uv\s+run\s+)?flake8\b(?s:.*)\s['"]?--(?:o|a|c(?:o(?:n(?:f(?:i(?:g)?)?)?)?)?(?![\w-])))(?!(?:uv\s+run\s+)?ty\b(?s:.*)\s['"]?--update-baseline)(?:uv\s+run\s+(?:ruff|pyright|ty|mypy|flake8|black)|ruff\b|pyright\b|ty\b|mypy\b)(?!(?s:.*)(?:\s-o|--output-file(?![\w-])|--junit-xml(?![\w-])|--pythonpath|\s['"]?@))
     decision: allow
     priority: 343
   - id: bash-typescript-type-check
     tool_name: Bash
     name: TypeScript type check
     category: testing_build
-    regex: ^(npx\s+tsc\s+--noEmit|tsc\s+--noEmit)\b
+    regex: ^(npx\s+tsc\s+--noEmit|tsc\s+--noEmit)\b(?!(?s:.*)(?:--(?:generateTrace|generateCpuProfile|tsBuildInfoFile)(?![\w-])|\s['"]?@))(?!(?:(?s:.*)--noEmit)?['"]?(?:\s+|=)['"]?false)
     decision: allow
     priority: 344
   - id: bash-build-commands
     tool_name: Bash
     name: Build commands
     category: testing_build
-    # `-f`/`-C` repoint make at a makefile or directory of the caller's choosing, so those lose the
-    # allow. Each option keeps its `\b`: dropping it to catch an attached value (`-fMakefile.dev`)
-    # also fires on `make CFLAGS="-fPIC -O2"`, because the lookahead has no notion of shell words.
-    regex: ^(npm\s+run\s+build|make\b(?!.*[\s"']-(?:f|C|-file|-makefile|-directory)\b)|cargo\s+build|swift\s+build|go\s+build)
+    # `-f`/`-C` repoint make at a makefile or directory of the caller's choosing, and `-I` /
+    # `--include-dir` makes an `include` or `-include` in the repository's Makefile read a file from
+    # such a directory, so those lose the allow, as do `-E`/`--eval` (a recipe written on the
+    # command line), a `!=` assignment (which runs its right-hand side in the shell), assigning
+    # SHELL, .SHELLFLAGS, MAKEFILES or MAKEFLAGS (which pick the program every recipe line runs
+    # under, add a makefile, or pass options), and
+    # any `$` in the arguments: make exports command-line variables to every recipe and expands
+    # them, so `FOO=$(shell CMD)` runs CMD even if the Makefile never mentions FOO, and the shell
+    # can hand make that `$(` from an escaped or quoted spelling (`FOO=\$\(shell\ CMD\)`). Short
+    # options also count inside a cluster of make's no-argument flags (`-sf`, `-Lf`) or with an
+    # attached value (`-fMakefile.dev`, `-Csubdir`, `-Idir`), and make accepts any unambiguous
+    # prefix of a long option (`--fil`, `--mak`, `--di`, `--ev`, `--in`). These options are found
+    # by walking whole shell words (quotes and backslash escapes keep a word together), so a
+    # compiler flag inside a variable's value (`CFLAGS="-E -O2"`, `CFLAGS="-fPIC"`) is not read as
+    # one.
+    # Plain variable values still reach whichever recipes the Makefile writes them into; what those
+    # recipes run is the repository's to define, as above.
+    regex: ^(npm\s+run\s+build\b(?!(?s:.*)[\s'"]-+(?:node-o|scr|userc|globalc|prefi)[a-z-]*)(?!(?:[^\s'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")*(?:\s+(?!--(?:\s|$))(?:[^\s'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")+)*?\s+['"]?(?-i:-+[a-zA-Z]*C))|make\b(?!(?:\s+(?:[^\s'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")+)*?\s+['"]?(?:(?-i:-[bBdehiknpqrRsStvwLm]*[fCEI])|--(?:f|mak|di|ev|in)[a-z]*))(?!(?s:.*)(?:(?<![\w.-])(?-i:SHELL|\.SHELLFLAGS|MAKEFILES|MAKEFLAGS)['"]?[:+?]*=|!=|\$))|cargo\s+build\b(?!(?s:.*)--(?:config|manifest-path)(?![\w-]))|swift\s+build\b(?!(?s:.*)(?:--package-path(?![\w-])|--(?:toolset|destination|(?:experimental-)?swift-sdks?(?:-path)?|sdk|toolchain)(?![\w-])|\s['"]?(?-i:-+X[a-z])))|go\s+build\b(?!(?s:.*)\s['"]?--?(?:o|toolexec|overlay|modfile)(?![\w-]))(?!(?s:.*)-extld)(?!(?s:.*)\s['"]?--?(?:gc|asm|gccgo)flags(?![\w-]))(?!(?s:.*)[\s'"]-?-ldflags(?!['"]?(?:=|\s+)(?:'(?:[^\s'"=\\-][^\s'"=\\]*=)?(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-X\s+"[^\s'"\\-][^'"\\]*"|-buildid=[^\s'"\\]*)(?:\s+(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-X\s+"[^\s'"\\-][^'"\\]*"|-buildid=[^\s'"\\]*))*'|\"(?:[^\s'"=\\-][^\s'"=\\]*=)?(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-X\s+'[^\s'"\\-][^'"\\]*'|-buildid=[^\s'"\\]*)(?:\s+(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-X\s+'[^\s'"\\-][^'"\\]*'|-buildid=[^\s'"\\]*))*"|(?:[^\s'"=\\-][^\s'"=\\]*=)?(?-i:-[sw]|-X(?:=|\s+)[^\s'"\\-][^\s'"\\]*|-buildid=[^\s'"\\]*))(?=\s|$)))(?!(?s:.*)\s['"]?(?-i:--?C)(?![\w-])))
     decision: allow
     priority: 345
   - id: bash-package-info
@@ -746,14 +853,18 @@ command_rules:
     tool_name: Bash
     name: find with side effects
     category: file_directory
-    regex: ^find\b(?=.*[\s"'\\]-(delete|exec|execdir|fls|fprint0?|fprintf|ok|okdir)\b)
+    regex: ^find\b(?=(?:[^\n'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")*[\s"'\\]-(delete|exec|execdir|fls|fprint0?|fprintf|ok|okdir)\b)
     decision: triage
     priority: 240
+  # -x and -X are found inside a short-option cluster (`-Hx`) and with an attached command (`-xrm`).
+  # A cluster ends at the first short option that takes a value (d t e E c j S o C), whose value is
+  # the rest of the word, so `-ejsx` (extension jsx) is not read as -x. Any other letter counts as a
+  # flag, so a no-value flag fd adds later still cannot hide an -x behind it.
   - id: bash-fd-with---exec
     tool_name: Bash
     name: fd with --exec
     category: search
-    regex: ^fd\b.*[\s"'\\]-(x|X|-exec|-exec-batch)\b
+    regex: ^fd\b(?:[^\n'"\\]|\\(?s:.)|'[^']*'|"(?:[^"\\]|\\(?s:.))*")*[\s"'\\]-(?:(?-i:(?:(?![dteEcjSoC])[A-Za-z0-9])*[xX])|-exec(?:-batch)?(?![\w-]))
     decision: triage
     priority: 241
   - id: edit-lock-pinned-deps-file

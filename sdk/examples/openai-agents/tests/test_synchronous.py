@@ -108,6 +108,9 @@ async def test_native_failures_never_reach_the_tool_side_effect(failure, tmp_pat
     requests = []
 
     async def respond(request):
+        if request.url.path != "/v1/hooks/pre-tool-use":
+            # Refusal reports are tested in test_configured_policy; failing them fast keeps them out of these counts.
+            return httpx.Response(404, json={"detail": "Not served by this fixture"})
         body = json.loads(request.content)
         if body["input"] is None:
             return response(body)
@@ -249,6 +252,9 @@ async def test_native_mixed_outcomes(tmp_path, record_property):
     sent = []
 
     async def respond(request):
+        if request.url.path != "/v1/hooks/pre-tool-use":
+            # Refusal reports are tested in test_configured_policy; failing them fast keeps them out of these counts.
+            return httpx.Response(404, json={"detail": "Not served by this fixture"})
         body = json.loads(request.content)
         sent.append(body)
         call = body["input"]

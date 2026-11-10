@@ -6,9 +6,9 @@ request. After an escalation, or a third refused proposal, it asks instead for
 one final reply with tool calls disabled, in which the model puts the question
 to the user (texts in ``notices.py``). Each generation is an ordinary request
 to Agent Router's listener, so it uses the same route, backend and provider
-credentials as the client's request. Every alternative is graded as its own
-exchange before any of it reaches the client; calls in the final reply are
-withheld without grading.
+credentials as the client's request. Every alternative is graded in the
+client request's own Watcher session before any of it reaches the client;
+calls in the final reply are withheld without grading.
 
 That request passes through this processor again. Grading it there as well
 would grade every alternative twice and start a nested recovery, so the
@@ -26,7 +26,7 @@ removed before the request reaches Agent Router's backend.
                 gateway ──► processor (marker valid: pass through) ──► provider
                               │  alternative
                               ▼
-               processor: grade alternative as a new Watcher session
+          processor: grade alternative in the client's Watcher session
                               │
                               ▼
     client ◄── original text + refusal notices + approved alternative or final reply
@@ -35,6 +35,15 @@ Everything shares the time limit of the first evaluation, which stays below
 Envoy's message timeout. A failed or timed-out alternative never releases a
 call: the client receives the notices with a sentence saying why no
 alternative followed.
+
+Grading in the client's session keeps Watcher's record of the refused calls
+honest: an alternative's request repeats the refused proposal with the
+processor's refusal receipts as tool results, and Watcher records a call it
+first sees with a result as having run unless the session already holds a
+decision for it (the README's Alternatives section has the details and the
+storage-order limit). A proposal refused locally as a repeat was never
+graded, so it is left out of what Watcher sees. The recovery also lists every
+call it withheld, which the processor names when it records the reply.
 """
 
 import asyncio
@@ -43,7 +52,7 @@ import hmac
 import json
 import re
 import time
-from uuid import uuid4
+from typing import NamedTuple
 
 import httpx
 import structlog
@@ -51,7 +60,6 @@ from pydantic import BaseModel, ConfigDict
 
 from watcher_agent_router.exchange import (
     CHAT_COMPLETIONS_PATH,
-    CONVERSATION_PREFIX,
     Denial,
     Evaluation,
     UnsupportedExchange,
@@ -166,12 +174,58 @@ class Recovery(BaseModel):
     it carries may be delivered. ``question`` is the fixed question that ends
     the reply when it must be shortened to fit the size limit, so a shortened
     reply still asks the user how to proceed; it is unset when no
-    alternatives were requested.
+    alternatives were requested. ``withheld_ids`` lists, in order and without
+    repeats, every call of every proposal that was not delivered; a call
+    ``alternative`` carries is never listed.
     """
 
     notices: list[str]
     alternative: dict | None = None
     question: str | None = None
+    withheld_ids: list[str] = []
+
+
+class _Attempt(NamedTuple):
+    """One generated alternative: the completion, its verified evaluation, and whether Watcher graded it.
+
+    ``submitted`` is False for a proposal refused locally as a repeat, which
+    Watcher never saw.
+    """
+
+    response: dict
+    evaluation: Evaluation
+    submitted: bool
+
+
+class _Failed(NamedTuple):
+    """Why no alternative followed, as fixed client text, and the IDs of any calls the failed attempt proposed."""
+
+    reason: str
+    calls: list[str]
+
+
+def _call_ids(response: dict) -> list[str]:
+    """The IDs of ``response``'s tool calls, in order."""
+    return [call["id"] for call in response["choices"][0]["message"].get("tool_calls") or []]
+
+
+def _withhold(withheld: list[str], call_ids: list[str]) -> None:
+    """Add ``call_ids`` to ``withheld``, in order and without repeats."""
+    withheld.extend(call_id for call_id in call_ids if call_id not in withheld)
+
+
+def _graded(request: dict, unsubmitted: set[int]) -> dict:
+    """``request`` as Watcher grades it: without the messages at ``unsubmitted``, which Watcher never saw.
+
+    Those are proposals refused locally as repeats and their refusal
+    receipts. Watcher records a call it first sees with a result as having
+    run unless the session already holds a decision for it, and a locally
+    refused repeat has none. The model still sees them.
+    """
+    if not unsubmitted:
+        return request
+    kept = [message for index, message in enumerate(request["messages"]) if index not in unsubmitted]
+    return {**request, "messages": kept}
 
 
 def _repeats(response: dict, forbidden: dict[str, Denial]) -> list[Denial]:
@@ -214,15 +268,26 @@ async def recover(
     Without a ``gateway`` only the first notice is returned. After a failed
     generation a sentence says why nothing followed and a fixed question asks
     the user how to proceed; nothing from that attempt is delivered.
+
+    Alternatives are graded in the client's own session (``conversation_id``);
+    proposals refused locally as repeats are left out of what Watcher grades
+    (``_graded``). The recovery lists every withheld call for the recording of
+    the delivered reply.
     """
     notices = [withheld_notice(response, evaluation)]
+    withheld = _call_ids(response)
     if gateway is None:
-        return Recovery(notices=notices)
+        return Recovery(notices=notices, withheld_ids=withheld)
     forbidden: dict[str, Denial] = {}
+    unsubmitted: set[int] = set()
+    submitted = True
     for attempt in range(1, MAX_PROPOSALS + 1):
         forbidden.update({operation_key(d.tool_name, d.tool_input): d for d in evaluation.denials})
         stop = attempt == MAX_PROPOSALS or any(denial.is_escalation for denial in evaluation.denials)
+        shown = len(request["messages"])
         request = continuation(request, response, evaluation, stop=stop)
+        if not submitted:
+            unsubmitted.update(range(shown, len(request["messages"])))
         if stop:
             final = await _final(
                 gateway, request, evaluation.denials, conversation_id=conversation_id, deadline=deadline
@@ -230,28 +295,37 @@ async def recover(
             question = stop_notice(evaluation.denials)
             if isinstance(final, str):
                 notices += [f"No final reply was delivered because {final}.", question]
-                return Recovery(notices=notices, question=question)
-            return Recovery(notices=notices, alternative=final, question=question)
+                return Recovery(notices=notices, question=question, withheld_ids=withheld)
+            return Recovery(notices=notices, alternative=final, question=question, withheld_ids=withheld)
         outcome = await _alternative(
             watcher,
             gateway,
             request,
             forbidden,
+            graded=_graded(request, unsubmitted),
             conversation_id=conversation_id,
             user_agent=user_agent,
             deadline=deadline,
             attempt=attempt,
         )
-        if isinstance(outcome, str):
-            notices += [f"No alternative was delivered because {outcome}.", ALTERNATIVE_FAILED]
-            return Recovery(notices=notices, question=ALTERNATIVE_FAILED)
-        response, evaluation = outcome
+        if isinstance(outcome, _Failed):
+            _withhold(withheld, outcome.calls)
+            notices += [f"No alternative was delivered because {outcome.reason}.", ALTERNATIVE_FAILED]
+            return Recovery(notices=notices, question=ALTERNATIVE_FAILED, withheld_ids=withheld)
+        response, evaluation, submitted = outcome
         if not evaluation.denials:
             if not client_calls(response) and _asks_nothing(response):
                 # A text-only alternative with no text, or cut off by a limit or
                 # filter, would end the agent's turn without a question.
                 response = _closed(response, ALTERNATIVE_FAILED)
-            return Recovery(notices=notices, alternative=response, question=ALTERNATIVE_FAILED)
+            delivered = set(_call_ids(response))
+            return Recovery(
+                notices=notices,
+                alternative=response,
+                question=ALTERNATIVE_FAILED,
+                withheld_ids=[call_id for call_id in withheld if call_id not in delivered],
+            )
+        _withhold(withheld, _call_ids(response))
         notices.append(withheld_notice(response, evaluation))
     raise AssertionError("the final generation always returns")  # pragma: no cover
 
@@ -324,52 +398,57 @@ async def _alternative(
     request: dict,
     forbidden: dict[str, Denial],
     *,
+    graded: dict,
     conversation_id: str,
     user_agent: str | None,
     deadline: float,
     attempt: int,
-) -> tuple[dict, Evaluation] | str:
+) -> _Attempt | _Failed:
     """Generate and grade one alternative; return it with its verified evaluation, or why it failed.
 
-    The alternative is graded under a fresh ``agent-router:`` conversation ID,
-    with ``request`` (the continuation that produced it) as its history. The
-    returned reason is fixed text for the client, never provider content.
+    ``request`` (the continuation) produces the alternative; ``graded`` is
+    the same continuation as Watcher sees it, without proposals Watcher never
+    graded, and is the history the alternative is graded with, in the
+    client's own session ``conversation_id``. A failure's reason is fixed text
+    for the client, never provider content; its call IDs are those of any
+    alternative generated, which Watcher may have recorded and which never
+    reach the client.
     """
-    alternative_id = f"{CONVERSATION_PREFIX}{uuid4()}"
+    calls: list[str] = []
     try:
         async with asyncio.timeout_at(deadline):
             response = await gateway.generate(request, deadline)
             client_calls(response)
             alternative_message(response)
+            calls = _call_ids(response)
             repeats = _repeats(response, forbidden)
             if repeats:
-                # Refused locally: nothing is submitted, so no Watcher session exists for it.
+                # Refused locally: nothing is submitted, so Watcher holds no decision for it.
                 logger.info("alternative_repeated", conversation_id=conversation_id, attempt=attempt)
-                return response, Evaluation(verified=True, denials=repeats)
+                return _Attempt(response, Evaluation(verified=True, denials=repeats), submitted=False)
             evaluation = await evaluate(
-                watcher, request, response, conversation_id=alternative_id, user_agent=user_agent
+                watcher, graded, response, conversation_id=conversation_id, user_agent=user_agent
             )
     except TimeoutError:
-        return "the time limit was reached"
+        return _Failed("the time limit was reached", calls)
     except AlternativeFailed as error:
-        return str(error)
+        return _Failed(str(error), calls)
     except UnsupportedExchange as error:
         logger.warning("alternative_unverifiable", conversation_id=conversation_id, check=str(error))
-        return "the gateway cannot verify the alternative"
+        return _Failed("the gateway cannot verify the alternative", calls)
     except WatcherAPIError as error:
         logger.warning("alternative_not_evaluated", conversation_id=conversation_id, watcher_status=error.status_code)
-        return "Watcher did not evaluate the alternative"
+        return _Failed("Watcher did not evaluate the alternative", calls)
     except Exception as error:
         logger.warning("alternative_not_evaluated", conversation_id=conversation_id, error_type=type(error).__name__)
-        return "Watcher did not evaluate the alternative"
+        return _Failed("Watcher did not evaluate the alternative", calls)
     logger.info(
         "alternative_evaluated",
         conversation_id=conversation_id,
-        alternative_conversation_id=alternative_id,
         attempt=attempt,
         verified=evaluation.verified,
         denied=len(evaluation.denials),
     )
     if not evaluation.verified:
-        return "Watcher's decisions do not match the alternative"
-    return response, evaluation
+        return _Failed("Watcher's decisions do not match the alternative", calls)
+    return _Attempt(response, evaluation, submitted=True)

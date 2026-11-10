@@ -2,7 +2,7 @@
 
 import httpx
 import pytest
-from watcher_kong_ai.bridge import evaluate
+from watcher_kong_ai.exchange import evaluate
 
 from watcher_sdk import AsyncWatcherClient
 
@@ -97,4 +97,4 @@ async def test_matched_named_tool_outcome_contract(changes, allowed):
             transport=httpx.MockTransport(lambda _: httpx.Response(200, json=[outcome])),
         ),
     ) as client:
-        assert await evaluate(client, request, response, conversation_id="kong:contract-fixture") is allowed
+        assert (await evaluate(client, request, response, conversation_id="kong:contract-fixture")).released is allowed

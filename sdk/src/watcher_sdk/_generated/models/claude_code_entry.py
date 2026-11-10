@@ -38,6 +38,7 @@ class ClaudeCodeEntry:
             cwd (None | str | Unset):
             git_branch (None | str | Unset):
             version (None | str | Unset):
+            entrypoint (None | str | Unset):
             user_type (None | str | Unset):
             is_sidechain (bool | Unset):  Default: False.
             agent_id (None | str | Unset):
@@ -58,6 +59,7 @@ class ClaudeCodeEntry:
     cwd: None | str | Unset = UNSET
     git_branch: None | str | Unset = UNSET
     version: None | str | Unset = UNSET
+    entrypoint: None | str | Unset = UNSET
     user_type: None | str | Unset = UNSET
     is_sidechain: bool | Unset = False
     agent_id: None | str | Unset = UNSET
@@ -135,6 +137,12 @@ class ClaudeCodeEntry:
         else:
             version = self.version
 
+        entrypoint: None | str | Unset
+        if isinstance(self.entrypoint, Unset):
+            entrypoint = UNSET
+        else:
+            entrypoint = self.entrypoint
+
         user_type: None | str | Unset
         if isinstance(self.user_type, Unset):
             user_type = UNSET
@@ -205,6 +213,8 @@ class ClaudeCodeEntry:
             field_dict["gitBranch"] = git_branch
         if version is not UNSET:
             field_dict["version"] = version
+        if entrypoint is not UNSET:
+            field_dict["entrypoint"] = entrypoint
         if user_type is not UNSET:
             field_dict["userType"] = user_type
         if is_sidechain is not UNSET:
@@ -338,6 +348,15 @@ class ClaudeCodeEntry:
 
         version = _parse_version(d.pop("version", UNSET))
 
+        def _parse_entrypoint(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        entrypoint = _parse_entrypoint(d.pop("entrypoint", UNSET))
+
         def _parse_user_type(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -427,6 +446,7 @@ class ClaudeCodeEntry:
             cwd=cwd,
             git_branch=git_branch,
             version=version,
+            entrypoint=entrypoint,
             user_type=user_type,
             is_sidechain=is_sidechain,
             agent_id=agent_id,

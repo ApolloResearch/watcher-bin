@@ -18,6 +18,9 @@ reply per message. With buffered body modes the sequence for one exchange is:
    unchanged, replace refused calls with an explanation and, when a gateway
    URL is configured, an approved alternative (``alternatives.py``), or
    replace the whole response with an HTTP error when nothing can be verified.
+   A replacement is then recorded in the same Watcher session in the
+   background, naming the calls it withheld (``withheld_tool_use_ids``), so
+   Watcher shows them before the reply the client received.
 
 A ``stream: true`` request whose provider answers with server-sent events is
 switched to streamed body processing at step 3 (``mode_override``). Text then
@@ -68,6 +71,8 @@ from watcher_agent_router.exchange import (
     compose,
     decode_json,
     evaluate,
+    recorded_exchange,
+    submit,
     validate_request,
 )
 from watcher_agent_router.notices import with_system_notice, withheld_notice
@@ -190,16 +195,17 @@ def _short_notice(response: dict, evaluation: Evaluation, recovery: Recovery) ->
     return "\n\n".join(part for part in (notice, recovery.question) if part)
 
 
-def _denied_body(response: dict, evaluation: Evaluation, recovery: Recovery) -> bytes:
-    """The rewritten response for a refusal, kept within ``MAX_BODY``.
+def _denied_reply(response: dict, evaluation: Evaluation, recovery: Recovery) -> tuple[dict, bytes]:
+    """The rewritten response for a refusal and its body, kept within ``MAX_BODY``.
 
     Echoed fields are already shortened, but the provider's own text, an
     alternative and nested JSON escaping can still grow the body, so an
     oversized result falls back to a short count-only notice that always fits.
     """
-    body = _compact(compose(response, "\n\n".join(recovery.notices), recovery.alternative))
+    delivered = compose(response, "\n\n".join(recovery.notices), recovery.alternative)
+    body = _compact(delivered)
     if len(body) <= MAX_BODY:
-        return body
+        return delivered, body
     message = {"role": "assistant", "content": _short_notice(response, evaluation, recovery)}
     compact = {
         "id": str(response.get("id", ""))[:256],
@@ -208,7 +214,20 @@ def _denied_body(response: dict, evaluation: Evaluation, recovery: Recovery) -> 
         "model": str(response.get("model", ""))[:256],
         "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
     }
-    return _compact(compact)
+    return compact, _compact(compact)
+
+
+def _withheld_ids(recovery: Recovery, delivered: dict) -> list[str]:
+    """Every call withheld in favour of ``delivered``, including an approved alternative's calls it dropped.
+
+    A reply shortened to fit the size limit drops the alternative, so its
+    approved calls never reach the client either.
+    """
+    kept = {call["id"] for call in delivered["choices"][0]["message"].get("tool_calls") or []}
+    dropped = recovery.alternative["choices"][0]["message"].get("tool_calls") or [] if recovery.alternative else []
+    withheld = list(recovery.withheld_ids)
+    withheld.extend(call["id"] for call in dropped if call["id"] not in kept and call["id"] not in withheld)
+    return withheld
 
 
 def _compact(value: object) -> bytes:
@@ -286,6 +305,8 @@ class WatcherProcessor(ext_proc_grpc.ExternalProcessorServicer):
         self._client_key = client_key
         self._marker = marker
         self._gateway = gateway
+        # Recordings of delivered replacements still in flight; held so they are not garbage-collected.
+        self._recordings: set[asyncio.Task[None]] = set()
 
     async def Process(  # noqa: N802  # gRPC method name fixed by the Envoy service definition
         self,
@@ -436,7 +457,9 @@ class WatcherProcessor(ext_proc_grpc.ExternalProcessorServicer):
             return _reject(403, _STRUCTURED_REFUSAL, exchange.conversation_id)
         if outcome.denials:
             recovery = await self._recover(exchange, exchange.request, response, outcome, deadline)
-            return _replace_body(_denied_body(response, outcome, recovery))
+            delivered, body = _denied_reply(response, outcome, recovery)
+            self._record(exchange, exchange.request, delivered, _withheld_ids(recovery, delivered))
+            return _replace_body(body)
         return _continue_body("response_body")
 
     async def _stream_body(
@@ -481,9 +504,15 @@ class WatcherProcessor(ext_proc_grpc.ExternalProcessorServicer):
             return self._end_stream(exchange, _Refusal(status=403, reason=_STRUCTURED_REFUSAL), released)
         if outcome.denials:
             recovery = await self._recover(exchange, exchange.request, completion, outcome, deadline)
-            events = gate.denial_events("\n\n".join(recovery.notices), recovery.alternative)
+            notice, alternative = "\n\n".join(recovery.notices), recovery.alternative
+            events = gate.denial_events(notice, alternative)
             if len(released) + len(events) > _GRPC_MESSAGE_LIMIT - _REPLY_HEADROOM:
-                events = gate.denial_events(_short_notice(completion, outcome, recovery))
+                notice, alternative = _short_notice(completion, outcome, recovery), None
+                events = gate.denial_events(notice)
+            # The client's message is what was already released plus the
+            # replacement; held provider text was dropped with the refused calls.
+            delivered = compose(gate.released_completion(), notice, alternative)
+            self._record(exchange, exchange.request, delivered, _withheld_ids(recovery, delivered))
             return _replace_chunk(released + events)
         return _replace_chunk(released + gate.release_held())
 
@@ -492,6 +521,43 @@ class WatcherProcessor(ext_proc_grpc.ExternalProcessorServicer):
         _log_refusal(refusal.status, refusal.reason, exchange.conversation_id, streamed=1, **refusal.detail)
         exchange.stream_ended = True
         return _replace_chunk(released + error_event(refusal.reason, exchange.conversation_id, refusal.status))
+
+    def _record(self, exchange: _Exchange, request: dict, delivered: dict, withheld_ids: list[str]) -> None:
+        """Record the replacement the client receives, in the background, so delivery never waits for it.
+
+        The reply goes into the client request's own Watcher session, naming
+        the calls it withheld, so Watcher can show them before it (see
+        ``recorded_exchange``). A failure is logged and changes nothing the
+        client receives.
+        """
+        task = asyncio.create_task(
+            self._send_recording(exchange.conversation_id, exchange.user_agent, request, delivered, withheld_ids)
+        )
+        self._recordings.add(task)
+        task.add_done_callback(self._recordings.discard)
+
+    async def _send_recording(
+        self, conversation_id: str, user_agent: str | None, request: dict, delivered: dict, withheld_ids: list[str]
+    ) -> None:
+        recorded_request, recorded_response = recorded_exchange(request, delivered)
+        try:
+            async with asyncio.timeout(WATCHER_DEADLINE_SECONDS):
+                await submit(
+                    self._watcher,
+                    recorded_request,
+                    recorded_response,
+                    conversation_id=conversation_id,
+                    user_agent=user_agent,
+                    withheld_ids=withheld_ids,
+                )
+        except WatcherAPIError as error:
+            logger.warning(
+                "delivered_reply_not_recorded", conversation_id=conversation_id, watcher_status=error.status_code
+            )
+        except Exception as error:
+            logger.warning(
+                "delivered_reply_not_recorded", conversation_id=conversation_id, error_type=type(error).__name__
+            )
 
     async def _recover(
         self, exchange: _Exchange, request: dict, response: dict, evaluation: Evaluation, deadline: float

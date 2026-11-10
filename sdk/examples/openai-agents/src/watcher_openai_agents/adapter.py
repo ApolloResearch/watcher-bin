@@ -36,11 +36,34 @@ def validate(messages):
     return messages
 
 
-def messages_for_watcher(messages):
+def mark_tool_errors(transcript, errors):
+    """Set ``error`` on each unmarked tool message whose call ID ``errors`` names.
+
+    ``errors`` maps a tool call ID to an Inspect ``ToolCallError`` object,
+    ``{"type": ..., "message": ...}``. A message counts as unmarked when its
+    ``error`` is missing or ``None`` (Inspect's own "no error" value); one that
+    already carries an error keeps it. Mutates and returns ``transcript``.
+    """
+    for message in transcript:
+        if message["role"] == "tool" and message.get("error") is None and message.get("tool_call_id") in errors:
+            message["error"] = dict(errors[message["tool_call_id"]])
+    return transcript
+
+
+def messages_for_watcher(messages, errors=None):
     """Convert Runner.run(...).to_input_list() using Responses call_id, never item id.
 
     Only text message, function_call and function_call_output items are supported.
     Handoffs, hosted tools and multimedia need explicit mappings and are rejected.
+
+    A ``function_call_output`` item has no failure flag, so a failed call's
+    output converts exactly like a successful one, and Watcher records a call it
+    let through whose result has no ``error`` as completed. Pass ``errors``
+    (call ID to ``{"type": "unknown", "message": ...}``, see `mark_tool_errors`)
+    for every call whose tool the application knows failed while running.
+    `Monitor` does this for the calls reported through its mark_failed. Never
+    mark a refused or cancelled call: its output is the refusal the agent saw,
+    and its status belongs in Watcher's decision record (Monitor.report_status).
     """
     result = []
     for message in messages:
@@ -72,7 +95,7 @@ def messages_for_watcher(messages):
             result.append({"role": "tool", "content": message["output"], "tool_call_id": message["call_id"]})
         else:
             raise ValueError("Unsupported Responses item")
-    return validate(result)
+    return mark_tool_errors(validate(result), errors or {})
 
 
 def validate_observation(outcome: object, expected_id: str) -> bool:
@@ -169,7 +192,7 @@ async def observe_transcript(client: AsyncWatcherClient, conversation_id: str, t
     return outcomes
 
 
-async def observe(client: AsyncWatcherClient, conversation_id: str, messages):
+async def observe(client: AsyncWatcherClient, conversation_id: str, messages, errors=None):
     """Convert native history, observe historical tool prefixes and record its tail.
 
     This runs after tool execution and cannot prevent side effects. It waits for
@@ -177,5 +200,11 @@ async def observe(client: AsyncWatcherClient, conversation_id: str, messages):
     bypasses. It raises on invalid outcomes and attempts final recording even when
     assessment fails. No response is treated as proof of historical execution. Reuse conversation_id and native
     tool IDs for full snapshots of the same conversation.
+
+    Completed Responses history does not say which calls failed: pass
+    ``errors`` for the calls whose tools failed (see `messages_for_watcher`), or
+    Watcher records each such call it let through as completed. A refused or
+    cancelled call cannot be told apart here either; this observer does not
+    report it, so such a call it let through is recorded as completed.
     """
-    return await observe_transcript(client, conversation_id, messages_for_watcher(messages))
+    return await observe_transcript(client, conversation_id, messages_for_watcher(messages, errors))

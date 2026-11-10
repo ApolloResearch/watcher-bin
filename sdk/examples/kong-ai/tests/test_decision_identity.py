@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import httpx
 import pytest
-from watcher_kong_ai.bridge import UnsupportedExchange, evaluate
+from watcher_kong_ai.exchange import UnsupportedExchange, evaluate
 
 from watcher_sdk import AsyncWatcherClient
 
@@ -74,7 +74,7 @@ async def test_id_only_decisions_cover_every_delivered_call(case):
                 await evaluate(watcher, request, response, conversation_id="kong:fixture-exchange")
             assert sent == []
         else:
-            assert await evaluate(watcher, request, response, conversation_id="kong:fixture-exchange") is (
+            assert (await evaluate(watcher, request, response, conversation_id="kong:fixture-exchange")).released is (
                 case == "reverse"
             )
             assert len(sent) == 1

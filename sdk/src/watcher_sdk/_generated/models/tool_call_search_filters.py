@@ -31,8 +31,10 @@ class ToolCallSearchFilters:
         session_id (None | Unset | UUID): Restrict results to one session.
         trajectory_id (None | str | Unset): Restrict calls to this trajectory and its ancestors, plus calls a gateway
             withheld or cancelled in favor of one of its messages and that Watcher evaluated, whose message_ref names the
-            branch that proposed them. Requires session_id. Use latest for the session's latest trajectory. Missing or
-            scrubbed trajectories match no calls.
+            branch that proposed them. Requires session_id. Use latest for the trajectory the session opens by default. When
+            the Watcher client and a gateway both recorded the conversation and the client's trajectory holds the gateway
+            trajectory's ending, the scope for either one includes the calls on both. Missing or scrubbed trajectories match
+            no calls.
         is_flagged (bool | None | Unset): Filter by Watcher's recorded risk classification, including observe-mode
             judgments. Combines with decision_categories using AND: calls must match both filters when both are set.
         user_id (None | Unset | UUID): Restrict results to one user. Callers without sessions:findings:read:any may only

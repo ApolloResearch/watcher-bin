@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from typing import Any, Literal
 
 from watcher_transcript_transport.claude import (
+    SplitOrderCheck,
     _branch_indices_from_walk,
     _live_chain_walk,
-    split_preserves_order,
+    _unfinished_compaction,
+    release_parse_caches,
     trim_incomplete_tail,
 )
 from watcher_transcript_transport.claude_splits import ClaudeSplitIndex, TailCompleteness
@@ -20,6 +23,8 @@ from watcher_transcript_transport.elision import elide_entry
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
 MAX_CHUNK_ENTRIES = 512
+# How long after a compaction finishes an upload keeps receipts the file's next turn will make clean again.
+COMPACTION_WAIT_SECONDS = 300.0
 
 
 class UploadTooLarge(ValueError):
@@ -48,14 +53,30 @@ def _claude_acknowledgement_is_safe(
 ) -> bool:
     # A saved receipt may include closing assistant text the caller marked final,
     # but cannot cut an open tool cycle when more source entries arrive.
+    if index is not None and index.entries is entries and len(entries) == index.count and type(end) is int:
+        # The planner asks this of a cut before sending it (see next_chunk), and the next
+        # load asks it again of the same snapshot; each exact answer is kept on the index.
+        known = index.receipts.get(end)
+        if known is None:
+            known = index.receipts[end] = _claude_receipt_check(entries, end, index)
+        return known
+    return _claude_receipt_check(entries, end, index)
+
+
+def _claude_receipt_check(entries: list[dict[str, Any]], end: int, index: ClaudeSplitIndex | None) -> bool:
+    """``_claude_acknowledgement_is_safe`` without its per-snapshot memo."""
     if index is not None and index.covers(entries) and type(end) is int and 0 <= end <= len(entries):
         # Same answer as below: the index's checks cannot raise, so their order does not matter.
         return end == len(entries) or (
-            index.acknowledgement_complete(end) and (index.proves(end) or split_preserves_order(entries, end))
+            index.acknowledgement_complete(end) and (index.proves(end) or index.whole_split(end))
         )
+    whole_split = (
+        index.whole_split
+        if index is not None and index.entries is entries and len(entries) == index.count
+        else SplitOrderCheck(entries)
+    )
     return end == len(entries) or (
-        split_preserves_order(entries, end)
-        and len(trim_incomplete_tail(entries[:end], allow_trailing_assistant_text=True)) == end
+        whole_split(end) and len(trim_incomplete_tail(entries[:end], allow_trailing_assistant_text=True)) == end
     )
 
 
@@ -155,8 +176,13 @@ def next_chunk(
     ``index``, built for this exact ``entries`` list, makes the checks cheap: a
     `ClaudeSplitIndex` also lets the tool-cycle check run before a target is
     encoded, a `CodexScanIndex` replaces the window scans and the fold of
-    everything before ``start``, and a `CopilotSplitIndex` indexes cut safety. The chunk returned, and any exception raised,
-    stay the same.
+    everything before ``start``, and a `CopilotSplitIndex` indexes cut safety. Any exception raised
+    stays the same, and so does the chunk returned, with two exceptions. On a file whose walk holds
+    prompts back, a `ClaudeSplitIndex` makes the planner cut at the largest target it proves, where one
+    fits, rather than at the largest safe one. And on a file whose walk holds prompts back or whose
+    compaction summaries were moved back into place, a chunk not at the start of the file ends only
+    where its receipt will be kept (see `_claude_acknowledgement_is_safe`). Resumable uploads go
+    through `UploadPlan`, which always supplies the matching index.
     """
     if start >= len(entries):
         raise ValueError("No entries remain")
@@ -235,19 +261,40 @@ def next_chunk(
     tail = proof = None
     if isinstance(index, ClaudeSplitIndex) and not codex and index.covers(entries):
         tail, proof = TailCompleteness(entries, start, allow_trailing_assistant_text=False), index
+    # When the walk holds prompts back, or the file's compaction summaries were moved back into place, a
+    # cut that splits the rest of the file cleanly may still not split the whole file cleanly (a prefix
+    # that stops before the later work is not repaired, or not held back), and its receipt would then be
+    # refused (see _claude_acknowledgement_is_safe), sending the same chunk again forever. Such a file only
+    # cuts where its receipt will be kept. From the start of the file the two checks agree.
+    # One check for the rest of the file, which parses it once for every cut tried, or not at all when the
+    # index already knows its order; with an index it shares the order after each cut with the receipt
+    # check, or takes it from the whole order. The index also refutes cuts the whole order shows cannot split.
+    remaining_split = (
+        SplitOrderCheck(entries[start:])
+        if proof is None
+        else SplitOrderCheck(entries[start:], proof.window_order(start), suffixes=proof.suffix_orders, offset=start)
+    )
+    refutes = None if proof is None else proof.window_refutation(start)
+    receipt_index = index if isinstance(index, ClaudeSplitIndex) and index.entries is entries else None
+    needs_receipt = (
+        receipt_index is not None and (receipt_index.holds_prompts or receipt_index.moves_summaries) and start > 0
+    )
 
     def safe(end: int) -> bool:
-        if tail is not None and proof is not None and end != len(entries):
+        if tail is not None and proof is not None and refutes is not None and end != len(entries):
             # Same answer as below: neither check can raise on an indexed snapshot.
-            return tail.complete(end) and (
-                proof.proves_window(start, end) or split_preserves_order(entries[start:], end - start)
+            return (
+                tail.complete(end)
+                and (proof.proves_window(start, end) or (not refutes(end) and remaining_split(end - start)))
+                and (not needs_receipt or _claude_acknowledgement_is_safe(entries, end, proof))
             )
         return (
             codex
             or end == len(entries)
             or (
-                split_preserves_order(entries[start:], end - start)
+                remaining_split(end - start)
                 and len(trim_incomplete_tail(entries[start:end], allow_trailing_assistant_text=False)) == end - start
+                and (not needs_receipt or _claude_acknowledgement_is_safe(entries, end, receipt_index))
             )
         )
 
@@ -268,6 +315,27 @@ def next_chunk(
     skipped = None
     if tail is not None and targets and targets[0] != len(entries) and not tail.complete(targets[0]):
         skipped = targets[0]
+    if tail is not None and proof is not None and proof.holds_prompts:
+        # On a file whose walk holds prompts back, an unproven cut costs exact parses of nearly the
+        # whole file: the rest after it, and everything before it for its receipt. A process with a
+        # short budget (background recovery, the Remote Collector) that meets one on every resume can
+        # then never send a chunk. A proven cut needs only a parse of its window, because the whole
+        # file's order gives the order after it (`ClaudeSplitIndex.window_order`) and proves its receipt.
+        # So such a file cuts at the largest proven target that fits, even where a larger unproven one
+        # is also safe: the cut is as safe, though the chunk can be shorter, and ``safe`` still decides.
+        # When encoding fails here, or an entry up to the first target fails the per-entry probe, the
+        # usual loop below chooses instead, and so meets any encoding failure exactly where it did.
+        try:
+            for end in targets:
+                if end != len(entries) and not (proof.proves(end) and tail.complete(end)):
+                    continue
+                encoded = body(end)
+                if len(encoded) <= MAX_BODY_BYTES and safe(end):
+                    if _entries_encode(entries[end : targets[0]]):
+                        return Chunk(encoded, start, end, anchor, fork)
+                    break
+        except Exception:  # noqa: BLE001, S110 - the usual loop raises the same failure where it always did
+            pass
     found = None
     try:
         for end in targets:
@@ -437,6 +505,37 @@ class UploadPlan:
                 valid.append(ack)
         return valid
 
+    def waits_for_compaction(self, acknowledgements: list[dict[str, Any]], valid: list[dict[str, Any]]) -> bool:
+        """Whether to keep every receipt and send nothing until the file grows past a compaction being written.
+
+        ``valid`` is what ``valid_acknowledgements`` kept. Waiting applies to a
+        linear Claude Code file whose receipts all still match it, when the file
+        ends inside a compaction finished less than ``COMPACTION_WAIT_SECONDS``
+        ago (``_unfinished_compaction``) and a receipt from before its summary no
+        longer splits it cleanly: dropping it would resend everything back to the
+        previous compaction, although it splits the file cleanly again once the
+        next turn arrives, seconds later. A receipt dropped only from inside the
+        compaction, such as one ending at its replayed call, is dropped as usual.
+        A file still ending there after that long, such as a session that
+        stopped mid-compaction or receipts that no longer split it for another
+        reason, drops them as before, so it is still stored whole; so does a
+        summary stamped later than this machine's clock.
+        """
+        return (
+            len(valid) < len(acknowledgements)
+            and self.template["format"] == "claude-code-jsonl"
+            and not self.is_branched
+            and all(
+                ack.get("branch_end") is None
+                and 0 < ack["end"] <= len(self.prefixes)
+                and self.prefixes[ack["end"] - 1] == ack["prefix"]
+                for ack in acknowledgements
+            )
+            and (compaction := _unfinished_compaction(self.entries)) is not None
+            and 0 <= time.time() - compaction[1] < COMPACTION_WAIT_SECONDS
+            and any(ack["end"] <= compaction[0] for ack in acknowledgements[len(valid) :])
+        )
+
     def next_chunk(self, acknowledgements: list[dict[str, Any]], fork: bool) -> Chunk | None:
         """Choose the next bounded request, or None after every branch is acknowledged."""
         if not self.is_branched:
@@ -515,20 +614,37 @@ def _identity_prefix(positions: list[int]) -> int:
 
 
 class UploadState:
-    """Shared acknowledgement, replay and refusal decisions; callers own I/O and locking."""
+    """Shared acknowledgement, replay and refusal decisions; callers own I/O and locking.
 
-    def __init__(self, plan: UploadPlan) -> None:
+    ``wait_for_compaction`` lets ``load`` wait out a compaction being written
+    (``UploadPlan.waits_for_compaction``). Only a caller that is sure to try
+    again later, after the wait has expired, may set it: a one-shot final upload
+    that waited would leave the rest of the file unsent.
+    """
+
+    def __init__(self, plan: UploadPlan, *, wait_for_compaction: bool = False) -> None:
         self.plan = plan
+        self.wait_for_compaction = wait_for_compaction
         self.acknowledgements: list[dict[str, Any]] = []
         self.blocked_body: str | None = None
         self.forking = False
         self.restarted = False
         self.finished = False
+        self.waiting = False
         self.chunk: Chunk | None = None
 
     def load(self, acknowledgements: list[dict[str, Any]], blocked_body: str | None, forking: bool) -> bool:
-        """Reconcile durable state with this snapshot; return whether every checkpoint still matches."""
+        """Reconcile durable state with this snapshot; return whether every checkpoint still matches.
+
+        With ``wait_for_compaction``, while the file ends inside a compaction that
+        makes some receipts stop splitting it cleanly for now
+        (``UploadPlan.waits_for_compaction``), every receipt is kept and
+        ``next_chunk`` sends nothing, without finishing.
+        """
         valid = self.plan.valid_acknowledgements(acknowledgements)
+        self.waiting = self.wait_for_compaction and self.plan.waits_for_compaction(acknowledgements, valid)
+        if self.waiting:
+            valid = list(acknowledgements)
         old_end = acknowledgements[-1]["end"] if acknowledgements else 0
         new_end = valid[-1]["end"] if valid else 0
         self.acknowledgements = valid
@@ -538,9 +654,13 @@ class UploadState:
         return len(valid) == len(acknowledgements)
 
     def next_chunk(self) -> Chunk | None:
+        if self.waiting:
+            self.chunk = None
+            return None
         self.chunk = self.plan.next_chunk(self.acknowledgements, self.forking)
         if self.chunk is None:
             self.finished = True
+            release_parse_caches()
             if self.plan.entries:
                 completion = {
                     "end": len(self.plan.entries),

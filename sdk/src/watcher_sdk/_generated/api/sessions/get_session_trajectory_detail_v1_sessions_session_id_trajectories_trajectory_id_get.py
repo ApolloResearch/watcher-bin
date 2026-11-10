@@ -95,8 +95,16 @@ def sync_detailed(
     clients can offer a full fetch. Callers that need storage-faithful message
     content must explicitly request ``extended``.
 
-    The literal trajectory id ``latest`` resolves server-side to the session's
-    most recent trajectory (the response carries the resolved id), so
+    When the Watcher client and a gateway both recorded the conversation, the
+    response is the reconciled transcript: the client's recording with what only
+    the gateway saw spliced in, each tool call once, and each message's ``index`` its
+    position in that reading order. Any recording's id opens it, the response
+    carries its canonical id, and ``member_trajectory_ids`` lists the
+    recordings it covers.
+
+    The literal trajectory id ``latest`` resolves server-side to the
+    transcript holding the session's newest recording, the one session
+    grading reviews (the response carries the resolved id), so
     session-scoped links can load a transcript in a single request. 404 when
     the session has no trajectories.
 
@@ -168,8 +176,16 @@ def sync(
     clients can offer a full fetch. Callers that need storage-faithful message
     content must explicitly request ``extended``.
 
-    The literal trajectory id ``latest`` resolves server-side to the session's
-    most recent trajectory (the response carries the resolved id), so
+    When the Watcher client and a gateway both recorded the conversation, the
+    response is the reconciled transcript: the client's recording with what only
+    the gateway saw spliced in, each tool call once, and each message's ``index`` its
+    position in that reading order. Any recording's id opens it, the response
+    carries its canonical id, and ``member_trajectory_ids`` lists the
+    recordings it covers.
+
+    The literal trajectory id ``latest`` resolves server-side to the
+    transcript holding the session's newest recording, the one session
+    grading reviews (the response carries the resolved id), so
     session-scoped links can load a transcript in a single request. 404 when
     the session has no trajectories.
 
@@ -236,8 +252,16 @@ async def asyncio_detailed(
     clients can offer a full fetch. Callers that need storage-faithful message
     content must explicitly request ``extended``.
 
-    The literal trajectory id ``latest`` resolves server-side to the session's
-    most recent trajectory (the response carries the resolved id), so
+    When the Watcher client and a gateway both recorded the conversation, the
+    response is the reconciled transcript: the client's recording with what only
+    the gateway saw spliced in, each tool call once, and each message's ``index`` its
+    position in that reading order. Any recording's id opens it, the response
+    carries its canonical id, and ``member_trajectory_ids`` lists the
+    recordings it covers.
+
+    The literal trajectory id ``latest`` resolves server-side to the
+    transcript holding the session's newest recording, the one session
+    grading reviews (the response carries the resolved id), so
     session-scoped links can load a transcript in a single request. 404 when
     the session has no trajectories.
 
@@ -307,8 +331,16 @@ async def asyncio(
     clients can offer a full fetch. Callers that need storage-faithful message
     content must explicitly request ``extended``.
 
-    The literal trajectory id ``latest`` resolves server-side to the session's
-    most recent trajectory (the response carries the resolved id), so
+    When the Watcher client and a gateway both recorded the conversation, the
+    response is the reconciled transcript: the client's recording with what only
+    the gateway saw spliced in, each tool call once, and each message's ``index`` its
+    position in that reading order. Any recording's id opens it, the response
+    carries its canonical id, and ``member_trajectory_ids`` lists the
+    recordings it covers.
+
+    The literal trajectory id ``latest`` resolves server-side to the
+    transcript holding the session's newest recording, the one session
+    grading reviews (the response carries the resolved id), so
     session-scoped links can load a transcript in a single request. 404 when
     the session has no trajectories.
 

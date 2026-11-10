@@ -235,19 +235,20 @@ async def test_without_a_gateway_only_the_refusal_is_explained():
     assert recovery.alternative is None and len(recovery.notices) == 1 and fakes.gateway_requests == []
 
 
-async def test_approved_alternative_is_graded_as_its_own_session():
+async def test_approved_alternative_is_graded_in_the_clients_session():
+    """Watcher already holds the refused calls' decisions there, so their refusal receipts are not taken as runs."""
     alternative = completion(("call-9", "read_file", {}), content="Reading instead")
     fakes = Fakes([alternative], [[outcome("call-9", "allow")]])
     recovery = await fakes.recover()
     assert recovery.alternative == alternative and len(recovery.notices) == 1
+    assert recovery.withheld_ids == ["call-1", "call-2"]
     [sent] = fakes.gateway_requests
     assert sent.url.path == "/v1/chat/completions" and sent.headers["x-api-key"] == "gateway-key"
     assert verify_marker(KEY, sent.headers[ALTERNATIVE_HEADER], sent.content)
     asked = json.loads(sent.content)
     assert asked == continuation(REQUEST, ORIGINAL, REFUSED)
     [hook] = fakes.hooks
-    session = hook["external_ids"]["other"]
-    assert session.startswith("agent-router:") and session != CONVERSATION
+    assert hook["external_ids"]["other"] == CONVERSATION and hook["withholds_refused_calls"] is True
     assert hook["request_body"] == asked and hook["response_body"] == alternative
     assert hook["user_agent"] == "fixture/1.0"
 
@@ -301,7 +302,8 @@ async def test_three_blocked_proposals_end_with_one_final_text_only_reply():
     assert asked[1]["messages"][-1]["content"].endswith("so you do not need permission to try a different approach.")
     assert asked[2]["messages"][-1]["content"].endswith("tell the user what was blocked and ask how to proceed.")
     assert asked[2]["messages"][-2]["tool_calls"][0]["id"] == "call-6"
-    assert len({hook["external_ids"]["other"] for hook in fakes.hooks}) == 2
+    assert {hook["external_ids"]["other"] for hook in fakes.hooks} == {CONVERSATION}
+    assert recovery.withheld_ids == ["call-1", "call-2", "call-5", "call-6"]
 
 
 @pytest.mark.parametrize(
@@ -429,12 +431,15 @@ async def test_repeated_refused_operation_is_refused_without_grading():
     with structlog.testing.capture_logs() as logs:
         recovery = await fakes.recover()
     assert recovery.alternative == approved and len(fakes.hooks) == 1
-    # Only the submitted alternative is logged with a session ID.
-    events = [(entry["event"], entry.get("alternative_conversation_id")) for entry in logs]
-    assert events == [
-        ("alternative_repeated", None),
-        ("alternative_evaluated", fakes.hooks[0]["external_ids"]["other"]),
-    ]
+    assert [entry["event"] for entry in logs] == ["alternative_repeated", "alternative_evaluated"]
+    # The model sees the repeat and its refusal receipts; Watcher, which never
+    # graded the repeat, does not, so it cannot record those calls as run.
+    asked = json.loads(fakes.gateway_requests[1].content)
+    [hook] = fakes.hooks
+    assert [m.get("tool_call_id") for m in asked["messages"][-3:]] == [None, "call-7", "call-8"]
+    assert hook["request_body"]["messages"] == asked["messages"][:-3]
+    assert hook["external_ids"]["other"] == CONVERSATION
+    assert recovery.withheld_ids == ["call-1", "call-2", "call-7", "call-8"]
     assert 'Watcher blocked `write_file {"path": "a"}`. Reason: Too risky.' in recovery.notices[1]
     assert "`read_file {}` did not run because Watcher refused another call" in recovery.notices[1]
 
@@ -494,6 +499,8 @@ async def test_unevaluated_alternative_is_never_released(decisions, reason):
     recovery = await fakes.recover()
     assert recovery.alternative is None
     assert recovery.notices[-2:] == [f"No alternative was delivered because {reason}.", ALTERNATIVE_FAILED]
+    # Watcher may have recorded the alternative's call; it never reaches the client.
+    assert recovery.withheld_ids == ["call-1", "call-2", "call-9"]
 
 
 async def test_final_reply_shares_the_remaining_time_limit():

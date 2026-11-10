@@ -75,7 +75,8 @@ async def test_live_text_exchange_is_stored_as_a_gateway_session(live_stack: dic
     )
     session, trajectory = await _stored(live_stack, raw.headers["x-watcher-conversation-id"])
     assert session["sources"] == ["watcher-gateway"]
-    assert [message["role"] for message in trajectory["messages"]] == ["user", "assistant"]
+    # Watcher's fixed system notice precedes the client's message in every request.
+    assert [message["role"] for message in trajectory["messages"]] == ["system", "user", "assistant"]
 
 
 async def test_live_delivery_matches_the_stored_decision(live_stack: dict) -> None:

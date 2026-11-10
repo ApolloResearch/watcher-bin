@@ -99,6 +99,11 @@ ACTION_SEVERITY: dict[str, int] = {
 # Provenance recorded when a tool's terminal thresholds decide instead of a rule.
 TERMINAL_THRESHOLD_LABEL = "Tool threshold"
 TERMINAL_THRESHOLD_PATTERN = "*"
+# Appended to the label of a deny or human-review rule that could not be checked, when the call
+# escalates to a person because of it (see evaluate_command_rules): its search did not finish, or
+# the shell input was over MAX_COMMAND_LENGTH so no rule ran.
+RULE_TIMEOUT_LABEL_SUFFIX = " (rule check timed out)"
+RULE_INPUT_TOO_LARGE_LABEL_SUFFIX = " (input too large for rule check)"
 
 
 class EvaluableCommandRule(Protocol):
@@ -659,7 +664,21 @@ def _match_segment(
     deadline: float,
     *,
     normalize_shell: bool,
+    unchecked: list[EvaluableCommandRule] | None = None,
 ) -> EvaluableCommandRule | None:
+    """The first rule matching ``segment``, as :func:`match_segment` describes.
+
+    Without ``unchecked``, a search over its timeout or past ``deadline`` raises ``TimeoutError``.
+    With it, the rule whose search did not finish is appended to ``unchecked`` and matching goes on
+    in priority order, so a later rule can still be the segment's first match. An unchecked rule ahead
+    of it could have matched first: a human-review match still decides, a deny match behind an
+    unchecked allow or triage rule asks a person instead (see :func:`_decisive_match`), and an allow
+    cannot approve the call because :func:`evaluate_command_rules` never approves once any rule is
+    unchecked. When ``deadline`` has passed, every remaining
+    applicable rule is appended and the segment returns. A rule already in ``unchecked`` is not
+    searched again: it stays unchecked for the whole call, and searching it on every later segment
+    would let one catastrophic pattern spend the whole evaluation budget of every request.
+    """
     candidates = [segment]
     if tool_name in _PATH_ARGUMENT_TOOLS and segment:
         # `//etc/x` and `/repo/../etc/x` open the file `/etc/x` names but dodge every rule
@@ -682,20 +701,99 @@ def _match_segment(
                 restriction_candidates.append(normalized)
                 if words and words[0] in {"echo", "printf"}:
                     output_command_candidate = normalized
-    for entry in rules:
+    already_unchecked = {id(rule) for rule in unchecked} if unchecked else set()
+    applicable = [
+        entry
+        for entry in rules
+        if fnmatch.fnmatchcase(tool_name, entry.rule.tool_name) and id(entry.rule) not in already_unchecked
+    ]
+    ceiling = RULE_MATCH_TIMEOUT_SECONDS if match_timeout is None else min(match_timeout, RULE_MATCH_TIMEOUT_SECONDS)
+    for position, entry in enumerate(applicable):
         rule = entry.rule
-        if not fnmatch.fnmatchcase(tool_name, rule.tool_name):
-            continue
-        ceiling = (
-            RULE_MATCH_TIMEOUT_SECONDS if match_timeout is None else min(match_timeout, RULE_MATCH_TIMEOUT_SECONDS)
-        )
         for candidate in restriction_candidates if rule.action in ESCALATION_ACTIONS else candidates:
-            timeout = min(ceiling, _remaining_time(deadline))
-            if _pattern_matches(
-                entry.compiled, candidate, timeout, match_from_start=candidate == output_command_candidate
-            ):
+            try:
+                timeout = min(ceiling, _remaining_time(deadline))
+            except TimeoutError:
+                if unchecked is None:
+                    raise
+                unchecked.extend(remaining.rule for remaining in applicable[position:])
+                return None
+            try:
+                matched = _pattern_matches(
+                    entry.compiled, candidate, timeout, match_from_start=candidate == output_command_candidate
+                )
+            except TimeoutError:
+                if unchecked is None:
+                    raise
+                unchecked.append(rule)
+                break
+            if matched:
                 return rule
     return None
+
+
+def _unchecked_escalation(
+    unchecked: Sequence[EvaluableCommandRule], label_suffix: str = RULE_TIMEOUT_LABEL_SUFFIX
+) -> CommandRuleMatch | None:
+    """The human escalation owed to unchecked rules, or ``None`` when none of them denies or escalates.
+
+    A deny or human-review rule that could not be checked fails closed. The most severe such rule
+    names the escalation, with ``label_suffix`` saying why it was not checked; a deny becomes an
+    escalation rather than a deny, since it never matched.
+    """
+    decisive = [rule for rule in unchecked if rule.action in (RuleAction.DENY, RuleAction.ESCALATE_HUMAN)]
+    if not decisive:
+        return None
+    rule = min(decisive, key=lambda rule: ACTION_SEVERITY[rule.action])
+    return CommandRuleMatch(action=RuleAction.ESCALATE_HUMAN, label=f"{rule.label}{label_suffix}", pattern=rule.pattern)
+
+
+def _behind_unchecked_exception(
+    rule: EvaluableCommandRule, tool_name: str, unchecked: Sequence[EvaluableCommandRule], order: dict[int, int]
+) -> bool:
+    """Whether an allow or triage rule ahead of ``rule`` for ``tool_name`` is, so far, unchecked.
+
+    Called right after a check that matched ``rule``: rules ahead of it in that check either did not
+    match or are in ``unchecked`` (timed out there or earlier, and so not searched there). Rules that
+    time out on later checks, or that apply to another tool, cannot have spared this match.
+    """
+    position = order.get(id(rule), -1)
+    return any(
+        other.action in (RuleAction.ALLOW, RuleAction.ESCALATE_TRIAGE)
+        and order.get(id(other), -1) < position
+        and fnmatch.fnmatchcase(tool_name, other.tool_name)
+        for other in unchecked
+    )
+
+
+def _decisive_match(
+    matched: Sequence[EvaluableCommandRule], denies: Sequence[tuple[EvaluableCommandRule, bool]]
+) -> CommandRuleMatch | None:
+    """The deny or human-review decision the matches make, or ``None`` when they make none.
+
+    ``denies`` pairs each deny match with whether an unchecked allow or triage rule stood ahead of it
+    in its own check (:func:`_behind_unchecked_exception`). A deny is final only without one: such an
+    exception might have matched first and spared the command. A deny whose precedence is uncertain
+    that way asks a person instead, labelled as an unfinished check, so a slow exception turns into
+    neither a hard deny nor an approval. A human-review match asks a person either way.
+    """
+    for rule, uncertain in denies:
+        if not uncertain:
+            return CommandRuleMatch(action=rule.action, label=rule.label, pattern=rule.pattern)
+    for rule in matched:
+        if rule.action == RuleAction.ESCALATE_HUMAN:
+            return CommandRuleMatch(action=rule.action, label=rule.label, pattern=rule.pattern)
+    if denies:
+        rule = denies[0][0]
+        return CommandRuleMatch(
+            action=RuleAction.ESCALATE_HUMAN, label=f"{rule.label}{RULE_TIMEOUT_LABEL_SUFFIX}", pattern=rule.pattern
+        )
+    return None
+
+
+def _rules_for(rules: Sequence[EvaluableCommandRule], tool_names: set[str]) -> list[EvaluableCommandRule]:
+    """The rules whose ``tool_name`` glob covers any of ``tool_names``."""
+    return [rule for rule in rules if any(fnmatch.fnmatchcase(name, rule.tool_name) for name in tool_names)]
 
 
 def evaluate_command_rules(
@@ -721,11 +819,21 @@ def evaluate_command_rules(
 
     ``match_timeout`` bounds every org-pattern search and ``deadline`` the
     evaluation as a whole (see `match_segment`). Both have finite defaults on
-    client and server; callers can supply tighter budgets. Exceeding either
-    raises ``TimeoutError`` for the caller to treat as "could not evaluate".
-    Shell input longer than ``MAX_COMMAND_LENGTH`` raises
-    ``RuleEvaluationLimitError``, because its parsing runs outside those
-    budgets. Other tools only run bounded searches, so any length is evaluated.
+    client and server; callers can supply tighter budgets. A search that does
+    not finish leaves its rule unchecked for that input, and evaluation goes on
+    with the other segments, the full command and the redirect targets, so one
+    slow segment cannot hide a later one. A deny or human-review match found
+    anyway still decides. Otherwise, if a deny or human-review rule was left
+    unchecked, the call escalates to a person (fail closed), labelled with that
+    rule's label plus ``RULE_TIMEOUT_LABEL_SUFFIX``; if only allow or triage
+    rules were left unchecked, ``TimeoutError`` is raised for the caller to
+    treat as "could not evaluate" (it grades). Shell input longer than
+    ``MAX_COMMAND_LENGTH`` is not parsed at all, because its parsing runs
+    outside those budgets: if a deny or human-review rule applies to the tool
+    (or to the redirect targets it could write), it escalates the same way,
+    labelled with ``RULE_INPUT_TOO_LARGE_LABEL_SUFFIX``; otherwise it raises
+    ``RuleEvaluationLimitError`` and the caller grades. Other tools only run
+    bounded searches, so any length is evaluated.
     """
     if terminal_action is not None:
         return CommandRuleMatch(
@@ -743,10 +851,23 @@ def evaluate_command_rules(
     if not command_str:
         return None
     shell_input = is_shell_input(tool_name, tool_input)
+    tool_names = {tool_name, "Write"} if shell_input else {tool_name}
     if shell_input and len(command_str) > MAX_COMMAND_LENGTH:
+        # Padding past the limit would otherwise skip every rule, so it fails closed like a timeout.
+        escalation = _unchecked_escalation(_rules_for(rules, tool_names), RULE_INPUT_TOO_LARGE_LABEL_SUFFIX)
+        if escalation is not None:
+            return escalation
         raise RuleEvaluationLimitError("command exceeds the rule input limit")
 
-    compiled_rules = _valid_rules(rules, {tool_name, "Write"} if shell_input else {tool_name}, deadline)
+    try:
+        compiled_rules = _valid_rules(rules, tool_names, deadline)
+    except TimeoutError:
+        # The budget ran out before any rule ran (a caller's shared deadline): every applicable rule
+        # is unchecked, so a deny or human-review rule among them still fails closed.
+        escalation = _unchecked_escalation(_rules_for(rules, tool_names))
+        if escalation is not None:
+            return escalation
+        raise
     segments = split_compound_command(command_str) if shell_input else [command_str]
     # A command that is only control operators or whitespace (";", "&&", …)
     # splits to zero segments. Nothing matched anything, so no rule may allow
@@ -763,51 +884,77 @@ def evaluate_command_rules(
     )
     decisive_rules = _decisive_rules(compiled_rules)
     active_rules = compiled_rules if approval_possible else decisive_rules
-    segment_matches: dict[str, EvaluableCommandRule | None] = {}
+    segment_matches: dict[str, tuple[EvaluableCommandRule | None, bool]] = {}
     matches: list[EvaluableCommandRule | None] = []
-    timed_out = False
-    try:
-        for segment in segments:
-            if segment not in segment_matches:
-                segment_matches[segment] = _match_segment(
-                    segment, tool_name, active_rules, match_timeout, deadline, normalize_shell=True
-                )
-            match = segment_matches[segment]
-            matches.append(match)
-            if match is None or match.action != RuleAction.ALLOW:
-                active_rules = decisive_rules
-
-        if shell_input:
-            # Segment splitting (including on newlines) hides rules that need the
-            # whole command for context — e.g. a destructive SQL statement inside a
-            # heredoc piped to `psql`. Re-match the full command, but only let it
-            # ESCALATE, never relax: this keeps compound-command allow-listing
-            # working while still catching multiline destructive constructs.
-            full_match = _match_segment(
-                command_str, tool_name, active_rules, match_timeout, deadline, normalize_shell=False
+    # Each deny match, with whether an unchecked exception stood ahead of it in its own check.
+    denies: list[tuple[EvaluableCommandRule, bool]] = []
+    order = {id(entry.rule): position for position, entry in enumerate(compiled_rules)}
+    # Rules whose search did not finish. A timeout on one segment must not stop the others: a slow
+    # first segment would otherwise hide a protected write in a later one from its deny or
+    # human-review rule. Once the whole budget is spent, nothing more runs (see below).
+    unchecked: list[EvaluableCommandRule] = []
+    budget_spent = False
+    for segment in segments:
+        if time.monotonic() >= deadline:
+            budget_spent = True
+            break
+        if segment not in segment_matches:
+            found = _match_segment(
+                segment, tool_name, active_rules, match_timeout, deadline, normalize_shell=True, unchecked=unchecked
             )
-            if full_match is not None and full_match.action in ESCALATION_ACTIONS:
-                matches.append(full_match)
-            for dest in extract_redirect_destinations(command_str):
-                redirect_match = _match_segment(
-                    dest, "Write", active_rules, match_timeout, deadline, normalize_shell=False
-                )
-                if redirect_match is not None:
-                    matches.append(redirect_match)
-    except TimeoutError:
-        timed_out = True
+            uncertain = found is not None and _behind_unchecked_exception(found, tool_name, unchecked, order)
+            segment_matches[segment] = (found, uncertain)
+        match, uncertain = segment_matches[segment]
+        matches.append(match)
+        if match is not None and match.action == RuleAction.DENY:
+            denies.append((match, uncertain))
+        if match is None or match.action != RuleAction.ALLOW:
+            active_rules = decisive_rules
+
+    if shell_input and not budget_spent:
+        # Segment splitting (including on newlines) hides rules that need the
+        # whole command for context — e.g. a destructive SQL statement inside a
+        # heredoc piped to `psql`. Re-match the full command, but only let it
+        # ESCALATE, never relax: this keeps compound-command allow-listing
+        # working while still catching multiline destructive constructs.
+        full_match = _match_segment(
+            command_str, tool_name, active_rules, match_timeout, deadline, normalize_shell=False, unchecked=unchecked
+        )
+        if full_match is not None and full_match.action in ESCALATION_ACTIONS:
+            matches.append(full_match)
+            if full_match.action == RuleAction.DENY:
+                denies.append((full_match, _behind_unchecked_exception(full_match, tool_name, unchecked, order)))
+        for dest in extract_redirect_destinations(command_str):
+            if time.monotonic() >= deadline:
+                budget_spent = True
+                break
+            redirect_match = _match_segment(
+                dest, "Write", active_rules, match_timeout, deadline, normalize_shell=False, unchecked=unchecked
+            )
+            if redirect_match is not None:
+                matches.append(redirect_match)
+                if redirect_match.action == RuleAction.DENY:
+                    denies.append(
+                        (redirect_match, _behind_unchecked_exception(redirect_match, "Write", unchecked, order))
+                    )
+    if budget_spent:
+        # Stopping here keeps the evaluation inside its budget (a caller waiting on it may give up
+        # soon after). Nothing left was checked, so every rule that could still apply, Bash and
+        # Write alike, counts as unchecked.
+        unchecked.extend(entry.rule for entry in compiled_rules)
 
     matched_rules = [match for match in matches if match is not None]
-    if matched_rules:
-        most_severe_match = min(matched_rules, key=lambda match: ACTION_SEVERITY[match.action])
-        if most_severe_match.action in (RuleAction.DENY, RuleAction.ESCALATE_HUMAN):
-            return CommandRuleMatch(
-                action=most_severe_match.action,
-                label=most_severe_match.label,
-                pattern=most_severe_match.pattern,
-            )
+    decided = _decisive_match(matched_rules, denies)
+    if decided is not None:
+        return decided
 
-    if timed_out:
+    # A deny or human-review rule that could not be checked fails closed: a person decides, as the
+    # rule might have required. Unchecked allow and triage rules only cost the call its approval.
+    escalation = _unchecked_escalation(unchecked)
+    if escalation is not None:
+        return escalation
+
+    if unchecked:
         raise TimeoutError("command-rule evaluation exceeded its budget")
 
     if not approval_possible:

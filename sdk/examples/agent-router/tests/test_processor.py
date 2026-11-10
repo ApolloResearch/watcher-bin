@@ -737,7 +737,7 @@ async def test_denied_non_ascii_arguments_are_not_escaped_in_the_rewritten_body(
     assert b"\\u00e9" not in rewritten and "é".encode() in rewritten
 
 
-async def test_denied_body_is_bounded_whatever_the_identifiers(monkeypatch):
+async def test_denied_reply_is_bounded_whatever_the_identifiers(monkeypatch):
     monkeypatch.setattr(processor, "MAX_BODY", 120_000)
     response = json.loads(json.dumps(RESPONSE))
     call = response["choices"][0]["message"]["tool_calls"][0]
@@ -755,19 +755,65 @@ async def test_denied_body_is_bounded_whatever_the_identifiers(monkeypatch):
     async with fake_watcher(lambda _: httpx.Response(200, json=outcomes)) as client:
         evaluation = await processor.evaluate(client, REQUEST, response, conversation_id="agent-router:x")
     recovery = Recovery(notices=[withheld_notice(response, evaluation)])
-    full = processor._denied_body(response, evaluation, recovery)
+    full = processor._denied_reply(response, evaluation, recovery)[1]
     assert len(full) <= 120_000 and b"\\\\\\\\" * 300 not in full
     delivered = json.loads(full)["choices"][0]
     assert "tool_calls" not in delivered["message"] and delivered["finish_reason"] == "stop"
 
     monkeypatch.setattr(processor, "MAX_BODY", 1_000)
-    compact = json.loads(processor._denied_body(response, evaluation, recovery))
+    compact = json.loads(processor._denied_reply(response, evaluation, recovery)[1])
     assert compact["choices"][0]["message"] == {
         "role": "assistant",
         "content": "WATCHER NOTICE (added by Watcher, not written by the assistant): Watcher refused 1 tool calls,"
         " so the gateway withheld them and 1 other calls from the same response. None of them ran.",
     }
     assert len(compact["id"]) == 256
+
+
+def test_withheld_ids_include_an_alternative_dropped_by_the_size_limit():
+    """A shortened reply drops the approved alternative, so its calls are withheld too."""
+    alternative = json.loads(json.dumps(ALTERNATIVE))
+    recovery = Recovery(notices=["no"], alternative=alternative, withheld_ids=["call-1"])
+    shortened = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "no"}, "finish_reason": "stop"}]}
+    assert processor._withheld_ids(recovery, shortened) == ["call-1", "call-9"]
+    assert processor._withheld_ids(recovery, processor.compose(RESPONSE, "no", alternative)) == ["call-1"]
+    assert processor._withheld_ids(Recovery(notices=["no"], withheld_ids=["call-1"]), shortened) == ["call-1"]
+
+
+@pytest.mark.parametrize("failure", ["status", "transport"])
+async def test_failed_recording_changes_nothing_the_client_receives(failure):
+    hooks = []
+
+    def handler(request):
+        hooks.append(json.loads(request.content))
+        if len(hooks) == 1:
+            return httpx.Response(200, json=decision("deny"))
+        if len(hooks) == 2:
+            return httpx.Response(200, json=[{**decision("allow")[0], "tool_use_id": "call-9"}])
+        if failure == "transport":
+            raise httpx.ConnectError("Watcher went away")
+        return httpx.Response(503, json={"detail": "unavailable"})
+
+    async with (
+        fake_watcher(handler) as client,
+        httpx.AsyncClient(
+            base_url="http://gateway.invalid", transport=httpx.MockTransport(gateway_handler([]))
+        ) as http,
+    ):
+        processor_ = WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http))
+        with structlog.testing.capture_logs() as logs:
+            _, replies = await run_exchange(
+                processor_,
+                chat_request_headers(),
+                body("request_body", REQUEST),
+                response_headers(),
+                body("response_body", RESPONSE),
+            )
+            await asyncio.gather(*processor_._recordings)
+    delivered = json.loads(replies[-1].response_body.response.body_mutation.body)["choices"][0]
+    assert delivered["message"]["tool_calls"] == ALTERNATIVE["choices"][0]["message"]["tool_calls"]
+    [warning] = [entry for entry in logs if entry["event"] == "delivered_reply_not_recorded"]
+    assert ("watcher_status" in warning) is (failure == "status")
 
 
 def test_compact_fallback_is_a_valid_chat_completion(monkeypatch):
@@ -781,7 +827,7 @@ def test_compact_fallback_is_a_valid_chat_completion(monkeypatch):
     )
     monkeypatch.setattr(processor, "MAX_BODY", 10)
     recovery = Recovery(notices=["no"])
-    completion = ChatCompletion.model_validate_json(processor._denied_body(response, evaluation, recovery))
+    completion = ChatCompletion.model_validate_json(processor._denied_reply(response, evaluation, recovery)[1])
     assert completion.created == 7 and len(completion.model) == 256
     assert completion.choices[0].finish_reason == "stop" and not completion.choices[0].message.tool_calls
 
@@ -908,25 +954,157 @@ async def test_refused_buffered_proposal_is_replaced_by_an_approved_alternative(
             base_url="http://gateway.invalid", transport=httpx.MockTransport(gateway_handler(sent))
         ) as http,
     ):
+        processor_ = WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http))
         exchange, replies = await run_exchange(
-            WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http)),
+            processor_,
             chat_request_headers(),
             body("request_body", REQUEST),
             response_headers(),
             body("response_body", RESPONSE),
         )
+        await asyncio.gather(*processor_._recordings)
     delivered = json.loads(replies[-1].response_body.response.body_mutation.body)["choices"][0]
     assert delivered["finish_reason"] == "tool_calls"
     assert delivered["message"]["tool_calls"] == ALTERNATIVE["choices"][0]["message"]["tool_calls"]
     content = delivered["message"]["content"]
     assert content.startswith("WATCHER NOTICE (added by Watcher") and content.endswith("\n\nReading instead.")
-    assert hooks[0]["external_ids"] == {"other": exchange.conversation_id}
-    assert hooks[1]["external_ids"]["other"] != exchange.conversation_id
+    # The proposal, its alternative and the delivered reply share the client request's session.
+    assert [hook["external_ids"] for hook in hooks] == [{"other": exchange.conversation_id}] * 3
+    assert all(hook["withholds_refused_calls"] is True for hook in hooks)
+    # The approved call was graded already, so the recording carries it as history, not as a new call.
+    recording = hooks[2]
+    assert recording["request_body"]["messages"][-1] == delivered["message"]
+    assert recording["response_body"]["choices"][0]["message"] == {"role": "assistant", "content": None}
+    assert recording["withheld_tool_use_ids"] == ["call-1"]
     assert len(sent) == 1 and verify_marker(MARKER_KEY, sent[0].headers["x-watcher-alternative"], sent[0].content)
 
 
+async def test_streamed_recording_matches_what_the_client_assembled():
+    """Provider text held with or after the refused call is dropped, so the recording must not include it."""
+    handler, hooks = alternative_watcher("deny")
+    call = {"index": 0, "id": "call-1", "type": "function", "function": {"name": "write_file", "arguments": "{}"}}
+    provider = sse(
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": "Before."}, "finish_reason": None}]},
+        {"choices": [{"index": 0, "delta": {"content": " Along.", "tool_calls": [call]}, "finish_reason": None}]},
+        {
+            "choices": [
+                {"index": 0, "delta": {"content": " After.", "reasoning_content": "Hidden."}, "finish_reason": None}
+            ]
+        },
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
+    )
+    async with (
+        fake_watcher(handler) as client,
+        httpx.AsyncClient(
+            base_url="http://gateway.invalid", transport=httpx.MockTransport(gateway_handler([]))
+        ) as http,
+    ):
+        processor_ = WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http))
+        _, replies = await run_exchange(
+            processor_,
+            chat_request_headers(),
+            body("request_body", STREAM_REQUEST),
+            response_headers(content_type="text/event-stream"),
+            body("response_body", provider + b"data: [DONE]\n\n"),
+        )
+        await asyncio.gather(*processor_._recordings)
+    received = [event for event in parse_events(chunk_body(replies[-1])) if event != b"[DONE]"]
+    deltas = [event["choices"][0]["delta"] for event in received if event["choices"]]
+    assembled = "".join(delta.get("content") or "" for delta in deltas)
+    recorded = hooks[2]["request_body"]["messages"][-1]
+    assert recorded["content"] == assembled and assembled.startswith("Before.\n\nWATCHER NOTICE")
+    assert "Along." not in assembled and "After." not in assembled
+    assert "reasoning_content" not in recorded
+    assert [call["id"] for call in recorded["tool_calls"]] == ["call-9"]
+
+
+@pytest.mark.parametrize("approved", [True, False])
+async def test_tool_first_stream_is_recorded_with_the_providers_envelope(approved):
+    """A stream that opens with a refused call released nothing, but its recording still names the model."""
+    handler, hooks = alternative_watcher("deny")
+    if not approved:
+        # A text-only alternative carries no calls, so Watcher returns no decisions for it.
+        def handler(request):
+            hooks.append(json.loads(request.content))
+            return httpx.Response(200, json=decision("deny") if len(hooks) == 1 else [])
+
+    call = {"index": 0, "id": "call-1", "type": "function", "function": {"name": "write_file", "arguments": "{}"}}
+    provider = sse(
+        {
+            "id": "chatcmpl-tool-first",
+            "model": "fixture-model",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [call]}, "finish_reason": None}],
+        },
+        {
+            "id": "chatcmpl-tool-first",
+            "model": "fixture-model",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+        },
+    )
+    text_only = {
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": "Shall I stop?"}, "finish_reason": "stop"}]
+    }
+    alternative = ALTERNATIVE if approved else text_only
+    async with (
+        fake_watcher(handler) as client,
+        httpx.AsyncClient(
+            base_url="http://gateway.invalid", transport=httpx.MockTransport(gateway_handler([], alternative))
+        ) as http,
+    ):
+        processor_ = WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http))
+        _, replies = await run_exchange(
+            processor_,
+            chat_request_headers(),
+            body("request_body", STREAM_REQUEST),
+            response_headers(content_type="text/event-stream"),
+            body("response_body", provider + b"data: [DONE]\n\n"),
+        )
+        await asyncio.gather(*processor_._recordings)
+    recording = hooks[-1]
+    assert recording["withheld_tool_use_ids"] == ["call-1"]
+    assert recording["response_body"]["model"] == "fixture-model"
+    assert recording["response_body"]["id"] == "chatcmpl-tool-first"
+    if approved:
+        assert recording["request_body"]["messages"][-1]["tool_calls"][0]["id"] == "call-9"
+    else:
+        assert recording["response_body"]["choices"][0]["message"]["content"].endswith("Shall I stop?")
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+async def test_recording_of_a_shortened_reply_names_the_dropped_alternative(monkeypatch, streamed):
+    """A reply cut down to fit the size limit loses its approved alternative, whose call is then withheld too."""
+    if streamed:
+        monkeypatch.setattr(processor, "_GRPC_MESSAGE_LIMIT", processor._REPLY_HEADROOM + 12_000)
+    else:
+        monkeypatch.setattr(processor, "MAX_BODY", 12_000)
+    handler, hooks = alternative_watcher("deny")
+    alternative = json.loads(json.dumps(ALTERNATIVE))
+    alternative["choices"][0]["message"]["content"] = "x" * 20_000
+    messages = (
+        [body("request_body", STREAM_REQUEST), response_headers(content_type="text/event-stream")]
+        + [body("response_body", STREAM_TEXT + STREAM_TOOL + b"data: [DONE]\n\n")]
+        if streamed
+        else [body("request_body", REQUEST), response_headers(), body("response_body", RESPONSE)]
+    )
+    async with (
+        fake_watcher(handler) as client,
+        httpx.AsyncClient(
+            base_url="http://gateway.invalid", transport=httpx.MockTransport(gateway_handler([], alternative))
+        ) as http,
+    ):
+        processor_ = WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http))
+        _, replies = await run_exchange(processor_, chat_request_headers(), *messages)
+        await asyncio.gather(*processor_._recordings)
+    recording = hooks[2]
+    message = recording["response_body"]["choices"][0]["message"]
+    assert "tool_calls" not in message and "x" * 100 not in message["content"]
+    assert "too large to deliver" in message["content"]
+    assert recording["request_body"]["messages"][-1]["role"] != "assistant"
+    assert recording["withheld_tool_use_ids"][-1] == "call-9"
+
+
 async def test_refused_stream_continues_with_an_approved_alternative():
-    handler, _ = alternative_watcher("deny")
+    handler, hooks = alternative_watcher("deny")
     reasoning = json.loads(json.dumps(ALTERNATIVE))
     reasoning["choices"][0]["message"]["reasoning_content"] = "Safer."
     async with (
@@ -936,7 +1114,7 @@ async def test_refused_stream_continues_with_an_approved_alternative():
         ) as http,
     ):
         processor_ = WatcherProcessor(client, CLIENT_KEY, marker=MARKER_KEY, gateway=listener(http))
-        _, replies = await run_exchange(
+        exchange, replies = await run_exchange(
             processor_,
             chat_request_headers(),
             body("request_body", STREAM_REQUEST),
@@ -944,6 +1122,13 @@ async def test_refused_stream_continues_with_an_approved_alternative():
             body("response_body", STREAM_TEXT, end_of_stream=False),
             body("response_body", STREAM_TOOL),
         )
+        await asyncio.gather(*processor_._recordings)
+    # The streamed reply is recorded as the one message the client assembled from it.
+    recording = hooks[2]
+    assert recording["external_ids"] == {"other": exchange.conversation_id}
+    assert recording["request_body"]["messages"][-1]["tool_calls"][0]["id"] == "call-9"
+    assert recording["request_body"]["messages"][-1]["reasoning_content"] == "Safer."
+    assert recording["withheld_tool_use_ids"] == ["call-1"]
     events = parse_events(chunk_body(replies[-1]))
     assert events[-1] == b"[DONE]"
     content, calls, finish = events[0], events[1], events[2]
@@ -1020,7 +1205,7 @@ def test_failed_recovery_keeps_its_question_when_the_buffered_body_is_shortened(
         notices=["no", "No alternative was delivered because the time limit was reached.", ALTERNATIVE_FAILED],
         question=ALTERNATIVE_FAILED,
     )
-    delivered = json.loads(processor._denied_body(RESPONSE, evaluation, recovery))["choices"][0]
+    delivered = json.loads(processor._denied_reply(RESPONSE, evaluation, recovery)[1])["choices"][0]
     assert delivered["finish_reason"] == "stop" and "tool_calls" not in delivered["message"]
     assert delivered["message"]["content"].endswith("None of them ran.\n\n" + ALTERNATIVE_FAILED)
 
@@ -1034,7 +1219,7 @@ def test_alternative_too_large_for_the_buffered_body_falls_back_to_a_short_notic
     )
     monkeypatch.setattr(processor, "MAX_BODY", 200)
     recovery = Recovery(notices=["no"], alternative=ALTERNATIVE)
-    delivered = json.loads(processor._denied_body(RESPONSE, evaluation, recovery))
+    delivered = json.loads(processor._denied_reply(RESPONSE, evaluation, recovery)[1])
     message = delivered["choices"][0]["message"]
     assert "tool_calls" not in message and message["content"].endswith("too large to deliver.")
 

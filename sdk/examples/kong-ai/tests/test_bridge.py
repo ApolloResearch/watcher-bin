@@ -9,7 +9,8 @@ import httpx
 import pytest
 import watcher_kong_ai.bridge as bridge
 from typer.testing import CliRunner
-from watcher_kong_ai.bridge import UnsupportedExchange, app, decode_json, evaluate, validate_request
+from watcher_kong_ai.bridge import app
+from watcher_kong_ai.exchange import UnsupportedExchange, decode_json, evaluate, validate_request
 
 from watcher_sdk import AsyncWatcherClient
 
@@ -106,7 +107,7 @@ async def test_applied_policy_controls_delivery(exchange, mode, decision, judgme
         "http://watcher.invalid",
         httpx_client=httpx.AsyncClient(base_url="http://watcher.invalid", transport=httpx.MockTransport(handler)),
     ) as client:
-        assert await evaluate(client, *exchange, conversation_id="kong:trusted-exchange") is expected
+        assert (await evaluate(client, *exchange, conversation_id="kong:trusted-exchange")).released is expected
     assert len(calls) == 1
 
 
@@ -135,7 +136,7 @@ async def test_missing_mismatched_or_error_outcome_withholds(exchange, result):
         ),
     ) as client:
         try:
-            permitted = await evaluate(client, *exchange, conversation_id="kong:trusted-exchange")
+            permitted = (await evaluate(client, *exchange, conversation_id="kong:trusted-exchange")).released
         except (ValueError, TypeError, AttributeError, KeyError):
             permitted = False
         assert not permitted
@@ -163,7 +164,7 @@ async def test_text_tail_records_through_same_hook(exchange):
         "http://watcher.invalid",
         httpx_client=httpx.AsyncClient(base_url="http://watcher.invalid", transport=httpx.MockTransport(handler)),
     ) as client:
-        assert await evaluate(client, request, response, conversation_id="kong:trusted-exchange")
+        assert (await evaluate(client, request, response, conversation_id="kong:trusted-exchange")).released
     assert len(seen) == 1
 
 
@@ -281,12 +282,13 @@ def test_bridge_maps_permanent_raw_rejections_separately_from_outages(monkeypatc
     monkeypatch.setenv("WATCHER_BRIDGE_TOKEN", "fixture-token")
     monkeypatch.setenv("WATCHER_BASE_URL", "http://watcher.invalid")
     monkeypatch.setenv("WATCHER_API_KEY", "fixture-key")
-    bridge.serve("127.0.0.1", 8765)
+    bridge.serve("127.0.0.1", 8765, gateway_url="http://gateway.invalid", deadline_seconds=30)
     payload = json.dumps(
         {
             "request_json": json.dumps(exchange[0]),
             "response_json": json.dumps(exchange[1]),
             "metadata": {"watcher_conversation_id": "kong:fixture-conversation"},
+            "route_path": "/v1/chat/completions",
         }
     ).encode()
     raw = (

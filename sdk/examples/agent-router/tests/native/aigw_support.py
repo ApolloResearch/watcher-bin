@@ -47,13 +47,18 @@ def free_port() -> int:
 
 
 class Fixture(ThreadingHTTPServer):
-    """A loopback HTTP fixture that records every JSON request it receives."""
+    """A loopback HTTP fixture that records every JSON request it receives.
+
+    ``recordings`` holds the bodies of delivered-reply recordings, which the
+    simulated Watcher keeps out of ``requests`` so hook counts stay exact.
+    """
 
     daemon_threads = True
 
     def __init__(self, handler: type[BaseHTTPRequestHandler]) -> None:
         super().__init__(("127.0.0.1", free_port()), handler)
         self.requests: list[tuple[str, dict, dict]] = []
+        self.recordings: list[dict] = []
         threading.Thread(target=self.serve_forever, daemon=True).start()
 
 
@@ -272,7 +277,10 @@ class SimulatedWatcher(BaseHTTPRequestHandler):
     ``escalate`` escalates by rule.
 
     The ``hold`` marker sets ``held`` and then never answers within a test's
-    lifetime, standing in for a grade that is still running.
+    lifetime, standing in for a grade that is still running. A recording of
+    a delivered replacement (it names withheld calls) is moved to the
+    server's ``recordings`` and answered with no decisions, since its
+    response carries no new calls.
     """
 
     held = threading.Event()
@@ -284,6 +292,12 @@ class SimulatedWatcher(BaseHTTPRequestHandler):
         body = read_json(self)
         if self.path == "/v1/auth/check-permissions":
             reply(self, 200, {"granted": True, "missing": []})
+            return
+        server = self.server
+        assert isinstance(server, Fixture)
+        if body.get("withheld_tool_use_ids"):
+            server.recordings.append(server.requests.pop()[2])
+            reply(self, 200, [])
             return
         messages = body["request_body"]["messages"]
         words = next(message for message in messages if message["role"] == "user")["content"].split()
@@ -400,6 +414,21 @@ def envoy_admin(root: Path) -> str:
         if line.startswith("Envoy AI Gateway listening on") and "(admin " in line:
             return line.split("(admin ", 1)[1].split(")", 1)[0]
     pytest.fail("aigw did not report its Envoy admin address")
+
+
+def wait_for_recording(stack: dict, external_ids: dict) -> dict:
+    """The simulated Watcher's recording of the reply delivered under ``external_ids``.
+
+    The processor records a replacement in the background after the client
+    has it, so this waits a few seconds for it to arrive.
+    """
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        for recording in stack["watcher"].recordings:
+            if recording["external_ids"] == external_ids:
+                return recording
+        time.sleep(0.05)
+    pytest.fail("The processor never recorded the delivered reply")
 
 
 def client(stack: dict, gateway_key: str = GATEWAY_KEY) -> openai.OpenAI:

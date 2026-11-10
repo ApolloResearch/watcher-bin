@@ -7,11 +7,12 @@ decision for its unique native ID.
 """
 
 import json
-from typing import Any
+from typing import Any, cast
 
+import structlog
 from pydantic import BaseModel
 
-from watcher_sdk import AsyncWatcherClient
+from watcher_sdk import AsyncWatcherClient, WatcherAPIError
 
 # Every conversation ID the processor generates starts with this prefix.
 # Watcher labels sessions whose ID carries a registered gateway prefix as
@@ -19,6 +20,11 @@ from watcher_sdk import AsyncWatcherClient
 CONVERSATION_PREFIX = "agent-router:"
 
 CHAT_COMPLETIONS_PATH = "/v1/chat/completions"
+
+# Raw-hook fields newer than some Watcher servers, which reject them as unknown.
+_GATEWAY_FIELDS = frozenset({"withheld_tool_use_ids", "withholds_refused_calls"})
+
+logger = structlog.get_logger(__name__)
 
 
 class UnsupportedExchange(ValueError):
@@ -237,6 +243,76 @@ def _delivered_calls(response: dict) -> dict[str, dict]:
     }
 
 
+def _predates_gateway_fields(error: WatcherAPIError) -> bool:
+    """Whether Watcher rejected the exchange as an older server that does not know ``_GATEWAY_FIELDS``."""
+    detail = error.body.get("detail") if error.status_code == 422 and isinstance(error.body, dict) else None
+    if not isinstance(detail, list):
+        return False
+    for item in cast(list[Any], detail):
+        if not isinstance(item, dict) or item.get("type") != "extra_forbidden":
+            continue
+        location = item.get("loc")
+        if isinstance(location, list) and location and location[-1] in _GATEWAY_FIELDS:
+            return True
+    return False
+
+
+async def submit(
+    watcher: AsyncWatcherClient,
+    request: dict,
+    response: dict,
+    *,
+    conversation_id: str,
+    user_agent: str | None,
+    withheld_ids: list[str] | None = None,
+) -> Any:
+    """Send one raw exchange to Watcher's pre-tool-use hook and return its outputs unchecked.
+
+    Every exchange declares that this processor withholds the calls Watcher
+    refuses (``withholds_refused_calls``), so Watcher records an enforced
+    refusal as blocked rather than pending. ``withheld_ids`` names the calls
+    a delivered reply replaced, for the recording of that reply. A Watcher
+    server older than these fields rejects them; the exchange is then sent
+    once more without them, so it is still evaluated and recorded, with
+    refusals left pending.
+    """
+    fields: dict[str, Any] = {
+        "request_body": request,
+        "response_body": response,
+        "url": CHAT_COMPLETIONS_PATH,
+        "provider": "openai",
+        "user_agent": user_agent,
+        "external_ids": {"other": conversation_id},
+    }
+    try:
+        return await watcher.pre_tool_use_hook(
+            **fields, withholds_refused_calls=True, withheld_tool_use_ids=withheld_ids or None
+        )
+    except WatcherAPIError as error:
+        if not _predates_gateway_fields(error):
+            raise
+        logger.warning("watcher_predates_gateway_fields", conversation_id=conversation_id)
+        return await watcher.pre_tool_use_hook(**fields)
+
+
+def recorded_exchange(request: dict, delivered: dict) -> tuple[dict, dict]:
+    """The exchange that records ``delivered`` as the reply to ``request`` without grading anything again.
+
+    Watcher evaluates the calls in a response. Calls an approved alternative
+    carries were graded when it was proposed, so they move into the request
+    as the assistant's last message (they have no results yet), and the
+    response is an empty assistant message. A reply without calls is recorded
+    as it is. Watcher attaches withheld call IDs to the delivered message,
+    which is the last stored message or the one before an empty reply.
+    """
+    choice = delivered["choices"][0]
+    if not choice["message"].get("tool_calls"):
+        return request, delivered
+    history = {**request, "messages": [*request["messages"], choice["message"]]}
+    empty = {"role": "assistant", "content": None}
+    return history, {**delivered, "choices": [{**choice, "message": empty, "finish_reason": "stop"}]}
+
+
 async def evaluate(
     watcher: AsyncWatcherClient,
     request: dict,
@@ -247,22 +323,16 @@ async def evaluate(
 ) -> Evaluation:
     """Submit the exchange to Watcher and match every delivered call to exactly one decision.
 
-    The original request and response bodies go through the public raw hook,
-    so Watcher owns conversion, call selection and policy. No settings override
-    is sent. An empty result admits text-only output, never an uncovered call.
-    A successful hook acknowledges submission; recording happens afterward.
+    The original request and response bodies go through the public raw hook
+    (see ``submit``), so Watcher owns conversion, call selection and policy.
+    No settings override is sent. An empty result admits text-only output,
+    never an uncovered call. A successful hook acknowledges submission;
+    recording happens afterward.
     """
     _conversation_id(conversation_id)
     validate_request(request)
     expected = client_calls(response)
-    outcomes = await watcher.pre_tool_use_hook(
-        request_body=request,
-        response_body=response,
-        url=CHAT_COMPLETIONS_PATH,
-        provider="openai",
-        user_agent=user_agent,
-        external_ids={"other": conversation_id},
-    )
+    outcomes = await submit(watcher, request, response, conversation_id=conversation_id, user_agent=user_agent)
     if not isinstance(outcomes, list):
         return Evaluation(verified=False)
     calls = _delivered_calls(response) if expected else {}

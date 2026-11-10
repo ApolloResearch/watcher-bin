@@ -12,13 +12,15 @@ from watcher_agent_router.exchange import (
     compose,
     decode_json,
     evaluate,
+    recorded_exchange,
     refused,
     releasable,
+    submit,
     validate_request,
 )
 from watcher_agent_router.notices import withheld_notice
 
-from watcher_sdk import AsyncWatcherClient
+from watcher_sdk import AsyncWatcherClient, WatcherAPIError
 
 CONVERSATION = "agent-router:fixture-exchange"
 
@@ -397,3 +399,74 @@ async def test_grading_error_escalation_cannot_be_approved_in_the_conversation(e
     async with watcher(lambda _: httpx.Response(200, json=[value])) as client:
         [denial] = (await evaluate(client, *exchange, conversation_id=CONVERSATION)).denials
     assert denial.is_escalation and not denial.user_can_approve and denial.reason == "Grading timed out"
+
+
+def _unknown_field(location: list) -> httpx.Response:
+    return httpx.Response(422, json={"detail": [{"type": "extra_forbidden", "loc": location, "msg": "Extra inputs"}]})
+
+
+async def test_every_exchange_declares_that_refused_calls_are_withheld(exchange):
+    """Watcher then records an enforced refusal as blocked instead of waiting for an outcome."""
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json=[outcome("enforce", "allow", "allow")])
+
+    async with watcher(handler) as client:
+        await evaluate(client, *exchange, conversation_id=CONVERSATION)
+        await submit(client, *exchange, conversation_id=CONVERSATION, user_agent=None, withheld_ids=["call-0"])
+    assert [body["withholds_refused_calls"] for body in seen] == [True, True]
+    assert "withheld_tool_use_ids" not in seen[0] and seen[1]["withheld_tool_use_ids"] == ["call-0"]
+
+
+async def test_older_watcher_gets_the_exchange_again_without_the_gateway_fields(exchange):
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        if len(seen) == 1:
+            return _unknown_field(["body", "withheld_tool_use_ids"])
+        return httpx.Response(200, json=[outcome("enforce", "allow", "allow")])
+
+    async with watcher(handler) as client:
+        await submit(client, *exchange, conversation_id=CONVERSATION, user_agent=None, withheld_ids=["call-0"])
+    assert len(seen) == 2
+    assert not {"withheld_tool_use_ids", "withholds_refused_calls"} & seen[1].keys()
+    assert seen[1]["request_body"] == seen[0]["request_body"] and seen[1]["external_ids"] == {"other": CONVERSATION}
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        httpx.Response(422, json={"detail": "not a list"}),
+        httpx.Response(422, json={"detail": ["not an object"]}),
+        httpx.Response(422, json={"detail": [{"type": "missing", "loc": ["body", "withholds_refused_calls"]}]}),
+        _unknown_field(["body", "something_else"]),
+        _unknown_field("not a list"),
+        httpx.Response(400, json={"detail": [{"type": "extra_forbidden", "loc": ["body", "withholds_refused_calls"]}]}),
+    ],
+    ids=["text-detail", "item-not-object", "other-error", "other-field", "location-not-list", "not-422"],
+)
+async def test_other_rejections_are_not_retried(exchange, reply):
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return reply
+
+    async with watcher(handler) as client:
+        with pytest.raises(WatcherAPIError):
+            await submit(client, *exchange, conversation_id=CONVERSATION, user_agent=None)
+    assert len(seen) == 1
+
+
+def test_recorded_exchange_moves_delivered_calls_into_history(exchange):
+    """Calls an approved alternative carries were graded already, so the recording does not submit them again."""
+    request, delivered = exchange
+    history, empty = recorded_exchange(request, delivered)
+    assert history["messages"] == [*request["messages"], delivered["choices"][0]["message"]]
+    assert empty["choices"][0]["message"] == {"role": "assistant", "content": None}
+    assert empty["choices"][0]["finish_reason"] == "stop"
+    text = {"choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "Done"}}]}
+    assert recorded_exchange(request, text) == (request, text)

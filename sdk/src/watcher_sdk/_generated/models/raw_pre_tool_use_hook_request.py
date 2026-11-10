@@ -87,7 +87,8 @@ class RawPreToolUseHookRequest:
                 the client in favor of the response this request records: the refused calls and the calls withheld with them in
                 the same proposal, never a call delivered to the client. Omit it when nothing was withheld. The recorded
                 response is response_body's message, or the last request message when that is empty. Watcher shows each named
-                call that it evaluated in the same session before this response; unknown IDs are ignored, and so is the field on
+                call that it evaluated in the same session before this response. A call still pending or unknown gets execution
+                status blocked if Watcher refused it and cancelled otherwise; unknown IDs are ignored, and so is the field on
                 ephemeral requests. A non-empty list requires withholds_refused_calls to be true. At most 4,096 IDs; duplicates
                 are removed. Older servers reject the field with HTTP 422.
             withholds_refused_calls (bool | Unset): Optional. True when the caller withholds from the client every call

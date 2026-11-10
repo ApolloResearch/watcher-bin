@@ -1597,10 +1597,11 @@ class AsyncWatcherClient:
             withheld_tool_use_ids: For a gateway that delivers this response in place
                 of proposals it withheld: the IDs of every call it withheld (the refused
                 calls and the calls withheld with them, never a call it delivered), so
-                Watcher can show them before this response. Omit it when nothing was
-                withheld. Raw pairs only, and a non-empty list needs
-                `withholds_refused_calls=True`; servers that predate the field reject it
-                with HTTP 422.
+                Watcher can show them before this response and settles each one still
+                pending or unknown (blocked if Watcher refused it, else cancelled).
+                Omit it when nothing was withheld. Raw pairs only, and a non-empty list
+                needs `withholds_refused_calls=True`; servers that predate the field
+                reject it with HTTP 422.
             withholds_refused_calls: True when the caller withholds from the client every
                 call Watcher denies or escalates in enforce mode, so Watcher records such a
                 refusal as blocked when it decides it. Leave it unset when the reply may
@@ -2832,14 +2833,18 @@ class AsyncWatcherClient:
 
     @_sdk_method
     async def list_trajectories(self, session_id: str) -> TrajectoryListInSessionResponse:
-        """List all trajectories in a session.
+        """List a session's transcripts.
+
+        A conversation recorded by both the Watcher client and a gateway is
+        listed once per transcript, under its canonical id, with each real
+        branch of the conversation still listed separately.
 
         Args:
             session_id: Unique identifier of the session.
 
         Returns:
             TrajectoryListInSessionResponse containing summary information
-            for each trajectory in the session.
+            for each transcript in the session.
 
         Raises:
             WatcherNotFoundError: If no session exists with the given ID.
@@ -2851,6 +2856,11 @@ class AsyncWatcherClient:
         self, session_id: str, trajectory_id: str, view: TrajectoryView = TrajectoryView.TRUNCATED
     ) -> TrajectoryDetailResponse:
         """Get full trajectory detail within a session.
+
+        When the Watcher client and a gateway both recorded the conversation,
+        this returns the reconciled transcript: either recording's id opens it,
+        ``member_trajectory_ids`` lists the recordings it covers, and each
+        message's ``index`` is its position in the reading order.
 
         Args:
             session_id: Unique identifier of the session.

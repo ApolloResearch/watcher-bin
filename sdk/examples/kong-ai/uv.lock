@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 
 [options]
@@ -622,6 +622,15 @@ wheels = [
 ]
 
 [[package]]
+name = "structlog"
+version = "26.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/89/b4a0bcfdf4f71a3dea31379f095929613d7e4528a0996bca6aa964cd0dca/structlog-26.1.0.tar.gz", hash = "sha256:f63a716cbd1b1291cf7661de7794b455acfa4c43c5bcf1630e6ad5ddc1adb3b7", size = 1459881, upload-time = "2026-06-06T07:33:39.348Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/18/489c97b834dfff9cf2fc2507cede4bcd4b11e67f84bc462acd1992496f86/structlog-26.1.0-py3-none-any.whl", hash = "sha256:e081a26d6c373e6d201eca24eede26d8ffab07f88f477822e679183428d3d91e", size = 73764, upload-time = "2026-06-06T07:33:38.046Z" },
+]
+
+[[package]]
 name = "tenacity"
 version = "9.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -682,6 +691,7 @@ source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "openai" },
+    { name = "structlog" },
     { name = "typer" },
     { name = "watcher-sdk" },
 ]
@@ -696,6 +706,7 @@ dev = [
 requires-dist = [
     { name = "httpx", specifier = "==0.28.1" },
     { name = "openai", specifier = "==3.8.0" },
+    { name = "structlog", specifier = "==26.1.0" },
     { name = "typer", specifier = "==0.24.1" },
     { name = "watcher-sdk", directory = "../../" },
 ]
@@ -708,7 +719,7 @@ dev = [
 
 [[package]]
 name = "watcher-sdk"
-version = "0.48.3"
+version = "0.49.0"
 source = { directory = "../../" }
 dependencies = [
     { name = "anyio" },

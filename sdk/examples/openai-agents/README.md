@@ -49,8 +49,8 @@ Watcher controls the policy; the integration applies its returned decision:
 | Server result | Example behavior |
 | --- | --- |
 | Enforce: allow | Resume the framework's normal tool dispatch. This also honors an administrator's configured allow on a grading failure. |
-| Enforce: deny | Raise `ToolBlocked` before the tool body executes. |
-| Enforce: escalate | Wait for the supplied human-approval callback, or raise `ApprovalRequired` if no callback is configured. |
+| Enforce: deny | Report the call `blocked`, then raise `ToolBlocked` before the tool body executes. |
+| Enforce: escalate | Wait for the supplied human-approval callback, or report the call `blocked` and raise `ApprovalRequired` if no callback is configured. |
 | Observe: deferred | Preserve the framework's ordinary dispatch and permissions; Watcher's judgment does not block the call. |
 | Paused: deferred | Preserve ordinary dispatch and permissions; Watcher submits the transcript without grading. |
 
@@ -88,7 +88,7 @@ rejection as blocked.
 This requires findings and content access and permission to update the session as its
 owner or with `sessions:write:any`.
 For a service API key, configure `sessions:ingest`, `sessions:findings:read:any`,
-`sessions:content:read:any` and `sessions:write:any` for transcript recording and human-decision reporting.
+`sessions:content:read:any` and `sessions:write:any` for transcript recording and for reporting human decisions, refusals and cancellations.
 Lookup, permission, upload, content-scrub or readback failures block execution. The default reporting deadline is 10 seconds; configure
 `human_audit_timeout` to change it. Recent human decisions accompany later grading
 requests as context. Persist the human choice in your application if recovery is
@@ -107,6 +107,97 @@ confirms evaluation or request acceptance; transcript/decision storage runs afte
 the response and has no durability acknowledgement. Session-write permission is
 required for recording even when the policy decision itself succeeds.
 
+Watcher records each evaluated call as pending and settles it from the call's
+result in a later request: a result without an `error` from a call Watcher let
+through is recorded as completed. `error` means only that the tool failed while
+running. A refused or cancelled call keeps the refusal text the agent saw as its
+result, and its status goes into Watcher's decision record instead.
+
+Refused and cancelled calls:
+
+- The Monitor reports `blocked` for a Watcher denial or for an escalation with no
+  approval callback. A person's rejection is already recorded as `blocked` with
+  the human choice. A call cancelled while it is being decided, including while a
+  person is asked, is reported as `cancelled`, without inventing an answer.
+- `execute_tool` reports `cancelled` for a call cancelled while its tool runs.
+- For a refusal or cancellation your application makes after Watcher let a call
+  through, such as your own check refusing it or stopping its tool on the Runner
+  path, call `await monitor.report_status(call_id, name, arguments, "blocked")`
+  (or `"cancelled"`).
+
+Reports use the same upload, readback, deadline (`human_audit_timeout`) and
+permissions as human decisions, and update only a call whose Watcher evaluation
+the Monitor received. A reported `blocked` or `cancelled` stands; a `completed`
+or `unknown` status, which Watcher settles from the result text the agent saw,
+is replaced. `report_status` returns `False` for a call with no Watcher
+evaluation, and for a call already reported or being reported, including a
+person's rejection, since the first report stands. When a report fails, the
+refusal or cancellation still propagates, with the reporting failure as its
+cause, and a later `record()` reports it (see below).
+
+Calls whose tools failed:
+
+- Build each tool with `function_tool(failure_error_function=failure_error_function(monitor))`,
+  as `demo/enforce.py` does. A tool exception still reaches the model as Agents'
+  default error text, and the Monitor sends that result with `error`. With Agents'
+  default `failure_error_function`, a tool exception becomes plain output and the
+  call is recorded as completed.
+- `execute_tool` marks a tool exception itself before re-raising it.
+- For an exception your own code catches, call `monitor.mark_failed(call_id, message)`
+  before the next `before` or `record`.
+
+A call the Monitor withholds without reporting its status at once is reported
+after the next `record()`:
+
+- `blocked` after a monitoring failure (a timeout, a transport error or a
+  malformed response), or after an approval callback that raised or returned a
+  non-boolean, or whose human-decision report failed. Only the execution status
+  is reported, so it never invents a person's answer and keeps one already
+  stored.
+- `cancelled` when it was cancelled before Watcher answered it.
+- The status of its report, when that report failed.
+
+Watcher may hold no decision for such a call, or record one later, and stores
+the call from the transcript `record()` sends. So `record()` then waits up to
+`human_audit_timeout` for the call to be stored on any branch of the session,
+pausing longer between lookups as it waits. It uploads the call's status,
+creating its decision record if there is none, and reads it back. A decision
+Watcher records afterwards keeps that status.
+
+If a report fails, `record()` raises `StatusNotRecorded`, a `ToolBlocked`, after
+the transcript was accepted. Its `failures` maps each call ID whose status the
+Monitor could not confirm to its error; an upload stored before its readback
+failed may already have recorded that status. A
+failure a retry may fix (the call not stored in time, a transport failure, rate
+limiting or a server error) is retried by later `record()` calls, up to
+`late_report_attempts` (3 by default) in all; the exception's `retrying` names
+those calls. After a permanent failure, such as a refused permission, or after
+the last attempt, the Monitor stops reporting the call and lists it with its
+error in `monitor.unrecorded`.
+
+Cancelling `record()` stops these reports at once. A call whose report it stops
+stays queued without using an attempt. Its status is unconfirmed, since an upload
+may have been stored before the cancellation; a later report that finds it stored
+does not upload it again. A report that failed before the cancellation counts as
+usual, so check `unrecorded` after a cancellation too.
+
+To retry a person's rejection whose report failed, call
+`report_human_decision(..., approved=False)` again. The Monitor never released
+the call, so this records the rejection even after Watcher has settled the call
+from its refusal text, or after a status report stored `blocked`, unless a human
+decision is already recorded. The call then leaves the queue and `unrecorded`.
+
+A call still queued when the run ends, or listed in `unrecorded`, has no
+confirmed status. When Watcher holds no `blocked` or `cancelled` status for such
+a call, it settles the call from the next request carrying its result: completed
+only if it let the call through (an allow, or a deferral in observe mode) and
+the result has no `error`, otherwise `unknown`. A call Watcher answered with a
+paused-mode bypass runs, so it is never queued, and `report_status` reports
+nothing for it.
+
+A tool input guardrail rejects a call before the lifecycle hook runs, so Watcher
+never evaluates that call and its rejection message is recorded as a plain result.
+
 You can also observe a conversation that already completed using
 `await observe(client, conversation_id, native_history)` or `python -m demo.observe`.
 That separate import path follows the organization's policy without an override,
@@ -114,6 +205,13 @@ assesses calls against their historical prefixes in batches of at most 32, and
 submits the final transcript. Paused mode records history without grading.
 Returned decisions are advisory to completed actions; they cannot prevent or
 undo an effect, and the importer does not report an action as blocked.
+
+A completed Responses history does not record which calls failed, so the
+importer cannot tell. Pass `errors={call_id: {"type": "unknown", "message": "..."}}`
+to `observe` for each call whose tool you know failed. Watcher records any result
+you send unmarked, from a call it let through, as completed. The importer does
+not report refusals or cancellations either, so a refused call it let through is
+also recorded as completed.
 
 When this retrospective observer runs against an organization in Enforce mode,
 Watcher can store an assessment as an applied denial and count it in automatic

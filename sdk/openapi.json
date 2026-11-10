@@ -1708,7 +1708,7 @@
           "sessions"
         ],
         "summary": "List Session Trajectories",
-        "description": "List all trajectories in a session. 404 for sessions the caller can't read.",
+        "description": "List a session's transcripts, reconciled across recordings. 404 for sessions the caller can't read.\n\nA transcript that merges a Watcher client recording with a gateway's lists\nonce, under its canonical id, with its reading order's message count and\ngrades recorded against any recording it covers. Each real fork of the\nconversation is still its own entry.",
         "operationId": "list_session_trajectories_v1_sessions__session_id__trajectories_get",
         "parameters": [
           {
@@ -1857,7 +1857,7 @@
           "sessions"
         ],
         "summary": "Get Session Trajectory Detail",
-        "description": "Get trajectory content through ownership, ``sessions:content:read:any``, or an active session content approval.\n\nReturn 404 when content is inaccessible or scrubbed. Session grades and\ntool-call decisions are included only with findings access; session summaries\nremain available with content access alone. With findings access,\n``gateway_withheld_decisions`` also lists the calls a gateway named as\nwithheld in favor of a message on this trajectory.\n\nThe ``view`` parameter picks the payload shape and defaults to ``truncated``,\nwhich caps tool outputs and user pastes and stubs out ``data`` content blocks,\nleaving marker fields (``content_truncated``, ``content_original_chars``) so\nclients can offer a full fetch. Callers that need storage-faithful message\ncontent must explicitly request ``extended``.\n\nThe literal trajectory id ``latest`` resolves server-side to the session's\nmost recent trajectory (the response carries the resolved id), so\nsession-scoped links can load a transcript in a single request. 404 when\nthe session has no trajectories.\n\nReturns at most one grade: the most recent non-errored grade recorded\nanywhere on the requested trajectory's hash chain (a grade is stored\nagainst the trajectory hash current when it ran, so earlier grades sit on\nprefix hashes). A trajectory whose chain was never graded falls back to\nthe session's most recent grade, so a graded session never presents as\nungraded; errored grades are returned only when nothing else exists.\n\nExtended-thinking signatures (opaque replay payloads inside reasoning content\nblocks) are omitted from message content to keep responses small; the readable\nreasoning text is unaffected.",
+        "description": "Get trajectory content through ownership, ``sessions:content:read:any``, or an active session content approval.\n\nReturn 404 when content is inaccessible or scrubbed. Session grades and\ntool-call decisions are included only with findings access; session summaries\nremain available with content access alone. With findings access,\n``gateway_withheld_decisions`` also lists the calls a gateway named as\nwithheld in favor of a message on this trajectory.\n\nThe ``view`` parameter picks the payload shape and defaults to ``truncated``,\nwhich caps tool outputs and user pastes and stubs out ``data`` content blocks,\nleaving marker fields (``content_truncated``, ``content_original_chars``) so\nclients can offer a full fetch. Callers that need storage-faithful message\ncontent must explicitly request ``extended``.\n\nWhen the Watcher client and a gateway both recorded the conversation, the\nresponse is the reconciled transcript: the client's recording with what only\nthe gateway saw spliced in, each tool call once, and each message's ``index`` its\nposition in that reading order. Any recording's id opens it, the response\ncarries its canonical id, and ``member_trajectory_ids`` lists the\nrecordings it covers.\n\nThe literal trajectory id ``latest`` resolves server-side to the\ntranscript holding the session's newest recording, the one session\ngrading reviews (the response carries the resolved id), so\nsession-scoped links can load a transcript in a single request. 404 when\nthe session has no trajectories.\n\nReturns at most one grade: the most recent non-errored grade recorded\nanywhere on the requested trajectory's hash chain (a grade is stored\nagainst the trajectory hash current when it ran, so earlier grades sit on\nprefix hashes). A trajectory whose chain was never graded falls back to\nthe session's most recent grade, so a graded session never presents as\nungraded; errored grades are returned only when nothing else exists.\n\nExtended-thinking signatures (opaque replay payloads inside reasoning content\nblocks) are omitted from message content to keep responses small; the readable\nreasoning text is unaffected.",
         "operationId": "get_session_trajectory_detail_v1_sessions__session_id__trajectories__trajectory_id__get",
         "parameters": [
           {
@@ -5387,7 +5387,8 @@
                 "type": "null"
               }
             ],
-            "title": "Metadata"
+            "title": "Metadata",
+            "description": "Values Watcher derives from the session's stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint' (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients must tolerate additional keys."
           },
           "started_at": {
             "type": "string",
@@ -5451,7 +5452,32 @@
                 "type": "null"
               }
             ],
-            "title": "Latest Trajectory Id"
+            "title": "Latest Trajectory Id",
+            "description": "The newest stored trajectory, which report updates review. It can differ from default_trajectory_id when the Watcher client and a gateway both recorded the session."
+          },
+          "default_trajectory_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Trajectory Id",
+            "description": "The transcript the session opens by default, the one the trajectory route's latest value resolves to: the one holding latest_trajectory_id. When the Watcher client and a gateway both recorded the conversation it names the reconciled transcript, by its Watcher client recording."
+          },
+          "latest_transcript_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Transcript Revision",
+            "description": "Revision of the transcript holding latest_trajectory_id when it reconciles two recordings; null for a single recording. A report whose grades.input_revision differs read an earlier version of that transcript (one recorder caught up since) and is outdated."
           },
           "trajectories": {
             "items": {
@@ -6477,6 +6503,17 @@
               }
             ],
             "title": "Version"
+          },
+          "entrypoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entrypoint"
           },
           "userType": {
             "anyOf": [
@@ -12091,7 +12128,7 @@
               }
             ],
             "title": "Withheld Tool Use Ids",
-            "description": "Optional. Tool-use IDs of the calls a gateway withheld from the client in favor of the response this request records: the refused calls and the calls withheld with them in the same proposal, never a call delivered to the client. Omit it when nothing was withheld. The recorded response is response_body's message, or the last request message when that is empty. Watcher shows each named call that it evaluated in the same session before this response; unknown IDs are ignored, and so is the field on ephemeral requests. A non-empty list requires withholds_refused_calls to be true. At most 4,096 IDs; duplicates are removed. Older servers reject the field with HTTP 422."
+            "description": "Optional. Tool-use IDs of the calls a gateway withheld from the client in favor of the response this request records: the refused calls and the calls withheld with them in the same proposal, never a call delivered to the client. Omit it when nothing was withheld. The recorded response is response_body's message, or the last request message when that is empty. Watcher shows each named call that it evaluated in the same session before this response. A call still pending or unknown gets execution status blocked if Watcher refused it and cancelled otherwise; unknown IDs are ignored, and so is the field on ephemeral requests. A non-empty list requires withholds_refused_calls to be true. At most 4,096 IDs; duplicates are removed. Older servers reject the field with HTTP 422."
           },
           "withholds_refused_calls": {
             "type": "boolean",
@@ -12481,7 +12518,8 @@
                 "type": "null"
               }
             ],
-            "title": "Metadata"
+            "title": "Metadata",
+            "description": "Values Watcher derives from the session's stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint' (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients must tolerate additional keys."
           },
           "started_at": {
             "type": "string",
@@ -13595,7 +13633,8 @@
                 "type": "null"
               }
             ],
-            "title": "Metadata"
+            "title": "Metadata",
+            "description": "Values Watcher derives from the session's stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint' (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients must tolerate additional keys."
           },
           "grades": {
             "anyOf": [
@@ -15118,7 +15157,7 @@
               }
             ],
             "title": "Trajectory Id",
-            "description": "Restrict calls to this trajectory and its ancestors, plus calls a gateway withheld or cancelled in favor of one of its messages and that Watcher evaluated, whose message_ref names the branch that proposed them. Requires session_id. Use latest for the session's latest trajectory. Missing or scrubbed trajectories match no calls."
+            "description": "Restrict calls to this trajectory and its ancestors, plus calls a gateway withheld or cancelled in favor of one of its messages and that Watcher evaluated, whose message_ref names the branch that proposed them. Requires session_id. Use latest for the trajectory the session opens by default. When the Watcher client and a gateway both recorded the conversation and the client's trajectory holds the gateway trajectory's ending, the scope for either one includes the calls on both. Missing or scrubbed trajectories match no calls."
           },
           "is_flagged": {
             "anyOf": [
@@ -15324,10 +15363,31 @@
             "type": "array",
             "title": "Spawned Subagents"
           },
+          "member_trajectory_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Member Trajectory Ids",
+            "description": "The stored trajectories this transcript covers, its own id first. A conversation recorded by both the Watcher client and a gateway is read as one transcript that lists both recordings here; any of these ids opens the same transcript. A single recording lists only its own id."
+          },
+          "transcript_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript Revision",
+            "description": "Revision of a transcript that reconciles two recordings; null for a single recording. A report whose grades.input_revision matches read exactly these messages, so its [M#] citations number them."
+          },
           "metadata": {
             "additionalProperties": true,
             "type": "object",
-            "title": "Metadata"
+            "title": "Metadata",
+            "description": "The stored metadata of this transcript's own last stored message only, not combined across messages as the session's metadata is. For Claude Code, 'claude_code_entrypoint' and 'claude_code_entry_version' come from the transcript entry that message came from. For Codex ('originator', 'cli_version') and GitHub Copilot CLI ('cli_version') they are the session record's values copied onto every message of the upload, so they do not show which release wrote that message. The upload's own metadata, such as 'hostname', is also included. Values can differ from the session's 'entrypoint' and 'agent_version' after a resume or an upgrade."
           },
           "session_id": {
             "type": "string",

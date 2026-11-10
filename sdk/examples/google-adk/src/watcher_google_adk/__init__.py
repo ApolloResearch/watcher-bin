@@ -5,7 +5,7 @@ conversation. Demos show registration, completed history and failure handling.
 """
 
 from watcher_google_adk.adapter import IncompleteObservationError, messages_for_watcher, observe
-from watcher_google_adk.monitoring import ApprovalRequired, Monitor, ToolBlocked
+from watcher_google_adk.monitoring import ApprovalRequired, Monitor, StatusNotRecorded, ToolBlocked
 from watcher_google_adk.native import ConversationHistory, before_tool_callback
 
 __all__ = [
@@ -15,6 +15,7 @@ __all__ = [
     "Monitor",
     "ToolBlocked",
     "ApprovalRequired",
+    "StatusNotRecorded",
     "ConversationHistory",
     "before_tool_callback",
 ]

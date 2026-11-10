@@ -174,7 +174,7 @@ do not authenticate it.
 The `agent-router:` prefix makes the Analyzer show these sessions with the
 Gateway source. Use the `watcher-gateway` session source filter to find them.
 
-Alternatives requested after a refusal, and their conversation IDs, are
+Alternatives requested after a refusal are graded in the same session, as
 described under [Alternatives](#alternatives).
 
 ## Enforcement and limits
@@ -283,20 +283,38 @@ cleanly refused. Failures on the client's own proposal return errors as
 described in [Other responses](#other-responses) and never lead to
 alternatives.
 
-**Separate Watcher sessions.** Each alternative Watcher grades is submitted as
-a separate exchange, so it gets a separate session with its own
-`agent-router:<UUID>` ID. Its history is the client's conversation plus the
-refused proposals and their tool results. The client's session holds the
-original exchange, and the client only sees that session's ID in
-`X-Watcher-Conversation-Id`. To link them, the processor logs one
-`alternative_evaluated` event per submitted alternative with both
-`conversation_id` and `alternative_conversation_id`. An alternative refused for
-repeating a refused operation is not submitted and has no session; the
-processor logs `alternative_repeated` for it instead. The final reply is not
-submitted either (the processor logs `final_reply` with the number of calls it
-withheld); Watcher sees it in the client's next request. As elsewhere, a
-successful submission acknowledges receipt, not storage. On the client's next
-turn, its history includes the delivered notices and alternative.
+**One Watcher session.** Each alternative Watcher grades is submitted in the
+client request's own session, the one named in `X-Watcher-Conversation-Id`.
+Its history is the client's conversation plus the refused proposals and their
+tool results. Those results are the processor's refusal receipts, not runs, and
+Watcher records a call it first sees with a result as having run unless the
+session already holds a decision for it. Grading in the same session lets
+Watcher match those calls to the decisions it stored for the refused proposal,
+so they are not recorded as run (see the storage-order limit below).
+Every request declares that the processor withholds refused calls
+(`withholds_refused_calls`), so Watcher records an enforced deny or escalation
+as blocked rather than waiting for an outcome. An alternative refused for
+repeating a refused operation is not submitted, since Watcher never graded it;
+it and its receipts are also left out of the history later alternatives are
+graded with, while the model still sees them. The processor logs
+`alternative_repeated` for it. The final reply is not graded (the processor
+logs `final_reply` with the number of calls it withheld).
+
+After the client has the reply, the processor records it in the same session,
+naming every call it withheld (`withheld_tool_use_ids`), including an approved
+alternative's calls when the reply had to be shortened to fit the size limit.
+Watcher shows those calls before the delivered reply. Calls the reply carries
+were graded already, so the recording sends them as history rather than as new
+calls. The recording never delays or changes the reply; a failure is logged as
+`delivered_reply_not_recorded`. A Watcher server older than these two fields
+rejects them; the processor then sends the exchange once more without them,
+so it is still graded and recorded, with refusals left pending, and logs
+`watcher_predates_gateway_fields`. Watcher stores exchanges asynchronously: if
+it stores an alternative before the original proposal, an allowed call that was
+withheld beside a refused one can still be recorded as completed, though the
+refused call is still recorded as blocked. As elsewhere, a successful
+submission acknowledges receipt, not storage. On the client's next turn, its
+history includes the delivered notices and alternative.
 
 **Time.** The client's proposal, each later provider call and each grade share
 the processor's 420-second limit, so they only use what the first decision
@@ -437,3 +455,10 @@ These tests read each exchange back through the SDK, require the Gateway
 source label, and require that a dangerous tool call reaches the client only
 when the decision Watcher stored allows it. The provider is still simulated, and
 the decision itself depends on your server's policy and grading models.
+
+`tests/native/test_live_withheld.py` uses the same variables. It replaces the
+organization's managed settings with two command rules while it runs (deny
+`write_file`, allow `read_file`) and restores them afterwards, so point it only
+at a development server. It reads every session stored during each case and
+requires that a refused call is recorded as blocked, and that neither its
+withheld sibling nor a locally refused repeat is recorded as having run.

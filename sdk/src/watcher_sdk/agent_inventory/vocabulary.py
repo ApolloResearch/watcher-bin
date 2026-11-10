@@ -1,4 +1,6 @@
-"""Shared vocabulary for agent inventory: agent IDs, enums, caps and the inventory section of a report.
+"""Shared vocabulary for agent inventory: enums, caps and the inventory section of a report.
+
+Agent IDs and what inventory can detect about each come from the agent catalog (``watcher_sdk.agent_catalog``).
 
 The Watcher client builds the ``inventory`` section of its installation report
 (``watcher_sdk.installation_report``) from these values and the server validates it against them. The fields
@@ -7,104 +9,13 @@ reports successfully; the server drops what it does not recognize. Values may be
 """
 
 from datetime import date
-from enum import StrEnum
 from typing import Final, Literal, get_args
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-
-class AgentId(StrEnum):
-    """Every agent the inventory knows. Supported agents reuse the session platform ID Watcher stores."""
-
-    CLAUDE_CODE = "claude_code"
-    CODEX = "codex"
-    GITHUB_COPILOT_CLI = "github_copilot_cli"
-    GEMINI_CLI = "gemini_cli"
-    QWEN_CODE = "qwen_code"
-    OPENCODE = "opencode"
-    ANTIGRAVITY_CLI = "antigravity_cli"
-    MISTRAL_VIBE = "mistral_vibe"
-    PI = "pi"
-    OPENCLAW = "openclaw"
-    HERMES = "hermes"
-    OPENHANDS = "openhands"
-    KILO_CODE = "kilo_code"
-    CRUSH = "crush"
-    GOOSE = "goose"
-    AIDER = "aider"
-    AMP = "amp"
-    FACTORY_DROID = "factory_droid"
-    AUGMENT = "augment"
-    CONTINUE_CLI = "continue_cli"
-    CLINE = "cline"
-    ROO_CODE = "roo_code"
-    AMAZON_Q = "amazon_q"
-    GEMINI_CODE_ASSIST = "gemini_code_assist"
-    VSCODE_GITHUB_COPILOT = "vscode_github_copilot"
-    CURSOR = "cursor"
-    WINDSURF = "windsurf"
-    KIRO = "kiro"
-    TRAE = "trae"
-    CLAUDE_DESKTOP = "claude_desktop"
-    CHATGPT_CODEX_DESKTOP = "chatgpt_codex_desktop"
-
-
-class DetectionLevel(StrEnum):
-    """How much the Watcher client's scan can tell about an agent. Each level includes everything before it."""
-
-    INSTALLS_ONLY = "installs_only"
-    """Installations and versions only."""
-    RECENT_USE = "recent_use"
-    """Also the last day of use and the recent session count, from the agent's own session store."""
-    WATCHER_HOOKS = "watcher_hooks"
-    """Also whether Watcher's hooks are on, for the agents Watcher integrates with."""
-
-
-# What the Watcher client's scan can report for each agent. An agent below RECENT_USE never reports a last-used
-# date or session count, so their absence says nothing about whether it is used. Each client detector declares
-# the same level, which its tests check.
-AGENT_DETECTION_LEVELS: Final[dict[AgentId, DetectionLevel]] = {
-    AgentId.CLAUDE_CODE: DetectionLevel.WATCHER_HOOKS,
-    AgentId.CODEX: DetectionLevel.WATCHER_HOOKS,
-    AgentId.GITHUB_COPILOT_CLI: DetectionLevel.WATCHER_HOOKS,
-    AgentId.GEMINI_CLI: DetectionLevel.RECENT_USE,
-    AgentId.QWEN_CODE: DetectionLevel.RECENT_USE,
-    AgentId.OPENCODE: DetectionLevel.INSTALLS_ONLY,
-    AgentId.ANTIGRAVITY_CLI: DetectionLevel.INSTALLS_ONLY,
-    AgentId.MISTRAL_VIBE: DetectionLevel.RECENT_USE,
-    AgentId.PI: DetectionLevel.RECENT_USE,
-    AgentId.OPENCLAW: DetectionLevel.RECENT_USE,
-    AgentId.HERMES: DetectionLevel.INSTALLS_ONLY,
-    AgentId.OPENHANDS: DetectionLevel.RECENT_USE,
-    AgentId.KILO_CODE: DetectionLevel.INSTALLS_ONLY,
-    AgentId.CRUSH: DetectionLevel.INSTALLS_ONLY,
-    AgentId.GOOSE: DetectionLevel.INSTALLS_ONLY,
-    AgentId.AIDER: DetectionLevel.INSTALLS_ONLY,
-    AgentId.AMP: DetectionLevel.INSTALLS_ONLY,
-    AgentId.FACTORY_DROID: DetectionLevel.INSTALLS_ONLY,
-    AgentId.AUGMENT: DetectionLevel.RECENT_USE,
-    AgentId.CONTINUE_CLI: DetectionLevel.RECENT_USE,
-    AgentId.CLINE: DetectionLevel.RECENT_USE,
-    AgentId.ROO_CODE: DetectionLevel.RECENT_USE,
-    AgentId.AMAZON_Q: DetectionLevel.INSTALLS_ONLY,
-    AgentId.GEMINI_CODE_ASSIST: DetectionLevel.INSTALLS_ONLY,
-    AgentId.VSCODE_GITHUB_COPILOT: DetectionLevel.RECENT_USE,
-    AgentId.CURSOR: DetectionLevel.RECENT_USE,
-    AgentId.WINDSURF: DetectionLevel.INSTALLS_ONLY,
-    AgentId.KIRO: DetectionLevel.RECENT_USE,
-    AgentId.TRAE: DetectionLevel.INSTALLS_ONLY,
-    AgentId.CLAUDE_DESKTOP: DetectionLevel.INSTALLS_ONLY,
-    AgentId.CHATGPT_CODEX_DESKTOP: DetectionLevel.INSTALLS_ONLY,
-}
-
-# The Watcher client's agent integrations are named differently from inventory agents. Inventory code
-# looks Watcher's hooks up through this mapping instead of naming the integrations itself: shared client
-# code may not name an integration (test_harness_plugin_boundary.py), so the mapping cannot live there.
-INTEGRATION_AGENT_IDS: Final[dict[str, AgentId]] = {
-    "claude_code": AgentId.CLAUDE_CODE,
-    "codex": AgentId.CODEX,
-    "copilot": AgentId.GITHUB_COPILOT_CLI,
-}
+# Re-exported: inventory code names agents and detection levels through this module.
+from watcher_sdk.agent_catalog import AgentId as AgentId
+from watcher_sdk.agent_catalog import DetectionLevel as DetectionLevel
 
 Surface = Literal["cli", "ide", "ide_extension", "desktop_app", "sdk"]
 # Whether Watcher's own hooks are set up for the agent on this machine: `on` when they are installed,

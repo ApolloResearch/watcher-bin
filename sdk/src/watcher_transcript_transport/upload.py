@@ -11,12 +11,14 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Iterator, Sequence
+from contextvars import ContextVar, Token
 from enum import Enum
 from typing import Any, Protocol, TypeVar
 
 __all__ = [
     "DEFAULT_UPLOAD_CHUNK_TARGET_BYTES",
     "PrefixHashes",
+    "SharedPlanning",
     "UploadCursor",
     "UploadMode",
     "UploadReason",
@@ -51,6 +53,65 @@ class UploadReason(Enum):
     UNCHANGED = "unchanged"
     REBASELINE_REQUIRED = "rebaseline_required"
     APPENDABLE = "appendable"
+
+
+# The block ``SharedPlanning`` opened in this context, if any: a one-slot holder of its remembered result, an
+# immutable ``(key, inputs, result)`` tuple or None (see ``shared_result``).
+_shared_planning: ContextVar[list[tuple[tuple[object, ...], tuple[object, ...], Any] | None] | None] = ContextVar(
+    "_shared_planning", default=None
+)
+
+
+class SharedPlanning:
+    """A block in which planning may reuse its latest result for the same input, released at the end.
+
+    One caller that plans the same snapshot several times in a row, such as a
+    policy hook that plans its grading window and then catches up the upload,
+    wraps that work in ``with SharedPlanning():``. A planner repeating a costly
+    step on identical input (``shared_result``) then computes it once. Only one
+    result is remembered, so the block pins at most one extra result, and the
+    planners' answers are the same with or without it. Threads started with
+    the block's context, such as ``asyncio.to_thread``, share it, and may run
+    at once (a timed-out step's thread keeps going while the caller moves on);
+    outside a block nothing is remembered.
+    """
+
+    __slots__ = ("_token",)
+    _token: Token[list[tuple[tuple[object, ...], tuple[object, ...], Any] | None] | None]
+
+    def __enter__(self) -> SharedPlanning:
+        self._token = _shared_planning.set([None])
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        _shared_planning.reset(self._token)
+
+
+_T = TypeVar("_T")
+
+
+def shared_result(  # noqa: UP047 - the Remote Collector runs this module on Python 3.10
+    kind: str, inputs: Sequence[object], compute: Callable[[], _T]
+) -> _T:
+    """``compute()``, reused when the enclosing ``SharedPlanning`` block's latest result was ``kind`` of these inputs.
+
+    ``inputs`` are compared by identity, element by element, and the block
+    keeps them alive alongside the result, so an equal key always means the
+    very same objects. Callers must not mutate the inputs or the result.
+    Threads sharing the block may race: each reads the remembered entry once
+    and replaces it whole, so a hit always returns the result stored with its
+    own key, and concurrent misses only repeat work.
+    """
+    slot = _shared_planning.get()
+    if slot is None:
+        return compute()
+    key = (kind, *map(id, inputs))
+    remembered = slot[0]
+    if remembered is not None and remembered[0] == key:
+        return remembered[2]
+    result = compute()
+    slot[0] = (key, tuple(inputs), result)
+    return result
 
 
 # These records stay dependency-free for hook startup and cannot use the

@@ -62,8 +62,8 @@ Watcher controls the policy; the integration applies its returned decision:
 | Server result | Example behavior |
 | --- | --- |
 | Enforce: allow | Resume the framework's normal tool dispatch. This also honors an administrator's configured allow on a grading failure. |
-| Enforce: deny | Raise `ToolBlocked` before the tool body executes. |
-| Enforce: escalate | Wait for the supplied human-approval callback, or raise `ApprovalRequired` if no callback is configured. |
+| Enforce: deny | Report the call `blocked`, then raise `ToolBlocked` before the tool body executes. |
+| Enforce: escalate | Wait for the supplied human-approval callback, or report the call `blocked` and raise `ApprovalRequired` if no callback is configured. |
 | Observe: deferred | Preserve the framework's ordinary dispatch and permissions; Watcher's judgment does not block the call. |
 | Paused: deferred | Preserve ordinary dispatch and permissions; Watcher submits the transcript without grading. |
 
@@ -100,7 +100,7 @@ The approved tool stays blocked if reporting or readback fails.
 Human reporting needs session-read access and permission to update the session
 as its owner or with `sessions:write:any`.
 For a service API key, configure `sessions:ingest`, `sessions:findings:read:any`,
-`sessions:content:read:any` and `sessions:write:any` for transcript recording and human-decision reporting.
+`sessions:content:read:any` and `sessions:write:any` for transcript recording and for reporting human decisions, refusals and cancellations.
 An ingest-only key cannot complete human reporting. The lookup/upload/readback deadline is
 `human_audit_timeout`, default 10 seconds. Later requests include recent human
 choices as grading context; that context is separate from the recorded audit.
@@ -125,6 +125,107 @@ confirms evaluation or request acceptance; transcript/decision storage runs afte
 the response and has no durability acknowledgement. Session-write permission is
 required for recording even when the policy decision itself succeeds.
 
+Watcher records each evaluated call as pending and settles it from the call's
+result in a later request: a result without an `error` from a call Watcher let
+through is recorded as completed. `error` means only that the tool failed while
+running. A refused or cancelled call keeps ADK's refusal text as its result, and
+its status goes into Watcher's decision record instead.
+
+Refused and cancelled calls:
+
+- The Monitor reports `blocked` for a Watcher denial or for an escalation with no
+  approval callback. A person's rejection is already recorded as `blocked` with
+  the human choice. A call cancelled while it is being decided, including while a
+  person is asked, is reported as `cancelled`, without inventing an answer.
+- A tool that requires confirmation (`FunctionTool(..., require_confirmation=True)`)
+  passes through the before-tool callback twice: once to ask for confirmation,
+  then with the answer. Watcher judges the call only on the first pass. The
+  second pass is accepted only for a call the callback released on the first
+  pass, in the same process, with the same tool name and arguments; anything
+  else is refused with `ToolBlocked`. The first answer decides: an approved call
+  runs once, and a replayed approval, an approval after a rejection, or an
+  approval for a call `report_status` was asked to report `blocked` or
+  `cancelled` is refused. That last holds from the moment `report_status`
+  accepts the call, while its upload runs and even if the upload fails. A rejected call is reported `blocked` once, with
+  no human decision recorded because the prompt was ADK's own, and ADK answers
+  it with its own rejection, which is recorded without `error`; rejecting a call
+  already reported keeps its reported status. The converter leaves out ADK's
+  confirmation request, the answers and the placeholder result given while an
+  answer is awaited, so an unanswered call has no result and stays pending.
+- For a refusal or cancellation your application makes after Watcher let a call
+  through, call `await monitor.report_status(call_id, name, arguments, "blocked")`
+  (or `"cancelled"`).
+
+Reports use the same upload, readback, deadline (`human_audit_timeout`) and
+permissions as human decisions, and update only a call whose Watcher evaluation
+the Monitor received. A reported `blocked` or `cancelled` stands; a `completed`
+or `unknown` status, which Watcher settles from the result text the agent saw,
+is replaced. `report_status` returns `False` for a call with no Watcher
+evaluation, and for a call already reported or being reported, including a
+person's rejection, since the first report stands. When a report fails, the
+refusal or cancellation still propagates, with the reporting failure as its
+cause, and a later `record()` reports it (see below); a failed report for a
+rejected confirmation stops the run.
+
+Calls whose tools failed: ADK reports these as a function response with a truthy
+top-level `error` key (for example missing arguments, or what an
+`on_tool_error_callback` returned). The converter keeps that response as the tool
+message's content and also sets the message's `error`. A tool that reports
+failure any other way, such as an MCP `isError` result or a `status` field, is
+recorded as having run; return `{"error": ...}` from the tool or from an
+`on_tool_error_callback` instead. A tool exception with no error callback stops
+the run, so that call has no result in the session events.
+
+A call the Monitor withholds without reporting its status at once is reported
+after the next `record()`:
+
+- `blocked` after a monitoring failure (a timeout, a transport error or a
+  malformed response), or after an approval callback that raised or returned a
+  non-boolean, or whose human-decision report failed. Only the execution status
+  is reported, so it never invents a person's answer and keeps one already
+  stored.
+- `cancelled` when it was cancelled before Watcher answered it. When one call is refused, ADK cancels its
+  parallel siblings, so this includes a sibling Watcher had not yet answered.
+- The status of its report, when that report failed.
+
+Watcher may hold no decision for such a call, or record one later, and stores
+the call from the transcript `record()` sends. So `record()` then waits up to
+`human_audit_timeout` for the call to be stored on any branch of the session,
+pausing longer between lookups as it waits. It uploads the call's status,
+creating its decision record if there is none, and reads it back. A decision
+Watcher records afterwards keeps that status.
+
+If a report fails, `record()` raises `StatusNotRecorded`, a `ToolBlocked`, after
+the transcript was accepted. Its `failures` maps each call ID whose status the
+Monitor could not confirm to its error; an upload stored before its readback
+failed may already have recorded that status. A
+failure a retry may fix (the call not stored in time, a transport failure, rate
+limiting or a server error) is retried by later `record()` calls, up to
+`late_report_attempts` (3 by default) in all; the exception's `retrying` names
+those calls. After a permanent failure, such as a refused permission, or after
+the last attempt, the Monitor stops reporting the call and lists it with its
+error in `monitor.unrecorded`.
+
+Cancelling `record()` stops these reports at once. A call whose report it stops
+stays queued without using an attempt. Its status is unconfirmed, since an upload
+may have been stored before the cancellation; a later report that finds it stored
+does not upload it again. A report that failed before the cancellation counts as
+usual, so check `unrecorded` after a cancellation too.
+
+To retry a person's rejection whose report failed, call
+`report_human_decision(..., approved=False)` again. The Monitor never released
+the call, so this records the rejection even after Watcher has settled the call
+from its refusal text, or after a status report stored `blocked`, unless a human
+decision is already recorded. The call then leaves the queue and `unrecorded`.
+
+A call still queued when the run ends, or listed in `unrecorded`, has no
+confirmed status. When Watcher holds no `blocked` or `cancelled` status for such
+a call, it settles the call from the next request carrying its result: completed
+only if it let the call through (an allow, or a deferral in observe mode) and
+the result has no `error`, otherwise `unknown`. A call Watcher answered with a
+paused-mode bypass runs, so it is never queued, and `report_status` reports
+nothing for it.
+
 You can also observe a conversation that already completed using
 `await observe(client, conversation_id, native_history)` or `python -m demo.observe`.
 That separate import path follows the organization's policy without an override,
@@ -133,6 +234,11 @@ submits the final transcript. Paused mode records history without grading.
 Returned decisions are advisory to completed actions; they cannot prevent or
 undo an effect, and the importer does not report an action as blocked.
 
+The importer refuses a history with a rejected tool confirmation. It cannot
+report that call as blocked, and ADK's refusal carries no `error`, so Watcher
+would record the call as completed whenever it let the call through. Record such
+conversations through the Monitor instead. Approved and unanswered confirmations import normally.
+
 When this retrospective observer runs against an organization in Enforce mode,
 Watcher can store an assessment as an applied denial and count it in automatic
 denial totals after the tool has run. Those records describe the assessment;
@@ -140,7 +246,8 @@ they do not show that execution was prevented.
 
 ## Scope and limitations
 
-Text system instructions and text/function event content are supported.
+Text system instructions and text/function event content are supported, and so
+are tools that require confirmation, under the Monitor (see above).
 Tool-result dictionaries become JSON; wrapped ADK results are unwrapped. Retain the
 complete session events and the `ConversationHistory` object; its state is not
 persisted automatically. Historical imports need the original resolved instructions

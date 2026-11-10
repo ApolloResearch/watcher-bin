@@ -11,7 +11,7 @@ from collections.abc import Iterator
 
 import openai
 import pytest
-from aigw_support import AIGW, Fixture, Provider, SimulatedWatcher, ask, client, running_gateway
+from aigw_support import AIGW, Fixture, Provider, SimulatedWatcher, ask, client, running_gateway, wait_for_recording
 from watcher_agent_router.notices import ALTERNATIVE_FAILED, SYSTEM_NOTICE
 
 pytestmark = pytest.mark.skipif(not AIGW, reason="Set AIGW_BIN to an aigw binary to run native gateway tests")
@@ -43,9 +43,14 @@ def test_refused_proposal_is_replaced_by_an_approved_alternative(stack: dict) ->
     assert content.startswith("WATCHER NOTICE (added by Watcher, not written by the assistant): Watcher blocked")
     assert content.endswith("\n\nAlternative 1.")
     original, alternative = (hook for _path, _headers, hook in stack["watcher"].requests[hooks_before:])
-    assert original["external_ids"] == {"other": raw.headers["x-watcher-conversation-id"]}
-    assert alternative["external_ids"]["other"].startswith("agent-router:")
-    assert alternative["external_ids"]["other"] != original["external_ids"]["other"]
+    # Both are graded in the client request's session, where the refused call already has its decision.
+    conversation = {"other": raw.headers["x-watcher-conversation-id"]}
+    assert original["external_ids"] == alternative["external_ids"] == conversation
+    assert original["withholds_refused_calls"] is alternative["withholds_refused_calls"] is True
+    # The delivered reply is recorded afterwards, naming the refused proposal's call.
+    recording = wait_for_recording(stack, conversation)
+    assert recording["withheld_tool_use_ids"] == ["call-deny"]
+    assert recording["request_body"]["messages"][-1]["tool_calls"][0]["id"] == "call-alternative-1"
     # The provider and Watcher both saw the client's request with Watcher's notice ahead of it.
     [(_, _, first), (_, headers, body)] = stack["provider"].requests[provider_before:]
     assert first["messages"][0] == {"role": "system", "content": SYSTEM_NOTICE}

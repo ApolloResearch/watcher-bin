@@ -61,7 +61,14 @@ class ScrubbedSessionDetailResponse:
         user_last_name (None | str | Unset):
         user_email (None | str | Unset):
         external_ids (None | ScrubbedSessionDetailResponseExternalIdsType0 | Unset):
-        metadata (None | ScrubbedSessionDetailResponseMetadataType0 | Unset):
+        metadata (None | ScrubbedSessionDetailResponseMetadataType0 | Unset): Values Watcher derives from the session's
+            stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint'
+            (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's
+            originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing
+            value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in
+            semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent
+            when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients
+            must tolerate additional keys.
         ingest_kinds (list[ScrubbedSessionDetailResponseIngestKindsItem] | Unset): Sorted distinct recorded delivery
             paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report
             other.

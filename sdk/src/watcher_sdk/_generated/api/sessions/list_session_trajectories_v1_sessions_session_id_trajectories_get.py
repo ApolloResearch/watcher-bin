@@ -64,7 +64,12 @@ def sync_detailed(
 ) -> Response[HTTPValidationError | TrajectoryListInSessionResponse]:
     """List Session Trajectories
 
-     List all trajectories in a session. 404 for sessions the caller can't read.
+     List a session's transcripts, reconciled across recordings. 404 for sessions the caller can't read.
+
+    A transcript that merges a Watcher client recording with a gateway's lists
+    once, under its canonical id, with its reading order's message count and
+    grades recorded against any recording it covers. Each real fork of the
+    conversation is still its own entry.
 
     Args:
         session_id (str):
@@ -95,7 +100,12 @@ def sync(
 ) -> HTTPValidationError | TrajectoryListInSessionResponse | None:
     """List Session Trajectories
 
-     List all trajectories in a session. 404 for sessions the caller can't read.
+     List a session's transcripts, reconciled across recordings. 404 for sessions the caller can't read.
+
+    A transcript that merges a Watcher client recording with a gateway's lists
+    once, under its canonical id, with its reading order's message count and
+    grades recorded against any recording it covers. Each real fork of the
+    conversation is still its own entry.
 
     Args:
         session_id (str):
@@ -121,7 +131,12 @@ async def asyncio_detailed(
 ) -> Response[HTTPValidationError | TrajectoryListInSessionResponse]:
     """List Session Trajectories
 
-     List all trajectories in a session. 404 for sessions the caller can't read.
+     List a session's transcripts, reconciled across recordings. 404 for sessions the caller can't read.
+
+    A transcript that merges a Watcher client recording with a gateway's lists
+    once, under its canonical id, with its reading order's message count and
+    grades recorded against any recording it covers. Each real fork of the
+    conversation is still its own entry.
 
     Args:
         session_id (str):
@@ -150,7 +165,12 @@ async def asyncio(
 ) -> HTTPValidationError | TrajectoryListInSessionResponse | None:
     """List Session Trajectories
 
-     List all trajectories in a session. 404 for sessions the caller can't read.
+     List a session's transcripts, reconciled across recordings. 404 for sessions the caller can't read.
+
+    A transcript that merges a Watcher client recording with a gateway's lists
+    once, under its canonical id, with its reading order's message count and
+    grades recorded against any recording it covers. Each real fork of the
+    conversation is still its own entry.
 
     Args:
         session_id (str):

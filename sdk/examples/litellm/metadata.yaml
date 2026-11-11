@@ -86,10 +86,10 @@ limitations:
   mode: both
   cause: integration-scope
   kind: constraint
-  description: Requests must supply x-watcher-session-id or valid native Claude
-    session UUID or Codex thread UUID metadata. Without either, the callback returns
-    HTTP 400 before provider generation. Both forms produce a litellm-prefixed
-    alias and the Gateway source. Clients unable to supply one need an adapter.
+  description: An explicit x-watcher-session-id overrides native identity and must be
+    distinct for each child stored separately. Otherwise use native Claude Code,
+    Codex or OpenCode conversation identity. Missing or invalid selected identity
+    returns HTTP 400 before generation. Both forms retain the Gateway source.
 - id: whole-response-withheld
   mode: enforce
   cause: integration-scope

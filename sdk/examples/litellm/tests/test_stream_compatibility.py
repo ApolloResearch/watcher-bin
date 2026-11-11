@@ -130,7 +130,61 @@ def test_native_client_call_cannot_change_after_its_executable_fields_are_seen(k
         state.add(event)
 
 
-@pytest.mark.parametrize("execution", ["server", None])
+def test_provider_run_tool_search_streams_as_context_before_the_gated_call() -> None:
+    search = {**native_call("tool_search_call"), "call_id": None, "execution": "server"}
+    call = {"type": "function_call", "id": "fc", "call_id": "mcp", "name": "pizza-list_menu", "arguments": "{}"}
+    state = IncrementalStream("responses")
+    state.add(responses_start())
+    frames = state.add({"type": "response.output_item.added", "output_index": 0, "item": search})
+    frames += state.add({"type": "response.output_item.done", "output_index": 0, "item": search})
+    assert all(frame.requires == set() for frame in frames)
+    state.add({"type": "response.output_item.added", "output_index": 1, "item": call})
+    assert state.calls == [1]
+
+
+def test_provider_run_tool_search_cannot_complete_as_an_ungated_client_search() -> None:
+    client_search = native_call("tool_search_call")
+    state = IncrementalStream("responses")
+    state.add(responses_start())
+    state.add(
+        {
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {**client_search, "call_id": None, "execution": "server"},
+        }
+    )
+    with pytest.raises(UnsupportedStream, match="who executes"):
+        state.add({"type": "response.output_item.done", "output_index": 0, "item": client_search})
+
+
+def test_created_by_that_github_never_sent_is_not_streamed_back() -> None:
+    from openai.types.responses import (
+        Response,
+        ResponseOutputItemAddedEvent,
+        ResponseOutputItemDoneEvent,
+        ResponseToolSearchCall,
+    )
+
+    search = ResponseToolSearchCall.model_validate(
+        {**native_call("tool_search_call"), "call_id": None, "execution": "server"}
+    )
+    assert search.created_by is None and "created_by" not in search.model_fields_set
+    state = IncrementalStream("responses")
+    state.add(responses_start())
+    (added,) = state.add(
+        ResponseOutputItemAddedEvent(type="response.output_item.added", output_index=0, item=search, sequence_number=1)
+    )
+    (done,) = state.add(
+        ResponseOutputItemDoneEvent(type="response.output_item.done", output_index=0, item=search, sequence_number=2)
+    )
+    completed_body = Response.model_construct(**responses_body([search]))
+    (completed,) = state.add({"type": "response.completed", "response": completed_body.model_dump(exclude_unset=True)})
+    assert "created_by" not in added.data["item"]
+    assert "created_by" not in done.data["item"]
+    assert "created_by" not in completed.data["response"]["output"][0]
+
+
+@pytest.mark.parametrize("execution", ["remote", "unknown", None])
 def test_tool_search_without_client_execution_remains_unsupported(execution: str | None) -> None:
     state = IncrementalStream("responses")
     state.add(responses_start())
@@ -267,3 +321,29 @@ def test_messages_upstream_ping_before_start_is_dropped_before_the_official_sdk(
         event = TypeAdapter(RawMessageStreamEvent).validate_json(sse.data)
         snapshot = accumulate_event(event=event, current_snapshot=snapshot)
     assert snapshot is not None and snapshot.id == "msg_container" and snapshot.stop_reason == "end_turn"
+
+
+def test_provider_search_is_context_before_a_namespaced_client_call() -> None:
+    search = {**native_call("tool_search_call"), "execution": "server", "call_id": None}
+    output = {"type": "tool_search_output", "id": "search_output", "execution": "server", "call_id": None, "tools": []}
+    call = {
+        "type": "function_call",
+        "id": "function_item",
+        "call_id": "call_1",
+        "namespace": "desk",
+        "name": "desk-crm_whoami",
+        "arguments": "{}",
+        "status": "completed",
+    }
+    state = IncrementalStream("responses")
+    state.add(responses_start())
+    for index, item in enumerate([search, output, call]):
+        added = state.add({"type": "response.output_item.added", "output_index": index, "item": item})
+        assert added[0].requires == ({2} if index == 2 else set())
+        assert state.ready() is None
+        state.add({"type": "response.output_item.done", "output_index": index, "item": item})
+    assert state.calls == [2]
+    assert state.ready() == 2
+    state.allowed.add(2)
+    state.add({"type": "response.completed", "response": responses_body([search, output, call])})
+    state.finish()

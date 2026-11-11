@@ -3,7 +3,8 @@
 Experimental example: a LiteLLM proxy callback that streams text as it arrives
 and withholds client tool calls until Watcher permits them. Watcher parses the
 provider format, applies your organization's policy and records the
-conversation. This example is not an officially supported integration.
+conversation. Operators integrate this example into their own LiteLLM build;
+the native Copilot configuration and tested versions are described below.
 
 It covers the proxy's three client-facing APIs: OpenAI Chat Completions
 (`/v1/chat/completions`), OpenAI Responses (`/v1/responses`) and Anthropic
@@ -192,14 +193,8 @@ to proceed. Do not automatically resume it with an alternative approach.
 ## Prerequisites
 
 - Python 3.12 or later and `uv`.
-- A Watcher server and an API key that can monitor tool calls and write
-  sessions. The server must accept the pre-tool-use hook's raw format. A
-  server released before the `withheld_tool_use_ids` and
-  `withholds_refused_calls` fields existed rejects them with HTTP 422. The
-  callback then logs a warning and sends the same request again without them.
-  That server still evaluates every call and records the delivered response.
-  It records refused calls as `pending` rather than `blocked`, and does not
-  show the withheld calls before the delivered response.
+- A Watcher server from the same release as the callback and SDK or newer,
+  and an API key that can monitor tool calls and write sessions.
 - Provider credentials for LiteLLM.
 
 ## Install and configure
@@ -219,39 +214,59 @@ Then start the proxy with the Watcher settings in its environment:
 ```bash
 export WATCHER_API_URL=https://watcher.example.com/api
 export WATCHER_API_KEY=...
+export LITELLM_MASTER_KEY=...
 .venv/bin/litellm --config /tmp/watcher-litellm.yaml --port 4000
 ```
 
 `demo/.env.example` lists these variables and the ones the packaged
 configuration reads (`LITELLM_MODEL`, `PROVIDER_API_KEY`). The callback reads
-the Watcher variables when it evaluates the first response, not at import. Set
-up LiteLLM's own authentication and route restrictions before exposing the
-proxy.
+the Watcher variables when it evaluates the first response, not at import.
+Use a strong generated `LITELLM_MASTER_KEY` and provision personal LiteLLM
+keys for developers. Set up route restrictions before exposing the proxy.
 
 To use a released SDK wheel in another environment, install it first, then this
 package with `uv pip install --python /path/to/.venv/bin/python .`.
 
 ## Sessions and identity
 
-Every request must supply a stable conversation ID. Send
-`x-watcher-session-id`, or retain valid native Claude Code session UUID or
-Codex thread UUID metadata. Without either, the callback returns HTTP 400
-before contacting the provider. Matching partial replies by shared text can
-split one conversation or confuse independent conversations with the same
-opening, so this callback does not use that fallback.
+Every request needs a stable identity. If `x-watcher-session-id` is supplied,
+Watcher uses it as the sole session-matching ID, even for a recognized agent.
+Keep it stable across turns and give each child a distinct ID to store it
+separately. Reusing an ID groups those requests into one session.
 
-Keep the ID stable across turns and different between conversations. Sharing
-an ID between users merges their conversations, so untrusted clients must not
-be able to choose another user's ID. A client that cannot send the header or
-native metadata needs an adapter that supplies it.
+Without that override, Watcher resolves native identity:
 
-The callback stores the header value with a `litellm:` prefix, so a header of
-`conversation-7` becomes the Watcher conversation ID `litellm:conversation-7`.
-A header that already starts with `litellm:` is sent unchanged. Include the
-prefix when you search by external ID. Without an explicit header, native
-metadata produces `litellm:claude:<session-uuid>` or
-`litellm:codex:<thread-uuid>`. Watcher also retains its recognized native
-identity. These aliases give the session the Gateway source in the Analyzer.
+| Agent | Identity retained by Watcher |
+| --- | --- |
+| Claude Code | Root session UUID from metadata or `x-claude-code-session-id`; children also use `x-claude-code-agent-id`. |
+| Codex | `client_metadata.thread_id`, which differs between parent and child. The family-wide `session_id` is not a conversation ID. |
+| OpenCode | `x-opencode-session-id` or `x-session-id`; both must agree when present. |
+| Other callers | Must supply `x-watcher-session-id`. |
+
+The callback rejects missing or invalid selected identity with HTTP 400 before
+provider generation. Custom IDs must contain 1–1,024 characters, with no control
+characters, and cannot be whitespace-only. An invalid override never falls back
+to native identity. A valid override ignores native identity fields, including
+malformed ones, but preserves agent recognition, tool translation and grading.
+Without an override, relevant native IDs must be valid and consistent; headers
+belonging to other agents are ignored. Identity is not authentication; preserve
+the proxy's access controls.
+
+In API-key mode, custom IDs receive a `litellm:` prefix unless already present.
+The value after that prefix must be nonempty. With an override, no native IDs are retained as
+matching aliases. Identity and authentication headers are not forwarded to Watcher.
+
+The Analyzer reports LiteLLM from the capture source, independently of the
+conversation ID. It retains every observed integration, including duplicate
+uploads, and can filter by LiteLLM or the Gateway category.
+In API-key mode, Claude and Codex native identities match local Watcher uploads.
+Combining integrations can still produce extra branches or duplicate concurrent grading.
+
+For child capture and linking limits, see
+[subagent coverage](https://watcher-docs.apolloresearch.ai/concepts/subagent-coverage/#gateway-captures).
+
+**Existing sessions:** Mixed history is not split or rewritten. Switching between
+custom and native identity can start a separate session; older history remains available.
 
 For a custom Chat Completions client, replace the model with your configured
 alias and reuse the header value for subsequent turns:
@@ -273,6 +288,218 @@ or that one client response produces exactly one stored trajectory.
 
 The proxy key's `user_email` is sent as the developer to attribute; Watcher
 honors it only for API keys allowed to attribute sessions to other users.
+
+### Watcher behind a trusted authentication proxy
+
+Set `WATCHER_AUTH_MODE=proxy` when Watcher accepts identity headers from a
+trusted gateway. Configure these variables on the LiteLLM server:
+
+```bash
+export WATCHER_AUTH_MODE=proxy
+export WATCHER_API_URL=https://watcher.example.com/api
+export WATCHER_PROXY_AUTH_TOKEN=...
+export WATCHER_PROXY_HEADER_USER=x-forwarded-user
+export WATCHER_PROXY_HEADER_ROLE=x-forwarded-user-role
+```
+
+Use the API base URL, including `/api` unless the deployment changes that prefix.
+The token must match `WATCHER_PROXY_AUTH_TOKEN` in the self-host bundle
+(`XYLON_PROXY_AUTH_TOKEN` on the backend). Header names must match
+Watcher's proxy-authentication settings. Keep the token in server-side secret
+storage and restrict access to Watcher so callers cannot bypass its trusted
+proxy. Developers do not receive this token or a Watcher API key.
+
+Provision each LiteLLM account with a stable `user_id` and a verified
+`user_email` set to the developer's company email. Watcher uses this address
+to identify the developer and assign their sessions. It must match the email
+their sign-in proxy sends to Watcher. The operator owns that mapping;
+client headers and request-body fields do not establish identity. Shared
+master keys and accounts without an ID or valid email are rejected in this
+mode. Emails must be ASCII because they travel in HTTP headers. The callback
+sends the trusted email with the `member` role and scopes
+conversation IDs to the authenticated account. Rotating its key preserves
+its sessions; two accounts supplying the same conversation ID remain distinct.
+Native root and child identities are resolved by the same rules as API-key
+mode, then scoped to the account. Only this scoped identity is sent to Watcher,
+so these sessions do not merge with a local client's native session IDs.
+
+The stored external ID is `litellm:` followed by an account-scoped UUID,
+rather than the readable aliases in the API-key example above. To derive a
+generic client's stored ID for a lookup, supply the provisioned account and
+the prefixed client ID to the example's helper:
+
+```python
+from litellm.proxy._types import UserAPIKeyAuth
+from watcher_litellm.proxy_auth import account_session
+
+user = UserAPIKeyAuth(user_id="developer-123", user_email="developer@example.com")
+print(account_session(user, "litellm:conversation-7"))
+```
+
+Missing or blank server URL/token settings return HTTP 503 before provider
+generation. Correct the gateway configuration before retrying.
+
+## Native GitHub Copilot
+
+The native adapter uses each developer's existing GitHub login and Copilot
+seat. It does not need a personal LiteLLM key, BYOK variables, a custom
+launcher or a Watcher client on the developer's machine. It is separate from
+LiteLLM's dashboard account-linking flow. The example targets github.com
+accounts and serves three inference formats: OpenAI Responses (GPT, Grok and
+MAI), Anthropic Messages (Claude) and Chat Completions (Gemini). The Copilot
+CLI reaches it through a per-user `copilotUrl` or Copilot's managed
+`copilotInferenceUrl` setting. VS Code agent sessions in the Copilot harness
+and the GitHub Copilot app reach it only through the managed setting (step 6).
+Other Copilot clients, VS Code features outside the Copilot harness, GHE hosts,
+BYOK and WebSocket inference are outside this configuration.
+
+The gateway keeps provider-run searches out of the copy sent to Watcher, so
+grouped tool-server calls also work with an older Watcher server. Native Copilot
+uses the same `<server>-<tool>` name for plain and grouped calls in policy
+rules, recorded calls and gateway notices, for example `desk-crm_whoami`.
+
+The tested versions are Copilot CLI 1.0.109 and LiteLLM 1.108.3. The supplied
+`copilot.yaml` uses the `github_copilot/` provider. It names tested GPT, Grok and
+MAI models, and routes GPT, Claude and Gemini models through family
+wildcards. Exact names win over wildcards. GitHub's model policy for each account decides which models a
+developer can use; the gateway's list only decides which models it routes. Auto
+selection and Copilot's built-in subagents can choose a model other than the
+developer's; a request for a model the list does not route fails. When you edit
+the list:
+
+- Native GPT requests keep the Responses format, including models routed
+  through `gpt-*`. Give Grok and MAI models their own entries with
+  `model_info.mode: responses` so LiteLLM also keeps their Responses format.
+- Keep `allowed_openai_params: [reasoning_effort]` on Gemini entries, because
+  Copilot sends that field and LiteLLM otherwise refuses it.
+- For a Claude model missing from LiteLLM's catalog, give it its own entry with
+  `model_info.supports_adaptive_thinking: true`; otherwise LiteLLM drops the
+  thinking settings Copilot sends.
+
+1. Install this example with your chosen LiteLLM version. The dependency floor is LiteLLM 1.108.3; that is the tested version.
+   Later releases need validation in your deployment. The example installs
+   LiteLLM's `extra_proxy` dependencies, including the Prisma migration CLI.
+   If you supply LiteLLM separately, include that extra. Copy the reference configuration:
+
+   ```bash
+   watcher-litellm-copilot-config > copilot.yaml
+   ```
+
+2. Create `copilot-users.yaml` with operator-verified, immutable GitHub account
+   IDs as quoted keys and developers' company emails as values. For example:
+
+   ```yaml
+   "123456": developer@example.com
+   ```
+
+   Use GitHub's authenticated user API to verify the account ID. Watcher uses
+   the mapped company email to identify the developer and assign their sessions.
+   It must match the email their sign-in proxy sends to Watcher. Verify the
+   mapping with your company directory; do not infer it from a public GitHub
+   profile. The gateway verifies the
+   account and mapping before reading request bodies, including discovery and
+   model selection. Unmapped accounts cannot use these routes or run inference.
+   The mapping and server secrets are controlled by operators, not by the
+   developers sending model requests.
+
+3. Configure the gateway process:
+
+   ```bash
+   export CONFIG_FILE_PATH="$PWD/copilot.yaml"
+   export WATCHER_COPILOT_USERS_FILE="$PWD/copilot-users.yaml"
+   export WATCHER_AUTH_MODE=proxy
+   export WATCHER_API_URL=https://watcher.example.com/api
+   export WATCHER_PROXY_AUTH_TOKEN=...
+   export LITELLM_MASTER_KEY=...
+   export DATABASE_URL=postgresql://litellm:password@database:5432/litellm
+   ```
+
+   Use a strong generated master key and secret storage for credentials.
+   `DATABASE_URL` names the gateway's PostgreSQL database, separate from
+   Watcher's database. It must be an asyncpg-compatible PostgreSQL URL.
+   The native mapping stores account-scoped session IDs, task UUIDs, spawning
+   call IDs and SHA-256 task-prompt digests. It stores no GitHub credentials or
+   prompt text. Keep this data across gateway restarts and provide the same
+   database to every replica.
+
+4. Run migrations separately before starting either replica. First generate
+   LiteLLM's Prisma client, as the Dockerfile does; without it the gateway
+   cannot start with `DATABASE_URL` set:
+
+   ```bash
+   prisma generate --schema "$(python -c 'import litellm, pathlib; print(pathlib.Path(litellm.__file__).parent / "proxy/schema.prisma")')"
+   litellm --config copilot.yaml --skip_server_startup
+   watcher-litellm-copilot-migrate
+   export DISABLE_SCHEMA_UPDATE=true
+   uvicorn watcher_litellm.copilot:app --host 0.0.0.0 --port 4000 --workers 1
+   ```
+
+   Rerun `watcher-litellm-copilot-migrate` on upgrades before starting new
+   replicas. Its additive schema changes remain compatible with old replicas.
+   Across the supported inference formats, a new child links to its spawning `task` call when
+   its initial prompt has one exact match under that parent task. This covers
+   both sync and background children. An unknown or duplicate prompt retains
+   only the parent link; an assigned spawning call stays fixed across resume.
+   New children keep only parent links if their parent task was handled by a
+   replica without this matching support. Start new sessions after every replica has been upgraded
+   to get spawning links throughout the session.
+
+   Use two replicas with one worker each. The adapter runs around LiteLLM's
+   application, so start this ASGI entry point rather than `litellm --config`.
+   Keep both callback entries in `copilot.yaml`. The provider callback supplies
+   native credentials; the original Watcher callback enforces tool decisions.
+   Registering a subclass instead can cause LiteLLM to skip inherited hooks.
+
+5. Expose the gateway over trusted HTTPS. Route `/copilot/` to it without
+   stripping the prefix. Only discovery (`/meta`, `/models`), model selection
+   (`/auto`) and HTTP inference (`/responses`, `/v1/messages` and
+   `/chat/completions`) are served under that prefix. The three
+   discovery/selection routes use LiteLLM's stock pass-through; inference uses
+   the ordinary Copilot provider and Watcher hooks. Each inference route
+   accepts only its own format's request fields and supported client tools.
+   Responses also accepts grouped tools and provider-run tool searches.
+   Provider-hosted actions would run before Watcher sees them and are refused.
+   For the same reason, do not enable LiteLLM features that run tools inside
+   the gateway, such as web search interception or MCP servers.
+   Copilot's deferred MCP tools (grouped by server in a `namespace` tool) and
+   its `tool_search` are accepted on Responses: GitHub's search only loads
+   definitions the request already lists, and any tool the model then calls is
+   held for Watcher. A refused request logs `copilot_request_refused` with the
+   reason and number of rejected fields, headers or tool types. Names and
+   values stay out of logs. Other
+   inference routes and WebSockets are rejected. Keep request/response body
+   logging disabled on the ingress and gateway. The supplied configuration
+   disables LiteLLM message and spend logging.
+
+6. Each developer signs in to the normal Copilot CLI and sets `copilotUrl` in
+   `~/.copilot/settings.json` (or `$COPILOT_HOME/settings.json` when overriding
+   the configuration directory) to the gateway's HTTPS URL ending in `/copilot`.
+   Preserve their other settings. Their existing GitHub credential travels to the
+   gateway and GitHub; developers do not receive the Watcher proxy token.
+   This per-user setting applies only to the CLI, and developers can remove it.
+   To route the Copilot CLI, VS Code agent sessions in the Copilot harness and
+   the GitHub Copilot app through the gateway on managed devices, deploy
+   Copilot's managed setting instead, for example in
+   `/Library/Application Support/GitHubCopilot/managed-settings.json` on macOS:
+
+   ```json
+   {"copilotInferenceUrl": "https://copilot.example.com/copilot"}
+   ```
+
+   Each client must be at least: Copilot CLI 1.0.106, VS Code 1.146.0, GitHub
+   Copilot app 1.2.0. Older clients ignore the setting and call GitHub
+   directly. Sign-in and model discovery stay with GitHub.
+   [Native Copilot through LiteLLM](https://watcher-docs.apolloresearch.ai/self-hosting/native-copilot-gateway)
+   covers the file location on each OS, permissions and verification.
+
+Native `x-client-session-id` identifies the root conversation across resume.
+Task and parent headers identify child conversations. The adapter stores the
+mapping before inference, creates separate Watcher child sessions and links
+them through Watcher's relationship API. Parent/child linkage waits for
+Watcher recording before releasing a child's executable tool call. An unknown
+parent, conflicting ancestry, storage failure or linkage failure stops that
+request. Deleting the mapping table breaks resumes and must be coordinated
+with retiring the corresponding sessions.
 
 ## Observe and enforce
 
@@ -331,8 +558,7 @@ to its HTTP timeout. Watcher may finish and record grading, including its
 usage, after the callback times out or the client disconnects.
 
 The callback does not retry a Watcher request that failed or timed out, because
-a retry can repeat billed LLM grading. Its one re-send follows an older server's
-HTTP 422 rejection of the newer fields, which happens before any grading.
+a retry can repeat billed LLM grading.
 
 ## Limits
 
@@ -340,7 +566,12 @@ HTTP 422 rejection of the newer fields, which happens before any grading.
   files and LiteLLM's provider pass-through endpoints (such as `/gemini` or
   `/bedrock`), are not checked. Block them in an enforcing deployment.
 - Tools that run on the provider's servers (for example hosted web search)
-  execute before the response exists and cannot be prevented.
+  execute before the response exists and cannot be prevented. Provider-run
+  tool searches pass through as context; the client call they select is
+  evaluated before release.
+- Calls created by the client itself cannot be judged before execution by a
+  model gateway. Copilot's `read_agent` after a background child finishes or
+  fails is one example; it can appear in later history as not evaluated.
 - Chat Completions tool arguments cannot be released before `finish_reason`:
   valid JSON or the start of another call does not prove that an earlier call
   will receive no more fragments. Text before the first call still streams.

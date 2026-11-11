@@ -1,0 +1,36 @@
+{
+  "id": "gemini-original",
+  "object": "chat.completion",
+  "model": "github_copilot/gemini-3.8-flash",
+  "created": 1,
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "tool_calls",
+      "message": {
+        "content": "I will create the file.",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "index": 0,
+            "function": {
+              "arguments": "{\"command\": \"touch orchid-lantern.txt\"}",
+              "name": "bash"
+            },
+            "id": "denied",
+            "type": "function"
+          }
+        ],
+        "provider_specific_fields": {
+          "reasoning_text": "Original reasoning.",
+          "reasoning_opaque": "opaque-original"
+        }
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 11,
+    "completion_tokens": 7,
+    "total_tokens": 18
+  }
+}

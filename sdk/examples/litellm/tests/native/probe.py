@@ -25,7 +25,6 @@ from uuid import UUID, uuid4
 
 import httpx
 from litellm.types.utils import ModelResponseStream
-from watcher_litellm.callback import SESSION_PREFIX
 from watcher_litellm.streams import assemble
 from watcher_litellm.system_notice import SYSTEM_NOTICE
 
@@ -321,7 +320,9 @@ def main() -> None:
                     url, headers={**headers, "X-Watcher-Session-Id": session_id}, json=body, timeout=30
                 )
                 assert response.status_code == 200, response.text
-                assert watcher_requests[-1]["external_ids"] == {"other": SESSION_PREFIX + session_id}
+                assert watcher_requests[-1]["conversation"] == {"namespace": "other", "id": f"litellm:{session_id}"}
+                assert watcher_requests[-1]["source"] == {"type": "gateway", "name": "litellm"}
+                assert "request_headers" not in watcher_requests[-1]
                 assert client_view(watcher_requests[-1]["request_body"]) == {
                     **body,
                     "litellm_session_id": session_id,
@@ -472,7 +473,7 @@ def main() -> None:
                         target.mkdir()
                         await wait_for_conversation(
                             client,
-                            external_ids={"openai-codex": [native_id]},
+                            external_ids={"other": ["litellm:" + explicit_id]},
                             final_text="Proposed tool call " + marker,
                             decision_ids=set(),
                             evidence=target,
@@ -492,7 +493,7 @@ def main() -> None:
                 "client_markers": client_markers,
             }
             (root / "identity-proof.json").write_text(json.dumps(proof, indent=2))
-            assert len(set(client_session_ids)) == 2 and len(set(session_ids)) == 1, proof
+            assert len(set(client_session_ids)) == 2 and len(set(session_ids)) == 2, proof
             assert not (root / "side-effect.txt").exists()
             results.append({"case": "recognized-harness-grouping", **proof})
         else:
@@ -553,7 +554,7 @@ def main() -> None:
                     # proposal branch beside the conversation the client actually received.
                     await wait_for_conversation(
                         client,
-                        external_ids={"other": [SESSION_PREFIX + client_session_id]},
+                        external_ids={"other": ["litellm:" + client_session_id]},
                         final_text="Proposed tool call " + case["token"],
                         decision_ids={case["call_id"]} if case.get("grades", 1) else set(),
                         evidence=initial,
@@ -561,7 +562,7 @@ def main() -> None:
                     )
                     await wait_for_conversation(
                         client,
-                        external_ids={"other": [SESSION_PREFIX + client_session_id]},
+                        external_ids={"other": ["litellm:" + client_session_id]},
                         final_text=expected_final,
                         decision_ids=set(),
                         evidence=root,

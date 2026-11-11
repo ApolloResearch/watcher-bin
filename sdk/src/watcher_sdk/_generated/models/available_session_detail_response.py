@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from ..models.available_session_detail_response_metadata_type_0 import (
         AvailableSessionDetailResponseMetadataType0,
     )
+    from ..models.capture_source import CaptureSource
     from ..models.grade_result import GradeResult
     from ..models.related_session_summary import RelatedSessionSummary
     from ..models.trajectory_summary import TrajectorySummary
@@ -49,7 +50,8 @@ class AvailableSessionDetailResponse:
             tolerate additional platform strings.
         started_at (datetime.datetime):
         ended_at (datetime.datetime):
-        message_count (int):
+        message_count (int): Messages in the session's longest trajectory; for a conversation the Watcher client and a
+            gateway both recorded, its longest reconciled transcript.
         created_at (datetime.datetime):
         trajectories (list[TrajectorySummary]):
         grades (list[GradeResult]):
@@ -68,11 +70,13 @@ class AvailableSessionDetailResponse:
             originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing
             value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in
             semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent
-            when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients
-            must tolerate additional keys.
+            when no stored message reported a usable value. Clients must tolerate additional keys.
         ingest_kinds (list[AvailableSessionDetailResponseIngestKindsItem] | Unset): Sorted distinct recorded delivery
             paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report
             other.
+        capture_sources (list[CaptureSource] | Unset): Distinct integrations observed delivering this session, including
+            duplicate uploads. Retained after content scrubbing. Historical categories without a known integration have a
+            null name.
         sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted; same
             values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone.
         content_state (Literal['available'] | Unset):  Default: 'available'.
@@ -107,6 +111,7 @@ class AvailableSessionDetailResponse:
     external_ids: AvailableSessionDetailResponseExternalIdsType0 | None | Unset = UNSET
     metadata: AvailableSessionDetailResponseMetadataType0 | None | Unset = UNSET
     ingest_kinds: list[AvailableSessionDetailResponseIngestKindsItem] | Unset = UNSET
+    capture_sources: list[CaptureSource] | Unset = UNSET
     sources: list[str] | Unset = UNSET
     content_state: Literal["available"] | Unset = "available"
     is_content_scrubbed: bool | Unset = False
@@ -213,6 +218,13 @@ class AvailableSessionDetailResponse:
                 ingest_kinds_item = ingest_kinds_item_data.value
                 ingest_kinds.append(ingest_kinds_item)
 
+        capture_sources: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.capture_sources, Unset):
+            capture_sources = []
+            for capture_sources_item_data in self.capture_sources:
+                capture_sources_item = capture_sources_item_data.to_dict()
+                capture_sources.append(capture_sources_item)
+
         sources: list[str] | Unset = UNSET
         if not isinstance(self.sources, Unset):
             sources = self.sources
@@ -275,6 +287,8 @@ class AvailableSessionDetailResponse:
             field_dict["metadata"] = metadata
         if ingest_kinds is not UNSET:
             field_dict["ingest_kinds"] = ingest_kinds
+        if capture_sources is not UNSET:
+            field_dict["capture_sources"] = capture_sources
         if sources is not UNSET:
             field_dict["sources"] = sources
         if content_state is not UNSET:
@@ -298,6 +312,7 @@ class AvailableSessionDetailResponse:
         from ..models.available_session_detail_response_metadata_type_0 import (
             AvailableSessionDetailResponseMetadataType0,
         )
+        from ..models.capture_source import CaptureSource
         from ..models.grade_result import GradeResult
         from ..models.related_session_summary import RelatedSessionSummary
         from ..models.trajectory_summary import TrajectorySummary
@@ -457,6 +472,17 @@ class AvailableSessionDetailResponse:
 
                 ingest_kinds.append(ingest_kinds_item)
 
+        _capture_sources = d.pop("capture_sources", UNSET)
+        capture_sources: list[CaptureSource] | Unset = UNSET
+        if _capture_sources is not UNSET:
+            capture_sources = []
+            for capture_sources_item_data in _capture_sources:
+                capture_sources_item = CaptureSource.from_dict(
+                    capture_sources_item_data
+                )
+
+                capture_sources.append(capture_sources_item)
+
         sources = cast(list[str], d.pop("sources", UNSET))
 
         content_state = cast(
@@ -523,6 +549,7 @@ class AvailableSessionDetailResponse:
             external_ids=external_ids,
             metadata=metadata,
             ingest_kinds=ingest_kinds,
+            capture_sources=capture_sources,
             sources=sources,
             content_state=content_state,
             is_content_scrubbed=is_content_scrubbed,

@@ -22,7 +22,6 @@ from harness import litellm_proxy
 from openai.types.chat.completion_create_params import CompletionCreateParamsBase
 from openai.types.responses import FunctionToolParam
 from openai.types.responses.response_create_params import ResponseCreateParamsBase
-from watcher_litellm.callback import SESSION_PREFIX
 
 # LiteLLM model parameters per provider route. Each is reached through the
 # gateway and exposed by the proxy under its route name.
@@ -172,7 +171,7 @@ class Conversation:
 
     def recorded(self, min_messages: int = 0) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Watcher's session and decided tool calls for this conversation."""
-        return recorded_calls({"other": [SESSION_PREFIX + self.session_id]}, min_messages=min_messages)
+        return recorded_calls({"other": ["litellm:" + self.session_id]}, min_messages=min_messages)
 
 
 @pytest.mark.parametrize("stream", [False, True], ids=["json", "stream"])

@@ -127,7 +127,11 @@ class AgentId(StrEnum):
     GITHUB_COPILOT_CLI = _agent(
         "github_copilot_cli",
         AgentEntry(
-            label="GitHub Copilot CLI", detection=_HOOKS, monitoring=(_CLIENT,), sdk_prefix="github-copilot-cli:"
+            label="GitHub Copilot CLI",
+            session_label="Copilot CLI",
+            detection=_HOOKS,
+            monitoring=(_CLIENT, _GATEWAY),
+            sdk_prefix="github-copilot-cli:",
         ),
     )
     GEMINI_CLI = _agent(

@@ -21,7 +21,7 @@ from typing import Any, Literal
 
 import litellm
 from openai._streaming import SSEDecoder
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 API = Literal["chat_completions", "responses", "messages"]
 MESSAGES_EVENT_TYPES = frozenset(
@@ -48,8 +48,67 @@ class UnsupportedStream(Exception):
 def as_dict(value: Any) -> dict[str, Any]:
     """A detached JSON-compatible copy of a LiteLLM object or mapping."""
     if isinstance(value, BaseModel):
-        return value.model_dump(mode="json", exclude_none=False)
+        return value.model_dump(mode="json", by_alias=True, exclude_none=False)
     return json.loads(json.dumps(value))
+
+
+def response_dict(value: Any) -> dict[str, Any]:
+    """Detach Responses fields, preserving explicit nulls and omitting unset SDK defaults.
+
+    Nested models are serialized separately so a parent's item serializer
+    cannot remove fields that the provider explicitly supplied.
+    """
+    if not isinstance(value, BaseModel):
+        return as_dict(value)
+    result = value.model_dump(mode="json", by_alias=True, exclude_unset=True)
+    for name in value.model_fields_set:
+        field = type(value).model_fields.get(name)
+        key = (field.serialization_alias or field.alias or name) if field is not None else name
+        child = getattr(value, name)
+        if isinstance(child, BaseModel):
+            result[key] = response_dict(child)
+        elif isinstance(child, list):
+            result[key] = [response_dict(item) if isinstance(item, BaseModel) else item for item in child]
+    return result
+
+
+def _matching_fields(value: JsonValue, original: JsonValue) -> JsonValue:
+    if isinstance(value, dict) and isinstance(original, dict):
+        return {key: _matching_fields(part, original[key]) for key, part in value.items() if key in original}
+    if isinstance(value, list) and isinstance(original, list):
+        return [_matching_fields(part, original[index]) for index, part in enumerate(value)]
+    return value
+
+
+def completed_response(response: Any) -> dict[str, Any] | None:
+    """Read early item provenance from the iterator that produced the response.
+
+    The router's fallback wrapper exposes its current provider iterator as
+    ``_billing_source`` but only publishes its own terminal event at the end.
+    Reading the source preserves its lifecycle and does not consume events.
+    """
+    source = getattr(response, "_billing_source", response)
+    event = getattr(source, "completed_response", None)
+    return response_dict(event)["response"] if event is not None else None
+
+
+def response_event(value: Any, completed: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep each streamed item's provider fields when a complete response is already available.
+
+    A simulated stream can materialize SDK defaults as explicitly set fields.
+    Its terminal response retains the provider's field sets, so it supplies the
+    allowed keys without changing streamed values. Real streams have no early
+    terminal response and retain their event models' explicitly set fields.
+    """
+    event = response_dict(value)
+    if completed is not None:
+        if "item" in event:
+            event["item"] = _matching_fields(event["item"], completed["output"][event["output_index"]])
+        if "part" in event:
+            field, index = ("summary", "summary_index") if "summary_index" in event else ("content", "content_index")
+            original = completed["output"][event["output_index"]][field][event[index]]
+            event["part"] = _matching_fields(event["part"], original)
+    return event
 
 
 def assemble(api: API, chunks: list[Any]) -> dict[str, Any]:

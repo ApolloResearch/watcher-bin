@@ -16,6 +16,8 @@ from ..models.raw_pre_tool_use_hook_request_mode import RawPreToolUseHookRequest
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.capture_source import CaptureSource
+    from ..models.conversation_identity import ConversationIdentity
     from ..models.raw_pre_tool_use_hook_request_external_ids_type_0 import (
         RawPreToolUseHookRequestExternalIdsType0,
     )
@@ -45,11 +47,13 @@ class RawPreToolUseHookRequest:
     client-facing endpoint path or URL; it breaks ties between formats and is
     recorded without credentials, query or fragment.
 
-    ``external_ids`` carries the gateway's own conversation ID, typically under
-    ``other``. A recognized harness's native ID is added to it; the caller
-    cannot replace a native ID the harness supplied. With neither, the session
-    is found by transcript prefix. ``user`` is honored only for callers allowed
-    to impersonate. The remaining fields have the pre-tool-use hook's meaning.
+    ``conversation`` names one authoritative identity selected by the adapter;
+    neither caller ``external_ids`` nor parsed native IDs add matching aliases.
+    Without it, legacy requests merge caller aliases with parsed harness IDs
+    and can reconcile compatible transcript history across complementary aliases. ``source`` describes
+    delivery only and never selects identity or permissions. ``user`` is honored
+    only for callers allowed to impersonate. The remaining fields have the
+    pre-tool-use hook's meaning.
 
     The response is a list with one output per selected new client call, in
     response order. Each ``tool_use_id`` is the provider's own call ID, except
@@ -73,6 +77,13 @@ class RawPreToolUseHookRequest:
             url (str | Unset): Client-facing endpoint path or URL, e.g. /v1/chat/completions. Default: ''.
             provider (None | str | Unset): Gateway route or model alias, recorded as provenance.
             user_agent (None | str | Unset): The client's User-Agent header, used to recognize harnesses.
+            conversation (ConversationIdentity | None | Unset): One authoritative conversation identity. When supplied,
+                neither external_ids nor native body metadata add matching aliases. Does not grant access. A recognized harness
+                takes precedence; otherwise a native namespace selects the harness and its grading rules.
+            source (CaptureSource | None | Unset): Delivery integration: type gateway, sdk or other, with an optional stable
+                integration name. Raw captures cannot use client. The resolved type is shared by session and decision recording;
+                the name is reporting metadata. Neither selects a conversation or grants permissions. Accepted captures retain
+                this source even when all messages already exist.
             response_index (int | None | Unset): Zero-based array position of the Chat choice or Gemini candidate; required
                 for multiple alternatives.
             external_ids (None | RawPreToolUseHookRequestExternalIdsType0 | Unset):
@@ -103,6 +114,8 @@ class RawPreToolUseHookRequest:
     url: str | Unset = ""
     provider: None | str | Unset = UNSET
     user_agent: None | str | Unset = UNSET
+    conversation: ConversationIdentity | None | Unset = UNSET
+    source: CaptureSource | None | Unset = UNSET
     response_index: int | None | Unset = UNSET
     external_ids: None | RawPreToolUseHookRequestExternalIdsType0 | Unset = UNSET
     user: None | str | Unset = UNSET
@@ -118,6 +131,8 @@ class RawPreToolUseHookRequest:
     withholds_refused_calls: bool | Unset = False
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.capture_source import CaptureSource
+        from ..models.conversation_identity import ConversationIdentity
         from ..models.raw_pre_tool_use_hook_request_external_ids_type_0 import (
             RawPreToolUseHookRequestExternalIdsType0,
         )
@@ -144,6 +159,22 @@ class RawPreToolUseHookRequest:
             user_agent = UNSET
         else:
             user_agent = self.user_agent
+
+        conversation: dict[str, Any] | None | Unset
+        if isinstance(self.conversation, Unset):
+            conversation = UNSET
+        elif isinstance(self.conversation, ConversationIdentity):
+            conversation = self.conversation.to_dict()
+        else:
+            conversation = self.conversation
+
+        source: dict[str, Any] | None | Unset
+        if isinstance(self.source, Unset):
+            source = UNSET
+        elif isinstance(self.source, CaptureSource):
+            source = self.source.to_dict()
+        else:
+            source = self.source
 
         response_index: int | None | Unset
         if isinstance(self.response_index, Unset):
@@ -217,6 +248,10 @@ class RawPreToolUseHookRequest:
             field_dict["provider"] = provider
         if user_agent is not UNSET:
             field_dict["user_agent"] = user_agent
+        if conversation is not UNSET:
+            field_dict["conversation"] = conversation
+        if source is not UNSET:
+            field_dict["source"] = source
         if response_index is not UNSET:
             field_dict["response_index"] = response_index
         if external_ids is not UNSET:
@@ -244,6 +279,8 @@ class RawPreToolUseHookRequest:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.capture_source import CaptureSource
+        from ..models.conversation_identity import ConversationIdentity
         from ..models.raw_pre_tool_use_hook_request_external_ids_type_0 import (
             RawPreToolUseHookRequestExternalIdsType0,
         )
@@ -289,6 +326,40 @@ class RawPreToolUseHookRequest:
             return cast(None | str | Unset, data)
 
         user_agent = _parse_user_agent(d.pop("user_agent", UNSET))
+
+        def _parse_conversation(data: object) -> ConversationIdentity | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                conversation_type_0 = ConversationIdentity.from_dict(data)
+
+                return conversation_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ConversationIdentity | None | Unset, data)
+
+        conversation = _parse_conversation(d.pop("conversation", UNSET))
+
+        def _parse_source(data: object) -> CaptureSource | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                source_type_0 = CaptureSource.from_dict(data)
+
+                return source_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(CaptureSource | None | Unset, data)
+
+        source = _parse_source(d.pop("source", UNSET))
 
         def _parse_response_index(data: object) -> int | None | Unset:
             if data is None:
@@ -405,6 +476,8 @@ class RawPreToolUseHookRequest:
             url=url,
             provider=provider,
             user_agent=user_agent,
+            conversation=conversation,
+            source=source,
             response_index=response_index,
             external_ids=external_ids,
             user=user,

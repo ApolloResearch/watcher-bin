@@ -9,12 +9,16 @@ from typing import Any
 import litellm
 import pytest
 from harness import serve_in_thread
+from litellm.llms.github_copilot.per_user_auth import GithubCopilotUserSession
 from litellm.proxy import proxy_server
 from openai.types.responses import ResponseInputItemParam
+from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from openai.types.responses.response_input_item_param import LocalShellCallOutput
 from openai.types.responses.response_tool_search_output_item_param_param import ResponseToolSearchOutputItemParamParam
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from servers import ProviderState, provider_app
+from watcher_litellm.copilot import NativeRequest, current_request
+from watcher_litellm.copilot_sessions import Conversation
 from watcher_litellm.replan import (
     ToolCall,
     ToolDenial,
@@ -486,6 +490,7 @@ def test_unknown_executable_response_items_fail_closed(kind: str) -> None:
         ("collaboration", "send_message", "collaborationsend_message"),
         ("multi_agent_v1", "spawn_agent", "spawn_agent"),
         ("multi_agent_v1", "wait", "multi_agent_v1wait"),
+        ("desk", "desk-crm_whoami", "deskdesk-crm_whoami"),
     ],
 )
 def test_responses_namespaces_match_watcher_without_changing_raw_history(
@@ -524,6 +529,19 @@ def test_same_bare_response_tool_in_two_namespaces_remains_two_operations() -> N
         "mcp__one__read",
         "mcp__two__read",
     ]
+
+
+def test_provider_run_tool_search_stays_in_history_without_a_search_output() -> None:
+    search = {"type": "tool_search_call", "id": "ts", "execution": "server", "arguments": {"query": "pizza"}}
+    call = {"type": "function_call", "id": "fc", "call_id": "mcp", "name": "pizza-list_menu", "arguments": "{}"}
+    response = {"output": [search, call]}
+    (detail,) = client_tool_details("responses", response)
+    denied = ToolDenial(**detail.model_dump(), reason="Blocked.", is_escalation=False)
+
+    result = build_replan_request("responses", {"input": []}, response, [denied], released_ids=set())
+
+    assert result["input"][:2] == [search, call]
+    assert [item.get("type") for item in result["input"][2:]] == ["function_call_output"]
 
 
 def native_response(kind: str) -> dict[str, Any]:
@@ -615,11 +633,16 @@ def test_native_tool_search_accepts_decoded_and_json_arguments(arguments: Any) -
     ]
 
 
-def test_native_tool_search_with_server_execution_is_rejected_before_retry() -> None:
+def test_provider_run_tool_search_is_context_and_unknown_execution_is_rejected() -> None:
     item = native_response("tool_search_call")["output"][0]
-    item["execution"] = "server"
+    assert client_tool_details("responses", {"output": [{**item, "execution": "server"}]}) == []
     with pytest.raises(ValueError, match="Unsupported Responses tool search"):
-        client_tool_details("responses", {"output": [item]})
+        client_tool_details("responses", {"output": [{**item, "execution": "remote"}]})
+
+
+def test_copilot_tool_names_keep_their_server_prefix_once(native_copilot_request: NativeRequest) -> None:
+    call = {"type": "function_call", "call_id": "c", "name": "pizza-list_menu", "namespace": "pizza", "arguments": "{}"}
+    assert client_tool_details("responses", {"output": [call]})[0].tool_name == "pizza-list_menu"
 
 
 @pytest.mark.parametrize(
@@ -874,3 +897,134 @@ async def test_real_router_streams_have_the_shapes_expected_by_the_callback(
     assert client_tool_details(api, completed) == [
         ToolCall(tool_use_id=expected_id, tool_name="read_file", tool_input={"path": "f0"})
     ]
+
+
+class AliasedFunctionCall(ResponseFunctionToolCall):
+    """Model the Copilot async field added by newer OpenAI SDK releases."""
+
+    async_: bool = Field(alias="async")
+
+
+class AliasedResponse(BaseModel):
+    """Keep the typed tool call nested, as in an SDK response event."""
+
+    output: list[AliasedFunctionCall]
+
+
+def test_responses_recovery_keeps_wire_field_aliases():
+    call = AliasedFunctionCall.model_validate(
+        {
+            "id": "fc_alias",
+            "call_id": "call_alias",
+            "type": "function_call",
+            "name": "bash",
+            "arguments": '{"command":"touch blocked.txt"}',
+            "async": True,
+        }
+    )
+    response = as_dict(AliasedResponse(output=[call]))
+    denied = ToolDenial(
+        **client_tool_details("responses", response)[0].model_dump(),
+        reason="Denied by test policy",
+        is_escalation=False,
+    )
+    retry = build_replan_request("responses", {"input": []}, response, [denied], released_ids=set())
+    assert retry["input"][0]["async"] is True
+    assert "async_" not in retry["input"][0]
+    assert retry["input"][1]["call_id"] == "call_alias"
+
+
+def test_provider_tool_search_is_not_a_client_tool() -> None:
+    item = native_response("tool_search_call")["output"][0]
+    item.update(execution="server", call_id=None)
+    assert client_tool_details("responses", {"output": [item]}) == []
+
+
+def test_native_tool_search_with_missing_execution_is_rejected_before_retry() -> None:
+    item = native_response("tool_search_call")["output"][0]
+    item.pop("execution")
+    with pytest.raises(ValueError, match="Unsupported Responses tool search"):
+        client_tool_details("responses", {"output": [item]})
+
+
+@pytest.mark.parametrize("stop", [False, True])
+def test_provider_search_recovery_keeps_completed_context(stop: bool) -> None:
+    search = {
+        "type": "tool_search_call",
+        "id": "search",
+        "execution": "server",
+        "call_id": None,
+        "arguments": {"query": "lookup"},
+        "status": "completed",
+    }
+    output = {
+        "type": "tool_search_output",
+        "id": "search_output",
+        "execution": "server",
+        "call_id": None,
+        "tools": [],
+        "status": "completed",
+    }
+    call = {
+        "type": "function_call",
+        "id": "fc_denied",
+        "call_id": "denied",
+        "namespace": "desk",
+        "name": "write",
+        "arguments": "{}",
+        "status": "completed",
+    }
+    proposed = {"output": [search, output, call]}
+    denial = ToolDenial(
+        **client_tool_details("responses", proposed)[0].model_dump(), reason="Do not write.", is_escalation=False
+    )
+    result = build_replan_request(
+        "responses", {"input": "Help", "tools": []}, proposed, [denial], released_ids=set(), stop=stop
+    )
+    assert result["input"][1:4] == [search, output, call]
+    assert len(result["input"]) == 5
+    receipt = result["input"][4]
+    assert receipt["type"] == "function_call_output"
+    assert receipt["call_id"] == "denied"
+    assert "WATCHER NOTICE: Watcher blocked this call. Reason: Do not write." in receipt["output"]
+
+
+@pytest.mark.parametrize(
+    "namespace,name,expected",
+    [
+        (None, "desk-crm_whoami", "desk-crm_whoami"),
+        ("desk", "desk-crm_whoami", "desk-crm_whoami"),
+        ("desk", "crm_whoami", "deskcrm_whoami"),
+    ],
+)
+def test_native_copilot_notice_uses_the_same_name_for_plain_and_grouped_tools(
+    namespace: str | None, name: str, expected: str
+) -> None:
+    identity = NativeRequest(
+        user_id="github:1",
+        user_email="alice@example.test",
+        conversation=Conversation(external_id="root", parent_external_id=None),
+        provider_session=GithubCopilotUserSession(token="test-token", api_base="https://api.githubcopilot.com"),
+        provider_headers={},
+    )
+    response = {
+        "output": [
+            {
+                "type": "function_call",
+                "call_id": "call",
+                "name": name,
+                "namespace": namespace,
+                "arguments": "{}",
+            }
+        ]
+    }
+    before = deepcopy(response)
+    reset = current_request.set(identity)
+    try:
+        calls = client_tool_details("responses", response)
+        assert calls == [ToolCall(tool_use_id="call", tool_name=expected, tool_input={})]
+        denial = ToolDenial(**calls[0].model_dump(), reason="Blocked.", is_escalation=False)
+        assert f"`{expected} " in denial_notice([denial])
+        assert response == before
+    finally:
+        current_request.reset(reset)

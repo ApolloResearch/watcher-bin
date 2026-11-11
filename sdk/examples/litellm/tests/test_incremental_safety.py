@@ -83,7 +83,14 @@ def request_data(api: API) -> dict[str, Any]:
         body["input"] = "Read the files."
     else:
         body["messages"] = [{"role": "user", "content": "Read the files."}]
-    return {"model": "fixture", "proxy_server_request": {"url": f"http://proxy/v1/{path}", "body": body}}
+    return {
+        "model": "fixture",
+        "proxy_server_request": {
+            "url": f"http://proxy/v1/{path}",
+            "body": body,
+            "headers": {"x-watcher-session-id": "fixture-stream"},
+        },
+    }
 
 
 async def source(chunks: list[Any]) -> AsyncIterator[Any]:

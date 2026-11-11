@@ -12,3 +12,8 @@ from importlib.resources import files
 def main() -> None:
     """Emit the shipped YAML without modifying files or environment settings."""
     sys.stdout.write(files("watcher_litellm").joinpath("config.yaml").read_text())
+
+
+def copilot_main() -> None:
+    """Emit the native Copilot reference configuration without reading credentials."""
+    sys.stdout.write(files("watcher_litellm").joinpath("copilot.yaml").read_text())

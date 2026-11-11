@@ -38,10 +38,10 @@ class TrajectoryDetailResponse:
         metadata (TrajectoryDetailResponseMetadata): The stored metadata of this transcript's own last stored message
             only, not combined across messages as the session's metadata is. For Claude Code, 'claude_code_entrypoint' and
             'claude_code_entry_version' come from the transcript entry that message came from. For Codex ('originator',
-            'cli_version') and GitHub Copilot CLI ('cli_version') they are the session record's values copied onto every
-            message of the upload, so they do not show which release wrote that message. The upload's own metadata, such as
-            'hostname', is also included. Values can differ from the session's 'entrypoint' and 'agent_version' after a
-            resume or an upgrade.
+            'cli_version') and GitHub Copilot CLI ('cli_version') transcript files, they are the session record's values
+            copied onto every message of the upload, so they do not show which release wrote that message. The upload's own
+            metadata, such as 'hostname', is also included. Values can differ from the session's 'entrypoint' and
+            'agent_version' after a resume or an upgrade.
         session_id (str):
         source (str):
         created_at (datetime.datetime):

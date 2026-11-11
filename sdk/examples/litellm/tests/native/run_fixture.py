@@ -3,8 +3,9 @@
 The native recipe invokes this file as the container entrypoint. It verifies
 both wheels, runs the checked-in callback and three-API proxy tests, then runs
 the backend-compatible Chat probe with local Watcher replies. Live provider
-tests are deliberately not collected. JUnit, runtime identities and raw logs
-remain under /evidence for run_example.py and the actual-backend runner.
+tests and Docker-backed database tests are deliberately deselected; ordinary
+CI runs the database tests. JUnit, runtime identities and raw logs remain under
+/evidence for run_example.py and the actual-backend runner.
 """
 
 import hashlib
@@ -76,7 +77,7 @@ def main() -> int:
                 "pyproject.toml",
                 *[str(path.relative_to(root)) for path in sorted((root / "tests").glob("test_*.py"))],
                 "-m",
-                "not live",
+                "not live and not requires_docker",
                 "-p",
                 "no:cacheprovider",
                 "--basetemp=/evidence/pytest",

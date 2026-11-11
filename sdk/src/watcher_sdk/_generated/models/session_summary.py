@@ -13,6 +13,7 @@ from ..models.session_summary_ingest_kinds_item import SessionSummaryIngestKinds
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.capture_source import CaptureSource
     from ..models.grade_result import GradeResult
     from ..models.session_permission_decisions import SessionPermissionDecisions
     from ..models.session_summary_external_ids_type_0 import (
@@ -33,8 +34,10 @@ class SessionSummary:
         agent_platform (str): Reported coding agent. Retained SDK adapter identities can name the agent, including for
             historical sessions stored as 'other'. Reporting does not change the stored ingestion identity. Clients must
             tolerate additional platform strings.
-        trajectory_count (int):
-        message_count (int):
+        trajectory_count (int): Trajectories in the session. A conversation the Watcher client and a gateway both
+            recorded counts its reconciled transcripts (one per branch), not each stored copy.
+        message_count (int): Messages in the session's longest trajectory; for a conversation both recorders delivered,
+            its longest reconciled transcript. Sorting by message count uses the stored copies' count.
         started_at (datetime.datetime):
         ended_at (datetime.datetime):
         is_subagent (bool | Unset): Whether this session has a recorded parent relationship. Default: False.
@@ -51,8 +54,7 @@ class SessionSummary:
             originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing
             value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in
             semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent
-            when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients
-            must tolerate additional keys.
+            when no stored message reported a usable value. Clients must tolerate additional keys.
         grades (list[GradeResult] | None | Unset):
         max_score (int | None | Unset):
         max_gateway_score (int | None | Unset):
@@ -63,14 +65,14 @@ class SessionSummary:
         permission_decisions (None | SessionPermissionDecisions | Unset):
         ingest_kinds (list[SessionSummaryIngestKindsItem] | Unset): Sorted distinct recorded delivery paths, including
             duplicate uploads. Empty means no recorded delivery history; unknown stored values report other.
-        sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted. Known
-            values: 'watcher' (Watcher Live upload), 'tailscale-aperture' (Aperture ingestion), and three keys for other
-            hook ingest, including raw pre-tool-use captures, chosen by the session's retained 'other' conversation ID:
-            'watcher-gateway' (a gateway integration's prefix, such as 'litellm:'), 'watcher-sdk' (a registered SDK agent's
-            prefix, such as 'aider:'), and 'watcher-hook' (any other ID or none). Hook captures marked as Aperture, and
-            legacy captures without a transport marker, are classified as 'tailscale-aperture'; other source keys pass
-            through. Classification is for reporting only: stored message sources are unchanged. Empty for scrubbed sessions
-            or sessions without stored messages. This is not a complete ingestion history.
+        capture_sources (list[CaptureSource] | Unset): Distinct integrations observed delivering this session, including
+            duplicate uploads. Retained after content scrubbing. Historical categories without a known integration have a
+            null name.
+        sources (list[str] | Unset): Distinct source labels among retained session messages, sorted. Known labels:
+            watcher, tailscale-aperture, watcher-gateway, watcher-sdk and watcher-hook. Explicit capture metadata takes
+            precedence over legacy transport and conversation-prefix classification. Duplicate messages retain their
+            original source; scrubbed sessions return an empty list. Use capture_sources for complete recorded delivery
+            history.
     """
 
     session_id: str
@@ -98,6 +100,7 @@ class SessionSummary:
     deep_review_reviewed_at: datetime.datetime | None | Unset = UNSET
     permission_decisions: None | SessionPermissionDecisions | Unset = UNSET
     ingest_kinds: list[SessionSummaryIngestKindsItem] | Unset = UNSET
+    capture_sources: list[CaptureSource] | Unset = UNSET
     sources: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -229,6 +232,13 @@ class SessionSummary:
                 ingest_kinds_item = ingest_kinds_item_data.value
                 ingest_kinds.append(ingest_kinds_item)
 
+        capture_sources: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.capture_sources, Unset):
+            capture_sources = []
+            for capture_sources_item_data in self.capture_sources:
+                capture_sources_item = capture_sources_item_data.to_dict()
+                capture_sources.append(capture_sources_item)
+
         sources: list[str] | Unset = UNSET
         if not isinstance(self.sources, Unset):
             sources = self.sources
@@ -279,6 +289,8 @@ class SessionSummary:
             field_dict["permission_decisions"] = permission_decisions
         if ingest_kinds is not UNSET:
             field_dict["ingest_kinds"] = ingest_kinds
+        if capture_sources is not UNSET:
+            field_dict["capture_sources"] = capture_sources
         if sources is not UNSET:
             field_dict["sources"] = sources
 
@@ -286,6 +298,7 @@ class SessionSummary:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.capture_source import CaptureSource
         from ..models.grade_result import GradeResult
         from ..models.session_permission_decisions import SessionPermissionDecisions
         from ..models.session_summary_external_ids_type_0 import (
@@ -512,6 +525,17 @@ class SessionSummary:
 
                 ingest_kinds.append(ingest_kinds_item)
 
+        _capture_sources = d.pop("capture_sources", UNSET)
+        capture_sources: list[CaptureSource] | Unset = UNSET
+        if _capture_sources is not UNSET:
+            capture_sources = []
+            for capture_sources_item_data in _capture_sources:
+                capture_sources_item = CaptureSource.from_dict(
+                    capture_sources_item_data
+                )
+
+                capture_sources.append(capture_sources_item)
+
         sources = cast(list[str], d.pop("sources", UNSET))
 
         session_summary = cls(
@@ -538,6 +562,7 @@ class SessionSummary:
             deep_review_reviewed_at=deep_review_reviewed_at,
             permission_decisions=permission_decisions,
             ingest_kinds=ingest_kinds,
+            capture_sources=capture_sources,
             sources=sources,
         )
 

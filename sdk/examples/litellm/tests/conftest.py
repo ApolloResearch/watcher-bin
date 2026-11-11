@@ -14,6 +14,9 @@ from typing import Any
 
 import litellm
 import pytest
+from litellm.llms.github_copilot.per_user_auth import GithubCopilotUserSession
+from watcher_litellm.copilot import NativeRequest, current_request
+from watcher_litellm.copilot_sessions import Conversation
 from watcher_litellm.streams import API, encode
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -104,3 +107,19 @@ def proxy_url(
     env = {"WATCHER_API_URL": watcher, "WATCHER_API_KEY": "test-key"}
     with litellm_proxy(model_list, env, tmp_path_factory.mktemp("proxy")) as url:
         yield url
+
+
+@pytest.fixture
+def native_copilot_request() -> Iterator[NativeRequest]:
+    identity = NativeRequest(
+        user_id="github:1",
+        user_email="alice@example.test",
+        conversation=Conversation(external_id="root", parent_external_id=None),
+        provider_session=GithubCopilotUserSession(token="test-token", api_base="https://api.githubcopilot.com"),
+        provider_headers={},
+    )
+    token = current_request.set(identity)
+    try:
+        yield identity
+    finally:
+        current_request.reset(token)

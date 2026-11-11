@@ -22,6 +22,7 @@ from ..models.session_search_filters_severities_type_0_item import (
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.capture_source import CaptureSource
     from ..models.session_search_filters_external_ids_type_0 import (
         SessionSearchFiltersExternalIdsType0,
     )
@@ -46,6 +47,9 @@ class SessionSearchFilters:
         sources (list[str] | None | Unset): Match any selected canonical ingestion source among retained session
             messages. Open set of exact source keys, combined with other filters using AND. The source match covers the full
             session regardless of the date window.
+        capture_sources (list[CaptureSource] | None | Unset): Match any observed capture source, including duplicate
+            deliveries and scrubbed sessions. A type without a name matches every integration in that category; a name
+            selects that integration exactly. Combined with other filters using AND.
         hostnames (list[str] | None | Unset): Match sessions whose recorded machine hostname is any of these values,
             exactly. The Watcher client records the hostname of the machine a session started on; sessions ingested through
             a gateway or an SDK have none and never match.
@@ -66,6 +70,7 @@ class SessionSearchFilters:
     external_ids: None | SessionSearchFiltersExternalIdsType0 | Unset = UNSET
     agent_platforms: list[str] | None | Unset = UNSET
     sources: list[str] | None | Unset = UNSET
+    capture_sources: list[CaptureSource] | None | Unset = UNSET
     hostnames: list[str] | None | Unset = UNSET
     grading_statuses: (
         list[SessionSearchFiltersGradingStatusesType0Item] | None | Unset
@@ -138,6 +143,18 @@ class SessionSearchFilters:
 
         else:
             sources = self.sources
+
+        capture_sources: list[dict[str, Any]] | None | Unset
+        if isinstance(self.capture_sources, Unset):
+            capture_sources = UNSET
+        elif isinstance(self.capture_sources, list):
+            capture_sources = []
+            for capture_sources_type_0_item_data in self.capture_sources:
+                capture_sources_type_0_item = capture_sources_type_0_item_data.to_dict()
+                capture_sources.append(capture_sources_type_0_item)
+
+        else:
+            capture_sources = self.capture_sources
 
         hostnames: list[str] | None | Unset
         if isinstance(self.hostnames, Unset):
@@ -250,6 +267,8 @@ class SessionSearchFilters:
             field_dict["agent_platforms"] = agent_platforms
         if sources is not UNSET:
             field_dict["sources"] = sources
+        if capture_sources is not UNSET:
+            field_dict["capture_sources"] = capture_sources
         if hostnames is not UNSET:
             field_dict["hostnames"] = hostnames
         if grading_statuses is not UNSET:
@@ -275,6 +294,7 @@ class SessionSearchFilters:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.capture_source import CaptureSource
         from ..models.session_search_filters_external_ids_type_0 import (
             SessionSearchFiltersExternalIdsType0,
         )
@@ -387,6 +407,30 @@ class SessionSearchFilters:
             return cast(list[str] | None | Unset, data)
 
         sources = _parse_sources(d.pop("sources", UNSET))
+
+        def _parse_capture_sources(data: object) -> list[CaptureSource] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                capture_sources_type_0 = []
+                _capture_sources_type_0 = data
+                for capture_sources_type_0_item_data in _capture_sources_type_0:
+                    capture_sources_type_0_item = CaptureSource.from_dict(
+                        capture_sources_type_0_item_data
+                    )
+
+                    capture_sources_type_0.append(capture_sources_type_0_item)
+
+                return capture_sources_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[CaptureSource] | None | Unset, data)
+
+        capture_sources = _parse_capture_sources(d.pop("capture_sources", UNSET))
 
         def _parse_hostnames(data: object) -> list[str] | None | Unset:
             if data is None:
@@ -606,6 +650,7 @@ class SessionSearchFilters:
             external_ids=external_ids,
             agent_platforms=agent_platforms,
             sources=sources,
+            capture_sources=capture_sources,
             hostnames=hostnames,
             grading_statuses=grading_statuses,
             categories=categories,

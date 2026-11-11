@@ -6,6 +6,7 @@ class ExternalIdSource(StrEnum):
     CLAUDE_CODE = "claude_code"
     CODEX = "codex"
     GITHUB_COPILOT_CLI = "github_copilot_cli"
+    OPENCODE = "opencode"
     OTHER = "other"
 
     def __str__(self) -> str:

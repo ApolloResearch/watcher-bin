@@ -207,7 +207,7 @@ def watcher_app(holder: RecoveryHolder) -> FastAPI:
     @app.post("/v1/hooks/pre-tool-use")
     async def grade(request: Request) -> JSONResponse:
         body = await request.json()
-        state = holder.cases[body["external_ids"]["other"].removeprefix("litellm:")]
+        state = holder.cases[body["conversation"]["id"].removeprefix("litellm:")]
         state.hook_requests.append(body)
         ids = call_ids(body)
         state.graded_ids.extend(ids)

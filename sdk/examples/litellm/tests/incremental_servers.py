@@ -54,7 +54,7 @@ class Scenario(BaseModel):
     text_only: bool = False
     hold_recording: bool = False
     response_suffix: str = ""
-    initial_stream_delay_seconds: float = 0
+    initial_stream_gate: threading.Event | None = None
 
 
 class ScenarioHolder(BaseModel):
@@ -326,8 +326,8 @@ def provider_app(holder: ScenarioHolder) -> FastAPI:
         streams = {"messages": messages_events, "chat/completions": chat_events, "responses": responses_events}
 
         async def events() -> AsyncIterator[str]:
-            if state.initial_stream_delay_seconds:
-                await asyncio.sleep(state.initial_stream_delay_seconds)
+            if state.initial_stream_gate is not None:
+                await wait_gate(state.initial_stream_gate)
             async for event in streams[api](state, body["model"]):
                 yield event
 
@@ -369,7 +369,7 @@ def watcher_app(holder: ScenarioHolder) -> FastAPI:
     @app.post("/v1/hooks/pre-tool-use")
     async def grade(request: Request) -> JSONResponse:
         body = await request.json()
-        state = holder.cases[body["external_ids"]["other"].removeprefix("litellm:")]
+        state = holder.cases[body["conversation"]["id"].removeprefix("litellm:")]
         state.requests.append(body)
         ids = call_ids(body)
         pending = [call_id for call_id in ids if call_id not in state.decisions]

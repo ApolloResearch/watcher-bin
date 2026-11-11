@@ -30,7 +30,6 @@ from typing import Any
 import pytest
 from common import DENY_MARKER, GATEWAY, GATEWAY_KEY, WATCHER_URL, recorded_calls, recorded_calls_mentioning
 from harness import litellm_proxy
-from watcher_litellm.callback import SESSION_PREFIX
 
 CLAUDE_MODEL = os.environ.get("WATCHER_LIVE_CLAUDE_MODEL", "claude-haiku-4-5")
 CODEX_MODEL = os.environ.get("WATCHER_LIVE_CODEX_MODEL", "gpt-5.4-mini")
@@ -109,7 +108,6 @@ def _claude(proxy: str, work: Path, prompt: str, tools: str) -> tuple[str, str]:
 
 
 def _codex(proxy: str, work: Path, home: Path, prompt: str) -> tuple[str, str]:
-    session_id = f"codex-live-{uuid.uuid4()}"
     home.mkdir()
     (home / "config.toml").write_text(
         f'model = "{CODEX_MODEL}"\n'
@@ -121,7 +119,6 @@ def _codex(proxy: str, work: Path, home: Path, prompt: str) -> tuple[str, str]:
         f'base_url = "{proxy}/v1"\n'
         'wire_api = "responses"\n'
         'env_key = "OPENAI_API_KEY"\n'
-        f'http_headers = {{ "x-watcher-session-id" = "{session_id}" }}\n'
     )
     env = {**_base_env(), "CODEX_HOME": str(home), "OPENAI_API_KEY": "sk-proxy"}
     last_message = home / "last.txt"
@@ -130,6 +127,7 @@ def _codex(proxy: str, work: Path, home: Path, prompt: str) -> tuple[str, str]:
             shutil.which("codex") or "codex",
             "exec",
             "--skip-git-repo-check",
+            "--json",
             "--output-last-message",
             str(last_message),
             prompt,
@@ -142,11 +140,12 @@ def _codex(proxy: str, work: Path, home: Path, prompt: str) -> tuple[str, str]:
         check=False,
     )
     assert result.returncode == 0, result.stderr[-2000:]
+    events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+    session_id = next(event["thread_id"] for event in events if event["type"] == "thread.started")
     return last_message.read_text(), session_id
 
 
 def _opencode(proxy: str, work: Path, home: Path, prompt: str) -> tuple[str, str]:
-    session_id = f"opencode-live-{uuid.uuid4()}"
     home.mkdir()
     config = {
         "model": f"litellm/{CODEX_MODEL}",
@@ -159,7 +158,6 @@ def _opencode(proxy: str, work: Path, home: Path, prompt: str) -> tuple[str, str
                 "options": {
                     "baseURL": f"{proxy}/v1",
                     "apiKey": "sk-proxy",
-                    "headers": {"x-watcher-session-id": session_id},
                 },
                 "models": {
                     CODEX_MODEL: {"name": CODEX_MODEL, "tool_call": True, "limit": {"context": 65536, "output": 4096}}
@@ -202,15 +200,19 @@ def _opencode(proxy: str, work: Path, home: Path, prompt: str) -> tuple[str, str
     )
     assert result.returncode == 0, result.stderr[-2000:]
     texts = []
+    session_ids: set[str] = set()
     for line in result.stdout.splitlines():
         try:
             event = json.loads(line)
         except ValueError:
             continue
+        if event.get("sessionID"):
+            session_ids.add(event["sessionID"])
         part = event.get("part") or {}
         if part.get("type") == "text":
             texts.append(part.get("text", ""))
-    return "".join(texts), session_id
+    assert len(session_ids) == 1
+    return "".join(texts), session_ids.pop()
 
 
 def _run_cli(command: list[str], work: Path, env: dict[str, str]) -> str:
@@ -321,7 +323,7 @@ def test_codex_reads_through_the_proxy(cli_proxy: str, workspace: Path, tmp_path
     )
 
     assert "pineapple" in answer.lower()
-    session, calls = recorded_calls({"other": [SESSION_PREFIX + session_id]})
+    session, calls = recorded_calls({"openai-codex": [session_id]})
     assert session["agent_platform"] == "codex"
     assert calls and all(c["applied_decision"] == "allow" for c in calls)
 
@@ -336,7 +338,7 @@ def test_codex_denied_command_never_runs(cli_proxy: str, workspace: Path, tmp_pa
     )
 
     assert not (workspace / "proof.txt").exists()
-    _, calls = recorded_calls({"other": [SESSION_PREFIX + session_id]})
+    _, calls = recorded_calls({"openai-codex": [session_id]})
     assert "deny" in [c["applied_decision"] for c in calls]
 
 
@@ -353,7 +355,7 @@ def test_opencode_reads_through_the_proxy(cli_proxy: str, workspace: Path, tmp_p
     )
 
     assert "pineapple" in answer.lower()
-    session, calls = recorded_calls({"other": [SESSION_PREFIX + session_id]}, min_messages=4)
+    session, calls = recorded_calls({"opencode": [session_id]}, min_messages=4)
     assert calls and all(c["applied_decision"] == "allow" for c in calls)
     assert session["message_count"] >= 4
 
@@ -368,7 +370,7 @@ def test_opencode_denied_command_never_runs(cli_proxy: str, workspace: Path, tmp
     )
 
     assert not (workspace / "proof.txt").exists()
-    _, calls = recorded_calls({"other": [SESSION_PREFIX + session_id]})
+    _, calls = recorded_calls({"opencode": [session_id]})
     assert "deny" in [c["applied_decision"] for c in calls]
 
 

@@ -1918,7 +1918,7 @@
           "sessions"
         ],
         "summary": "Get Session Message",
-        "description": "Get one message's full stored content by its ``message_ref``.\n\nBacks per-elision expansion: the truncated trajectory view marks what it\nelided and carries each message's ``message_ref``; this endpoint returns\nthat single message with full content, so expanding one item never\nrefetches (or renders) the whole trajectory. There is no ``view`` param \u2014\nthe truncated form is what the trajectory response already provides.\nExtended-thinking replay payloads are stripped like every other read path.\n\nRequires ownership, ``sessions:content:read:any``, or an active session content\napproval. Returns 404 for inaccessible or scrubbed content and for refs not in the session.",
+        "description": "Get one message's full stored content by its ``message_ref``.\n\nBacks per-elision expansion: the truncated trajectory view marks what it\nelided and carries each message's ``message_ref``; this endpoint returns\nthat single message with full content, so expanding one item never\nrefetches (or renders) the whole trajectory. There is no ``view`` param \u2014\nthe truncated form is what the trajectory response already provides.\nExtended-thinking replay payloads are stripped like every other read path.\nIn a reconciled transcript the message carries the same reading position\nand calls as in the trajectory response for ``trajectory_id``, and a\nmessage that transcript leaves out is not found. Without ``trajectory_id``\nit is read through a transcript that shows it: its own, else the session's\ndefault, else the one with the newest recording.\n\nRequires ownership, ``sessions:content:read:any``, or an active session content\napproval. Returns 404 for inaccessible or scrubbed content and for refs not in the session.",
         "operationId": "get_session_message_v1_sessions__session_id__messages__message_ref__get",
         "parameters": [
           {
@@ -1938,6 +1938,24 @@
               "type": "string",
               "title": "Message Ref"
             }
+          },
+          {
+            "name": "trajectory_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The trajectory the message is shown in, as passed to the trajectory route. In a reconciled transcript the message then carries that transcript's reading position and calls.",
+              "title": "Trajectory Id"
+            },
+            "description": "The trajectory the message is shown in, as passed to the trajectory route. In a reconciled transcript the message then carries that transcript's reading position and calls."
           }
         ],
         "responses": {
@@ -5388,7 +5406,7 @@
               }
             ],
             "title": "Metadata",
-            "description": "Values Watcher derives from the session's stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint' (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients must tolerate additional keys."
+            "description": "Values Watcher derives from the session's stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint' (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent when no stored message reported a usable value. Clients must tolerate additional keys."
           },
           "started_at": {
             "type": "string",
@@ -5402,7 +5420,8 @@
           },
           "message_count": {
             "type": "integer",
-            "title": "Message Count"
+            "title": "Message Count",
+            "description": "Messages in the session's longest trajectory; for a conversation the Watcher client and a gateway both recorded, its longest reconciled transcript."
           },
           "created_at": {
             "type": "string",
@@ -5422,6 +5441,14 @@
             "type": "array",
             "title": "Ingest Kinds",
             "description": "Sorted distinct recorded delivery paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report other."
+          },
+          "capture_sources": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureSource"
+            },
+            "type": "array",
+            "title": "Capture Sources",
+            "description": "Distinct integrations observed delivering this session, including duplicate uploads. Retained after content scrubbing. Historical categories without a known integration have a null name."
           },
           "sources": {
             "items": {
@@ -5761,6 +5788,41 @@
         ],
         "title": "CallbackRequest",
         "description": "Request body for POST /v1/auth/callback."
+      },
+      "CaptureSource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "client",
+              "gateway",
+              "sdk",
+              "other"
+            ],
+            "title": "Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z0-9][a-z0-9_-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "CaptureSource",
+        "description": "An integration that delivered a conversation, independent of its identity.\n\n``name`` is an optional stable integration identifier, not a hostname, user,\nmodel or credential. An unnamed source preserves a known delivery category\nwhen historical data cannot establish the particular integration."
       },
       "ChatMessageAssistant": {
         "properties": {
@@ -8219,6 +8281,34 @@
         "title": "ContentVideo",
         "description": "Video content."
       },
+      "ConversationIdentity": {
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "enum": [
+              "other",
+              "claude_code",
+              "codex",
+              "opencode"
+            ],
+            "title": "Namespace"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "namespace",
+          "id"
+        ],
+        "title": "ConversationIdentity",
+        "description": "One authoritative session-matching identity, without additional aliases.\n\nNative Codex IDs and Claude root IDs are normalized UUIDs. Claude children use\nthe transcript uploader's ``subagent:[root_uuid, agent_id]`` encoding. Custom\nIDs belong to ``other`` and keep any integration namespace supplied by their\nadapter. The larger wire limit accommodates JSON-escaped child identifiers;\nindividual native identifiers remain bounded at 1,024 characters."
+      },
       "CopilotEntry": {
         "properties": {
           "type": {
@@ -8900,12 +8990,13 @@
         "enum": [
           "claude_code",
           "codex",
+          "opencode",
           "github_copilot_cli",
           "aperture",
           "other"
         ],
         "title": "ExternalIdSource",
-        "description": "Where an external conversation id in a hook request comes from.\n\nKeys of `PreToolUseHookRequest.external_ids`. Each maps onto the external-id\nsource the matching ingest path already stores, so a hook-recorded decision\nconverges onto the session Watcher Live (`claude_code`, `codex`) or the\nTailscale Aperture log ingest (`aperture`) created for the same\nconversation; `other` is the gateway's own id and matches only other hook\ncalls. `github_copilot_cli` is GitHub Copilot CLI's own session id, which\nthe Watcher client sends for the sessions it records through this hook."
+        "description": "Where an external conversation id in a hook request comes from.\n\nKeys of `PreToolUseHookRequest.external_ids`. Each maps onto the external-id\nsource the matching ingest path already stores, so a hook-recorded decision\nconverges onto the session Watcher Live (`claude_code`, `codex`) or the\nTailscale Aperture log ingest (`aperture`) created for the same\nconversation; `other` is the gateway's own id and matches only other hook\ncalls. `github_copilot_cli` is GitHub Copilot CLI's own session id, which\nthe Watcher client sends for the sessions it records through this hook.\n`opencode` is the native conversation ID forwarded by gateway integrations."
       },
       "GatewayAction": {
         "type": "string",
@@ -8925,7 +9016,7 @@
           "delivered_message_ref": {
             "type": "string",
             "title": "Delivered Message Ref",
-            "description": "Message the gateway delivered to the client instead."
+            "description": "Message the gateway delivered to the client instead, as the trajectory shows it. A reconciled transcript that shows another copy of the delivered message names that copy: the Watcher client's copy of a message making the same tool call, or, for a message of text alone, the copy of that answer in the same turn. When the turn is unclear, the stored message, which that transcript may not show."
           },
           "proposal_message_ref": {
             "type": "string",
@@ -12012,6 +12103,28 @@
             "title": "User Agent",
             "description": "The client's User-Agent header, used to recognize harnesses."
           },
+          "conversation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One authoritative conversation identity. When supplied, neither external_ids nor native body metadata add matching aliases. Does not grant access. A recognized harness takes precedence; otherwise a native namespace selects the harness and its grading rules."
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptureSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Delivery integration: type gateway, sdk or other, with an optional stable integration name. Raw captures cannot use client. The resolved type is shared by session and decision recording; the name is reporting metadata. Neither selects a conversation or grants permissions. Accepted captures retain this source even when all messages already exist."
+          },
           "response_index": {
             "anyOf": [
               {
@@ -12145,7 +12258,7 @@
           "response_body"
         ],
         "title": "RawPreToolUseHookRequest",
-        "description": "A pre-tool-use hook request carrying one provider request and its complete response.\n\n``request_body`` is the JSON the client sent to the gateway and\n``response_body`` the assembled JSON response the gateway would return,\nboth in the same wire format: OpenAI Chat Completions or Responses,\nAnthropic Messages, Gemini generateContent or Bedrock Converse. Streams must\nbe assembled into the equivalent non-streaming body first. ``url`` is the\nclient-facing endpoint path or URL; it breaks ties between formats and is\nrecorded without credentials, query or fragment.\n\n``external_ids`` carries the gateway's own conversation ID, typically under\n``other``. A recognized harness's native ID is added to it; the caller\ncannot replace a native ID the harness supplied. With neither, the session\nis found by transcript prefix. ``user`` is honored only for callers allowed\nto impersonate. The remaining fields have the pre-tool-use hook's meaning.\n\nThe response is a list with one output per selected new client call, in\nresponse order. Each ``tool_use_id`` is the provider's own call ID, except\nfor Gemini, whose calls get stable generated IDs and are matched by order\nwithin the selected candidate. Only the selected choice or candidate may\nbe delivered. The gateway must match every executable client call it will\ndeliver to exactly one output before applying its decision. Withhold the\nresponse if a call has no output, IDs are duplicated, or an output cannot\nbe matched to a call. Gemini requires equal call and output counts.\n\nAnthropic calls before the final ``fallback`` block have no output. An\nempty list means no client calls were selected, not that the original\nresponse contains none. There is no limit on the number of tool calls in\none response (the watcher format accepts at most 32 inputs), because a\ngateway does not control how many calls a provider returns."
+        "description": "A pre-tool-use hook request carrying one provider request and its complete response.\n\n``request_body`` is the JSON the client sent to the gateway and\n``response_body`` the assembled JSON response the gateway would return,\nboth in the same wire format: OpenAI Chat Completions or Responses,\nAnthropic Messages, Gemini generateContent or Bedrock Converse. Streams must\nbe assembled into the equivalent non-streaming body first. ``url`` is the\nclient-facing endpoint path or URL; it breaks ties between formats and is\nrecorded without credentials, query or fragment.\n\n``conversation`` names one authoritative identity selected by the adapter;\nneither caller ``external_ids`` nor parsed native IDs add matching aliases.\nWithout it, legacy requests merge caller aliases with parsed harness IDs\nand can reconcile compatible transcript history across complementary aliases. ``source`` describes\ndelivery only and never selects identity or permissions. ``user`` is honored\nonly for callers allowed to impersonate. The remaining fields have the\npre-tool-use hook's meaning.\n\nThe response is a list with one output per selected new client call, in\nresponse order. Each ``tool_use_id`` is the provider's own call ID, except\nfor Gemini, whose calls get stable generated IDs and are matched by order\nwithin the selected candidate. Only the selected choice or candidate may\nbe delivered. The gateway must match every executable client call it will\ndeliver to exactly one output before applying its decision. Withhold the\nresponse if a call has no output, IDs are duplicated, or an output cannot\nbe matched to a call. Gemini requires equal call and output counts.\n\nAnthropic calls before the final ``fallback`` block have no output. An\nempty list means no client calls were selected, not that the original\nresponse contains none. There is no limit on the number of tool calls in\none response (the watcher format accepts at most 32 inputs), because a\ngateway does not control how many calls a provider returns."
       },
       "RefreshRequest": {
         "properties": {
@@ -12519,7 +12632,7 @@
               }
             ],
             "title": "Metadata",
-            "description": "Values Watcher derives from the session's stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint' (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients must tolerate additional keys."
+            "description": "Values Watcher derives from the session's stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint' (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent when no stored message reported a usable value. Clients must tolerate additional keys."
           },
           "started_at": {
             "type": "string",
@@ -12533,7 +12646,8 @@
           },
           "message_count": {
             "type": "integer",
-            "title": "Message Count"
+            "title": "Message Count",
+            "description": "Messages in the session's longest trajectory; for a conversation the Watcher client and a gateway both recorded, its longest reconciled transcript."
           },
           "created_at": {
             "type": "string",
@@ -12553,6 +12667,14 @@
             "type": "array",
             "title": "Ingest Kinds",
             "description": "Sorted distinct recorded delivery paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report other."
+          },
+          "capture_sources": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureSource"
+            },
+            "type": "array",
+            "title": "Capture Sources",
+            "description": "Distinct integrations observed delivering this session, including duplicate uploads. Retained after content scrubbing. Historical categories without a known integration have a null name."
           },
           "sources": {
             "items": {
@@ -13297,6 +13419,22 @@
             "title": "Sources",
             "description": "Match any selected canonical ingestion source among retained session messages. Open set of exact source keys, combined with other filters using AND. The source match covers the full session regardless of the date window."
           },
+          "capture_sources": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CaptureSource"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Sources",
+            "description": "Match any observed capture source, including duplicate deliveries and scrubbed sessions. A type without a name matches every integration in that category; a name selects that integration exactly. Combined with other filters using AND."
+          },
           "hostnames": {
             "anyOf": [
               {
@@ -13537,11 +13675,13 @@
           },
           "trajectory_count": {
             "type": "integer",
-            "title": "Trajectory Count"
+            "title": "Trajectory Count",
+            "description": "Trajectories in the session. A conversation the Watcher client and a gateway both recorded counts its reconciled transcripts (one per branch), not each stored copy."
           },
           "message_count": {
             "type": "integer",
-            "title": "Message Count"
+            "title": "Message Count",
+            "description": "Messages in the session's longest trajectory; for a conversation both recorders delivered, its longest reconciled transcript. Sorting by message count uses the stored copies' count."
           },
           "started_at": {
             "type": "string",
@@ -13634,7 +13774,7 @@
               }
             ],
             "title": "Metadata",
-            "description": "Values Watcher derives from the session's stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint' (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients must tolerate additional keys."
+            "description": "Values Watcher derives from the session's stored messages. 'hostname' (the machine the session ran on, as the Watcher client reports it) and 'entrypoint' (how the coding agent was started, such as Claude Code's 'cli', 'sdk-cli', 'sdk-py' or 'sdk-ts', or Codex's originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent when no stored message reported a usable value. Clients must tolerate additional keys."
           },
           "grades": {
             "anyOf": [
@@ -13731,13 +13871,21 @@
             "title": "Ingest Kinds",
             "description": "Sorted distinct recorded delivery paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report other."
           },
+          "capture_sources": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureSource"
+            },
+            "type": "array",
+            "title": "Capture Sources",
+            "description": "Distinct integrations observed delivering this session, including duplicate uploads. Retained after content scrubbing. Historical categories without a known integration have a null name."
+          },
           "sources": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Sources",
-            "description": "Distinct canonical ingestion sources among retained session messages, sorted. Known values: 'watcher' (Watcher Live upload), 'tailscale-aperture' (Aperture ingestion), and three keys for other hook ingest, including raw pre-tool-use captures, chosen by the session's retained 'other' conversation ID: 'watcher-gateway' (a gateway integration's prefix, such as 'litellm:'), 'watcher-sdk' (a registered SDK agent's prefix, such as 'aider:'), and 'watcher-hook' (any other ID or none). Hook captures marked as Aperture, and legacy captures without a transport marker, are classified as 'tailscale-aperture'; other source keys pass through. Classification is for reporting only: stored message sources are unchanged. Empty for scrubbed sessions or sessions without stored messages. This is not a complete ingestion history."
+            "description": "Distinct source labels among retained session messages, sorted. Known labels: watcher, tailscale-aperture, watcher-gateway, watcher-sdk and watcher-hook. Explicit capture metadata takes precedence over legacy transport and conversation-prefix classification. Duplicate messages retain their original source; scrubbed sessions return an empty list. Use capture_sources for complete recorded delivery history."
           }
         },
         "type": "object",
@@ -13775,7 +13923,7 @@
           "spawning_tool_use_id"
         ],
         "title": "SpawnedSubagent",
-        "description": "A readable child linked to an exact spawning call in this trajectory.\n\nMatch both the message reference and tool-use ID when rendering. The same\nnative call ID may occur on other stored branches without this association."
+        "description": "A readable child linked to an exact spawning call in this trajectory.\n\nMatch both the message reference and tool-use ID when rendering. The same\nnative call ID may occur on other stored branches without this association.\nIn a reconciled transcript the message is the one showing the spawning call,\nwhich can be the Watcher client's copy of the call another recorder stored first."
       },
       "SubagentListResponse": {
         "properties": {
@@ -15387,7 +15535,7 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Metadata",
-            "description": "The stored metadata of this transcript's own last stored message only, not combined across messages as the session's metadata is. For Claude Code, 'claude_code_entrypoint' and 'claude_code_entry_version' come from the transcript entry that message came from. For Codex ('originator', 'cli_version') and GitHub Copilot CLI ('cli_version') they are the session record's values copied onto every message of the upload, so they do not show which release wrote that message. The upload's own metadata, such as 'hostname', is also included. Values can differ from the session's 'entrypoint' and 'agent_version' after a resume or an upgrade."
+            "description": "The stored metadata of this transcript's own last stored message only, not combined across messages as the session's metadata is. For Claude Code, 'claude_code_entrypoint' and 'claude_code_entry_version' come from the transcript entry that message came from. For Codex ('originator', 'cli_version') and GitHub Copilot CLI ('cli_version') transcript files, they are the session record's values copied onto every message of the upload, so they do not show which release wrote that message. The upload's own metadata, such as 'hostname', is also included. Values can differ from the session's 'entrypoint' and 'agent_version' after a resume or an upgrade."
           },
           "session_id": {
             "type": "string",

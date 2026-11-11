@@ -7,8 +7,7 @@ the real SDK client.
 
 import asyncio
 import json
-import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -24,21 +23,36 @@ from litellm.types.utils import Delta, StreamingChoices
 from openai._streaming import SSEDecoder
 from openai.lib.streaming.chat import ChatCompletionStreamState
 from openai.types.chat import ChatCompletionChunk
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 from watcher_litellm.callback import (
     WatcherCallback,
     client_body,
     client_calls,
     route,
+    watcher_view,
     withheld_response,
 )
 from watcher_litellm.config import main
+from watcher_litellm.copilot import NativeRequest
 from watcher_litellm.streams import IncompleteStream, UnsupportedStream, assemble, encode
 
 from watcher_sdk import AsyncWatcherClient
 from watcher_sdk._generated.models import HookCallError, PreToolUseHookResponse
 
 USER = UserAPIKeyAuth(user_email="dev@example.com")
+# A tool search GitHub ran itself, as Copilot's deferred MCP tools produce, and the call that follows it.
+PROVIDER_SEARCH = [
+    {"type": "tool_search_call", "id": "ts", "call_id": None, "execution": "server", "arguments": {"query": "pizza"}},
+    {"type": "tool_search_output", "id": "to", "call_id": None, "execution": "server", "tools": []},
+]
+MCP_CALL = {
+    "type": "function_call",
+    "id": "fc",
+    "call_id": "mcp_1",
+    "name": "pizza-list_menu",
+    "namespace": "pizza",
+    "arguments": "{}",
+}
 RAW_MESSAGE_EVENT: TypeAdapter[Any] = TypeAdapter(RawMessageStreamEvent)
 
 
@@ -91,7 +105,11 @@ def _chat_response(*names: str, content: str | None = None) -> dict[str, Any]:
 def _proxy_data(path: str, body: dict[str, Any], headers: dict[str, str] | None = None) -> dict[str, Any]:
     return {
         "model": body.get("model", "m"),
-        "proxy_server_request": {"url": f"http://proxy{path}", "body": body, "headers": headers or {}},
+        "proxy_server_request": {
+            "url": f"http://proxy{path}",
+            "body": body,
+            "headers": ({"x-watcher-session-id": "fixture-session"} if headers is None else headers),
+        },
     }
 
 
@@ -150,16 +168,16 @@ class TestRequestHandling:
         ],
     )
     async def test_pre_call_accepts_native_identity_without_an_extra_header(self, body: dict[str, Any]) -> None:
-        data = _proxy_data("/v1/messages", body)
+        data = _proxy_data("/v1/messages", body, headers={})
         assert await WatcherCallback().async_pre_call_hook(USER, None, data, "messages") is data
 
     @pytest.mark.parametrize(
         "body",
-        [{}, {"metadata": {"user_id": "not a native identity"}}, {"client_metadata": {"thread_id": "invalid"}}],
+        [{}, {"metadata": {}}, {"client_metadata": {"session_id": "family-only"}}],
     )
     async def test_pre_call_requires_a_stable_conversation_identity(self, body: dict[str, Any]) -> None:
         with pytest.raises(HTTPException, match="x-watcher-session-id") as refused:
-            await WatcherCallback().async_pre_call_hook(USER, None, _proxy_data("/v1/messages", body), "messages")
+            await WatcherCallback().async_pre_call_hook(USER, None, _proxy_data("/v1/messages", body, {}), "messages")
         assert refused.value.status_code == 400
 
 
@@ -331,6 +349,24 @@ class TestWithholding:
 
         assert [call_id for _, call_id in client_calls("responses", response)] == ["c1", "c2", "c3"]
 
+    def test_provider_run_tool_search_is_not_a_client_call(self) -> None:
+        response = {"output": [*PROVIDER_SEARCH, {"type": "tool_search_call", "call_id": "s", "execution": "client"}]}
+
+        assert [call_id for _, call_id in client_calls("responses", response)] == ["s"]
+
+    def test_watcher_view_omits_provider_run_searches_and_redundant_namespaces(
+        self, native_copilot_request: NativeRequest
+    ) -> None:
+        codex_call = {"type": "function_call", "call_id": "w", "name": "wait_agent", "namespace": "collaboration"}
+        body = {"input": [{"role": "user", "content": "hi"}, *PROVIDER_SEARCH, MCP_CALL], "output": [codex_call]}
+
+        assert watcher_view("responses", body) == {
+            "input": [{"role": "user", "content": "hi"}, {k: v for k, v in MCP_CALL.items() if k != "namespace"}],
+            "output": [codex_call],
+        }
+        assert body["input"][-1] == MCP_CALL
+        assert watcher_view("messages", body) is body
+
     def test_legacy_chat_function_call_is_withheld(self) -> None:
         response = _chat_response(content=None)
         response["choices"][0]["message"]["function_call"] = {"name": "rm", "arguments": "{}"}
@@ -396,39 +432,25 @@ def _stub_client(handler: Any) -> Any:
     return factory
 
 
-_GATEWAY_FIELDS = ("withheld_tool_use_ids", "withholds_refused_calls")
-
-
-def _older_watcher(sent: list[dict[str, Any]], deny: str | None = None) -> Callable[[httpx.Request], httpx.Response]:
-    """A Watcher released before the gateway fields, rejecting them as its raw request model does.
-
-    Calls are allowed except ``deny``. The 422 body is what FastAPI returns for an unknown field on the
-    raw variant of the pre-tool-use request.
-    """
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        sent.append(body)
-        unknown = [field for field in _GATEWAY_FIELDS if field in body]
-        if unknown:
-            errors = [
-                {"loc": ["body", "raw", field], "msg": "Extra inputs are not permitted", "type": "extra_forbidden"}
-                for field in unknown
-            ]
-            return httpx.Response(422, json={"detail": errors, "request_id": "r-1"})
-        calls = client_calls("chat_completions", body["response_body"])
-        return httpx.Response(
-            200, json=[_outcome("deny" if call_id == deny else "allow", call_id) for _, call_id in calls]
-        )
-
-    return handler
-
-
-class _SentConversation(BaseModel):
-    external_ids: dict[str, str] | None = None
-
-
 class TestHooks:
+    async def test_provider_run_tool_search_is_released_and_the_loaded_tool_is_gated(
+        self, native_copilot_request: NativeRequest
+    ) -> None:
+        sent: list[dict[str, Any]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json=_payload(("mcp_1", ["output", 2], _outcome("allow", "mcp_1"))))
+
+        response = {"id": "r", "object": "response", "output": [*PROVIDER_SEARCH, MCP_CALL]}
+        data = _proxy_data("/v1/responses", {"input": "order", "tools": []}, {"x-watcher-session-id": "s"})
+
+        assert (
+            await WatcherCallback(_stub_client(handler)).async_post_call_success_hook(data, USER, response) is response
+        )
+        (body,) = sent
+        assert body["response_body"]["output"] == [{k: v for k, v in MCP_CALL.items() if k != "namespace"}]
+
     async def test_success_hook_forwards_client_request_and_releases(self) -> None:
         sent: list[dict[str, Any]] = []
 
@@ -450,19 +472,16 @@ class TestHooks:
         assert await callback.async_post_call_success_hook(data, USER, response) is response
         (body,) = sent
         assert body["request_body"] == {"model": "m", "messages": []}
-        assert (body["url"], body["user_agent"], body["external_ids"], body["user"]) == (
+        assert (body["url"], body["user_agent"], body["conversation"], body["user"]) == (
             "/v1/chat/completions",
             "app/1",
-            {"other": "litellm:s-1"},
+            {"namespace": "other", "id": "litellm:s-1"},
             "dev@example.com",
         )
         assert body["provider"] == "litellm/m"
         assert body["withholds_refused_calls"] is True
 
-    @pytest.mark.parametrize("headers", [None, {"X-Watcher-Session-Id": ""}], ids=["absent", "empty"])
-    async def test_requests_without_a_session_header_send_no_conversation_id(
-        self, headers: dict[str, str] | None
-    ) -> None:
+    async def test_native_identity_is_resolved_without_forwarding_headers(self) -> None:
         sent: list[dict[str, Any]] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -470,29 +489,35 @@ class TestHooks:
             return httpx.Response(200, json=[])
 
         callback = WatcherCallback(_stub_client(handler))
-        for _ in range(2):
-            data = _proxy_data("/v1/chat/completions", {"model": "m", "messages": []}, headers)
-            response = litellm.ModelResponse(**_chat_response(content="done"))
-            assert await callback.async_post_call_success_hook(data, USER, response) is response
-
-        assert len(sent) == 2
-        assert all("external_ids" not in body for body in sent)
-
-    async def test_session_header_that_already_has_the_prefix_is_sent_unchanged(self) -> None:
-        sent: list[_SentConversation] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            sent.append(_SentConversation.model_validate_json(request.content))
-            return httpx.Response(200, json=[])
-
-        callback = WatcherCallback(_stub_client(handler))
-        headers = {"X-Watcher-Session-Id": "litellm:s-1"}
-        data = _proxy_data("/v1/chat/completions", {"model": "m", "messages": []}, headers)
-        response = litellm.ModelResponse(**_chat_response(content="done"))
+        headers = {
+            "User-Agent": "claude-cli/2.1.270",
+            "X-Claude-Code-Session-Id": "12345678-1234-1234-1234-123456789abc",
+            "X-Claude-Code-Agent-Id": "child",
+            "Authorization": "Bearer never-forward",
+            "Cookie": "private-cookie",
+            "X-Claude-Code-Parent-Agent-Id": "parent",
+        }
+        body = {
+            "model": "m",
+            "messages": [],
+            "metadata": {"user_id": '{"session_id":"12345678-1234-1234-1234-123456789abc"}'},
+        }
+        data = _proxy_data("/v1/messages", body, headers)
+        assert await callback.async_pre_call_hook(USER, None, data, "messages") is data
+        response = {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}
         assert await callback.async_post_call_success_hook(data, USER, response) is response
 
-        (body,) = sent
-        assert body.external_ids == {"other": "litellm:s-1"}
+        assert len(sent) == 1
+        assert sent[0]["conversation"] == {
+            "namespace": "claude_code",
+            "id": 'subagent:["12345678-1234-1234-1234-123456789abc","child"]',
+        }
+        assert "request_headers" not in sent[0]
+        assert sent[0]["request_body"]["metadata"] == body["metadata"]
+        assert sent[0]["source"] == {"type": "gateway", "name": "litellm"}
+        assert "external_ids" not in sent[0]
+        assert "never-forward" not in json.dumps(sent[0])
+        assert "private-cookie" not in json.dumps(sent[0])
 
     async def test_success_hook_returns_typed_replacement(self, text_only_replan: None) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -546,8 +571,11 @@ class TestHooks:
     @pytest.mark.parametrize(
         ("status", "body", "expected"),
         [
-            (422, {"detail": [{"loc": ["body"], "msg": "malformed_exchange", "type": "value_error"}]}, 422),
-            (422, {"detail": "not the validation shape"}, 422),
+            (
+                422,
+                {"detail": [{"loc": ["body", "raw", "withholds_refused_calls"], "type": "extra_forbidden"}]},
+                422,
+            ),
             (401, {"detail": "no"}, 422),
             (403, {"detail": "no"}, 422),
             (413, {"detail": "no"}, 422),
@@ -557,114 +585,24 @@ class TestHooks:
             (500, {"detail": "no"}, 503),
         ],
     )
-    async def test_watcher_errors_withhold_the_response(self, status: int, body: dict[str, Any], expected: int) -> None:
+    async def test_watcher_errors_withhold_without_retry(
+        self, status: int, body: dict[str, Any], expected: int
+    ) -> None:
         """Only a Watcher failure a retry could fix is retryable: clients retry by regenerating the whole response."""
-        callback = WatcherCallback(_stub_client(lambda request: httpx.Response(status, json=body)))
+        sent: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(request)
+            return httpx.Response(status, json=body)
+
+        callback = WatcherCallback(_stub_client(handler))
 
         with pytest.raises(HTTPException) as refused:
             await callback.async_post_call_success_hook(
                 _proxy_data("/v1/chat/completions", {}), USER, _chat_response("rm")
             )
         assert refused.value.status_code == expected
-
-    async def test_an_older_watcher_gets_the_exchange_again_without_the_flag(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        sent: list[dict[str, Any]] = []
-        callback = WatcherCallback(_stub_client(_older_watcher(sent)))
-        response = litellm.ModelResponse(**_chat_response("read"))
-
-        with caplog.at_level(logging.WARNING, logger="watcher_litellm.callback"):
-            released = await callback.async_post_call_success_hook(
-                _proxy_data("/v1/chat/completions", {"model": "m", "messages": []}), USER, response
-            )
-
-        assert released is response
-        assert [body.get("withholds_refused_calls") for body in sent] == [True, None]
-        assert [record.getMessage() for record in caplog.records] == [
-            "Watcher is older than this example and rejected withholds_refused_calls; "
-            "sending the chat_completions exchange again without it"
-        ]
-
-    async def test_an_older_watcher_still_records_the_delivered_reply(
-        self, text_only_replan: None, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        sent: list[dict[str, Any]] = []
-        callback = WatcherCallback(_stub_client(_older_watcher(sent, deny="call_0")))
-
-        with caplog.at_level(logging.WARNING, logger="watcher_litellm.callback"):
-            await callback.async_post_call_success_hook(
-                _proxy_data("/v1/chat/completions", {"model": "m", "messages": []}),
-                USER,
-                litellm.ModelResponse(**_chat_response("rm")),
-            )
-            await asyncio.gather(*callback._recordings)
-
-        recording = sent[-2:]
-        assert [(body.get("withheld_tool_use_ids"), body.get("withholds_refused_calls")) for body in recording] == [
-            (["call_0"], True),
-            (None, None),
-        ]
-        assert recording[0]["response_body"] == recording[1]["response_body"]
-        assert caplog.records[-1].getMessage() == (
-            "Watcher is older than this example and rejected withheld_tool_use_ids, withholds_refused_calls; "
-            "sending the chat_completions exchange again without them"
-        )
-        assert not any("could not record" in record.getMessage() for record in caplog.records)
-
-    @pytest.mark.parametrize(
-        "error",
-        [
-            {
-                "loc": ["body", "raw", "unknown_field"],
-                "msg": "Extra inputs are not permitted",
-                "type": "extra_forbidden",
-            },
-            {
-                "loc": ["body", "raw", "withheld_tool_use_ids"],
-                "msg": "List should have at most 4096 items",
-                "type": "too_long",
-            },
-            {"loc": ["body"], "msg": "malformed_exchange", "type": "value_error"},
-            {
-                "loc": ["body", "raw"],
-                "msg": "Value error, withheld_tool_use_ids requires withholds_refused_calls to be true",
-                "type": "value_error",
-            },
-        ],
-        ids=["another_unknown_field", "invalid_withheld_ids", "malformed_exchange", "withheld_ids_without_flag"],
-    )
-    async def test_other_validation_errors_are_not_sent_again(self, error: dict[str, list[str] | str]) -> None:
-        sent: list[dict[str, Any]] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            sent.append(json.loads(request.content))
-            return httpx.Response(422, json={"detail": [error]})
-
-        with pytest.raises(HTTPException) as refused:
-            await WatcherCallback(_stub_client(handler)).async_post_call_success_hook(
-                _proxy_data("/v1/chat/completions", {}), USER, _chat_response("rm")
-            )
-
-        assert refused.value.status_code == 422
         assert len(sent) == 1
-
-    async def test_a_failure_after_dropping_the_fields_withholds_the_response(self) -> None:
-        sent: list[dict[str, Any]] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            sent.append(json.loads(request.content))
-            if len(sent) == 1:
-                return _older_watcher([])(request)
-            return httpx.Response(500, json={"detail": "no"})
-
-        with pytest.raises(HTTPException) as refused:
-            await WatcherCallback(_stub_client(handler)).async_post_call_success_hook(
-                _proxy_data("/v1/chat/completions", {}), USER, _chat_response("rm")
-            )
-
-        assert refused.value.status_code == 503
-        assert len(sent) == 2
 
     async def test_unreachable_watcher_withholds_the_response(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -716,6 +654,21 @@ class TestHooks:
         ]
 
         assert out != chunks
+        assert assemble("messages", out) == assemble("messages", chunks)
+
+    async def test_github_done_frame_after_message_stop_ends_the_stream_cleanly(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_payload(("t", ["content", 2], _outcome("allow", "t"))))
+
+        chunks = _messages_stream_bytes()
+        out = [
+            c
+            async for c in WatcherCallback(_stub_client(handler)).async_post_call_streaming_iterator_hook(
+                USER, _aiter([*chunks, b"data: [DONE]\n\n"]), _proxy_data("/v1/messages", {})
+            )
+        ]
+
+        assert b"event: error" not in b"".join(out)
         assert assemble("messages", out) == assemble("messages", chunks)
 
     async def test_stream_with_denied_tool_releases_only_a_notice_and_text_alternative(
@@ -1311,3 +1264,14 @@ class TestPackaging:
         config = yaml.safe_load(capsys.readouterr().out)
         assert config["litellm_settings"]["callbacks"] == "watcher_litellm.callback.watcher_callback"
         assert config["model_list"][0]["litellm_params"]["api_key"] == "os.environ/PROVIDER_API_KEY"
+
+
+def test_provider_search_is_not_withheld_without_a_decision() -> None:
+    response = {
+        "output": [
+            {"type": "tool_search_call", "id": "search", "call_id": None, "execution": "server"},
+            {"type": "tool_search_output", "id": "search_output", "call_id": None, "execution": "server"},
+        ]
+    }
+    assert client_calls("responses", response) == []
+    assert withheld_response("responses", response, []) is None

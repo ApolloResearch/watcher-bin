@@ -31,8 +31,12 @@ from watcher_litellm.streams import (
     UnsupportedStream,
     as_dict,
     assemble,
+    response_dict,
 )
 
+# Responses output items the provider runs itself. Every other ``*_call`` item
+# is executed by the client and must have a released Watcher decision, except a
+# tool search the provider ran (see ``is_provider_tool_search``).
 PROVIDER_ITEMS = frozenset(
     {
         "web_search_call",
@@ -68,10 +72,21 @@ def _same_call(first: dict[str, Any], second: dict[str, Any]) -> bool:
     ) == json.dumps({key: second.get(key) for key in _CLIENT_CALL_FIELDS}, sort_keys=True, allow_nan=False)
 
 
+def is_provider_tool_search(item: dict[str, Any]) -> bool:
+    """Whether a Responses item is a tool search, or its output, that the provider ran itself.
+
+    Such a search (``execution: server``) only loaded deferred tool definitions
+    the request supplied; any tool the model then calls arrives as its own
+    client call. Other tool-search executions stay client items, so an unknown
+    execution fails closed.
+    """
+    return item.get("type") in {"tool_search_call", "tool_search_output"} and item.get("execution") == "server"
+
+
 def is_client_item(item: dict[str, Any]) -> bool:
     """Whether a Responses item asks the client, rather than its provider, to execute a tool."""
     kind = item["type"]
-    return kind.endswith("_call") and kind not in PROVIDER_ITEMS
+    return kind.endswith("_call") and kind not in PROVIDER_ITEMS and not is_provider_tool_search(item)
 
 
 def wire_event(api: API, event: dict[str, Any]) -> bytes:
@@ -134,7 +149,7 @@ class IncrementalStream:
         events fail closed because they may introduce a new executable item shape.
         """
         try:
-            data = as_dict(value)
+            data = response_dict(value) if self.api == "responses" else as_dict(value)
             if self.api == "messages":
                 return self._messages(data)
             if self.api == "responses":
@@ -309,14 +324,16 @@ class IncrementalStream:
             if data.get("item_id") not in (None, item["id"]):
                 raise UnsupportedStream("Responses event item identity changed")
             if kind == "response.output_item.done":
-                final = data["item"]
+                final = as_dict(data["item"])
                 if item["id"] != final["id"] or item["type"] != final["type"]:
                     raise UnsupportedStream("Responses item identity changed")
+                if is_client_item(final) != is_client_item(item):
+                    raise UnsupportedStream("Responses done changed who executes the item")
                 if index in self.calls:
                     if not _same_call(item, final):
                         raise UnsupportedStream("Responses done changed streamed call fields")
                     self.complete.add(index)
-                self.items[index] = as_dict(final)
+                self.items[index] = final
                 self.done_items.add(index)
             elif index in self.calls:
                 # Shell actions and deferred-tool searches arrive as whole

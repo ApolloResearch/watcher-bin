@@ -23,6 +23,7 @@ import httpx
 from watcher_sdk._generated.models.ingest_response import IngestResponse
 from watcher_sdk._generated.models.session_summary import SessionSummary
 from watcher_sdk._generated.models.user_filter import UserFilter
+from watcher_sdk.capture import CaptureSource
 from watcher_sdk.client import AsyncWatcherClient
 
 
@@ -170,10 +171,12 @@ class WatcherClient:
         *,
         users: UserFilter | None = None,
         sources: list[str] | None = None,
+        capture_sources: list[CaptureSource] | None = None,
     ) -> Iterator[SessionSummary]:
         """Iterate over search results, auto-paginating.
 
-        Sessions with no messages never match, regardless of filters.
+        Sessions with no recorded message activity never match. Scrubbed sessions
+        retain their activity and can still match.
 
         Args:
             start_date: Include only sessions with activity at or after this datetime.
@@ -198,6 +201,8 @@ class WatcherClient:
                 validation, and required permissions.
             sources: Ingestion sources to match, forwarded on every page. See
                 AsyncWatcherClient.search_sessions for retained-message semantics.
+            capture_sources: Observed delivery categories or integrations to match,
+                forwarded on every page, including duplicate uploads and scrubbed sessions.
         """
         offset = 0
         while True:
@@ -218,6 +223,7 @@ class WatcherClient:
                 session_name_contains=session_name_contains,
                 users=users,
                 sources=sources,
+                capture_sources=capture_sources,
             )
             yield from response.sessions
             offset += page_size

@@ -117,6 +117,8 @@ def scenario(incremental_holder: ScenarioHolder) -> Iterator[Scenario]:
     yield state
     state.start_tools.set()
     state.finish_provider.set()
+    if state.initial_stream_gate is not None:
+        state.initial_stream_gate.set()
     for grade in tuple(state.grades.queue):
         grade.release.set()
 
@@ -193,29 +195,63 @@ def is_error(frame: Frame) -> bool:
     return "error" in frame.data or frame.data.get("type") in {"error", "response.failed"}
 
 
+class KeepaliveReleaseStream(httpx.SyncByteStream):
+    """Let the provider continue only after the SDK receives its first SSE comment."""
+
+    def __init__(self, stream: httpx.SyncByteStream, gate: threading.Event, observed: threading.Event) -> None:
+        self.stream = stream
+        self.gate = gate
+        self.observed = observed
+
+    def __iter__(self) -> Iterator[bytes]:
+        prefix = bytearray()
+        for chunk in self.stream:
+            if not self.observed.is_set():
+                prefix.extend(chunk)
+                if b"\n\n" in prefix:
+                    assert prefix.partition(b"\n\n")[0].startswith(b":")
+                    self.observed.set()
+                    self.gate.set()
+            yield chunk
+
+    def close(self) -> None:
+        self.stream.close()
+
+
 def test_messages_sdk_accepts_keepalives_before_the_first_provider_event(
     incremental_proxy: str, scenario: Scenario
 ) -> None:
     scenario.text_only = True
-    scenario.initial_stream_delay_seconds = 0.3
+    gate = threading.Event()
+    scenario.initial_stream_gate = gate
     with read_stream(incremental_proxy, "messages", scenario.case_id) as reader:
         first = reader.receive()
         assert first.is_keepalive
         assert first.wire.startswith(":")
+        gate.set()
         reader.finish()
         assert reader.frames[-1].data["type"] == "message_stop"
+    gate.clear()
+    observed = threading.Event()
+
+    def release_after_comment(response: httpx.Response) -> None:
+        assert isinstance(response.stream, httpx.SyncByteStream)
+        response.stream = KeepaliveReleaseStream(response.stream, gate, observed)
+
     with (
         anthropic.Anthropic(
             base_url=incremental_proxy,
             api_key="fixture",
             max_retries=0,
             default_headers={"x-watcher-session-id": scenario.case_id},
+            http_client=httpx.Client(event_hooks={"response": [release_after_comment]}),
         ) as client,
         client.messages.stream(
             model="claude-test", max_tokens=100, messages=[{"role": "user", "content": "Read a file."}]
         ) as events,
     ):
         message = events.get_final_message()
+    assert observed.is_set()
     assert [block.text for block in message.content if block.type == "text"] == ["before"]
 
 

@@ -175,6 +175,7 @@ from watcher_sdk._generated.models.agent_relationship_request import AgentRelati
 from watcher_sdk._generated.models.agent_relationship_response import AgentRelationshipResponse
 from watcher_sdk._generated.models.aperture_log import ApertureLog
 from watcher_sdk._generated.models.callback_request import CallbackRequest
+from watcher_sdk._generated.models.capture_source import CaptureSource as APICaptureSource
 from watcher_sdk._generated.models.claude_code_trajectory import ClaudeCodeTrajectory
 from watcher_sdk._generated.models.codex_trajectory import CodexTrajectory
 from watcher_sdk._generated.models.copilot_trajectory import CopilotTrajectory
@@ -218,6 +219,7 @@ from watcher_sdk._generated.models.user_profile import UserProfile
 from watcher_sdk._generated.types import UNSET, Unset
 from watcher_sdk._pagination import PaginatedIterator, SearchPaginatedIterator
 from watcher_sdk.auth_support import REFRESH_TOKEN_COOKIE_NAME, AuthExchangeResult, AuthLogoutResult
+from watcher_sdk.capture import CaptureSource, ConversationIdentity
 from watcher_sdk.errors import (
     WatcherAPIError,
     WatcherConnectionError,
@@ -292,7 +294,7 @@ _LOCAL_JUDGMENTS: dict[str, str] = {
 # translates onto Claude Code's before its deterministic checks (Codex's
 # `exec_command` and GitHub Copilot CLI's `view` are evaluated as `Bash` and
 # `Read`, for instance).
-_TRANSLATED_HARNESS_KEYS = frozenset({"claude_code", "codex", "github_copilot_cli"})
+_TRANSLATED_HARNESS_KEYS = frozenset({"claude_code", "codex", "github_copilot_cli", "opencode"})
 # The coding agents' own transcript formats `pre_tool_use_hook` accepts in `messages`.
 _TRANSCRIPT_FILE_FORMATS = ("claude-code-jsonl", "claude-code-trajectory", "codex-jsonl", "copilot-events-jsonl")
 _TRANSCRIPT_FILE_MODELS = (ClaudeCodeTrajectory, CodexTrajectory, CopilotTrajectory)
@@ -367,12 +369,12 @@ def _hook_may_translate(external_ids: Mapping[str, str | None] | None, tool_name
     """Whether the hook endpoint may evaluate this call under a different tool name than the local stage would.
 
     The endpoint translates harness-specific tool names (Codex's
-    `exec_command`, Claude Cowork's `mcp__workspace__bash`, Copilot's `view`)
-    for requests whose `external_ids` name Claude Code, Codex or GitHub Copilot
-    CLI. This client carries no
-    translation table, so for those requests any name the packaged settings do
-    not configure goes to the server rather than being judged locally under a
-    name the server would not use.
+    `exec_command`, Claude Cowork's `mcp__workspace__bash`, Copilot's `view`,
+    OpenCode's `bash`) for requests whose `external_ids` name Claude Code,
+    Codex, GitHub Copilot CLI or OpenCode. This client carries no translation
+    table, so for those requests any name the packaged settings do not configure
+    goes to the server rather than being judged locally under a name the server
+    would not use.
     """
     if not external_ids or _TRANSLATED_HARNESS_KEYS.isdisjoint(external_ids):
         return False
@@ -1320,6 +1322,8 @@ class AsyncWatcherClient:
         url: str = "",
         provider: str | None = None,
         user_agent: str | None = None,
+        conversation: ConversationIdentity | None = None,
+        source: CaptureSource | None = None,
         response_index: int | None = None,
         external_ids: Mapping[str, str | None] | None = None,
         user: str | None = None,
@@ -1363,6 +1367,8 @@ class AsyncWatcherClient:
         url: str = "",
         provider: str | None = None,
         user_agent: str | None = None,
+        conversation: ConversationIdentity | None = None,
+        source: CaptureSource | None = None,
         response_index: int | None = None,
     ) -> HookAppendResponse | PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
         """Evaluate tool calls or ingest a transcript through Watcher's server pipeline.
@@ -1607,6 +1613,11 @@ class AsyncWatcherClient:
                 refusal as blocked when it decides it. Leave it unset when the reply may
                 already have reached the client, as on an observation path. Raw pairs only;
                 only True is sent, and servers that predate the field reject it with HTTP 422.
+            conversation: Raw pairs only. One authoritative identity selected by the
+                integration. Native body IDs and external_ids are not added as aliases.
+                Omit to retain legacy alias merging. Use distinct IDs for separate children.
+            source: Raw pairs only. The delivery integration, recorded independently of
+                identity and permissions, including when all messages already exist.
 
         """
         if append_after is not None and ephemeral is True:
@@ -1633,6 +1644,8 @@ class AsyncWatcherClient:
             optional: dict[str, object | None] = {
                 "provider": provider,
                 "user_agent": user_agent,
+                "conversation": conversation.model_dump(mode="json") if conversation is not None else None,
+                "source": source.model_dump(mode="json") if source is not None else None,
                 "response_index": response_index,
                 "external_ids": dict(external_ids) if external_ids is not None else None,
                 "user": user,
@@ -1651,6 +1664,8 @@ class AsyncWatcherClient:
                 lambda: RawPreToolUseHookRequest.from_dict(raw),
                 timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS,
             )
+        if conversation is not None or source is not None:
+            raise ValueError("conversation and source are only supported with a raw pair")
         if withheld_tool_use_ids is not None:
             raise ValueError("withheld_tool_use_ids is only supported with a raw pair")
         if withholds_refused_calls is not None:
@@ -1966,8 +1981,8 @@ class AsyncWatcherClient:
 
         The local stage runs only with a readable administrator baseline;
         locally returned decisions use that cached policy. It also steps aside
-        for a request whose `external_ids` name Claude Code or Codex when the
-        tool name is not one the packaged settings configure: the endpoint
+        for a request whose `external_ids` name Claude Code, Codex, GitHub Copilot
+        CLI or OpenCode when the tool name is not one the packaged settings configure: the endpoint
         evaluates such calls under a translated Claude Code tool name (Codex's
         `exec_command` as `Bash`), which this client cannot reproduce. When it cannot be read — the
         org has no readable settings document (which also covers MDM-distributed
@@ -2371,10 +2386,12 @@ class AsyncWatcherClient:
         *,
         users: UserFilter | None = None,
         sources: list[str] | None = None,
+        capture_sources: list[CaptureSource] | None = None,
     ) -> SessionListResponse:
         """Search sessions with filtering, pagination, and sorting.
 
-        Sessions with no messages never match, regardless of filters.
+        Sessions with no recorded message activity never match. Scrubbed sessions
+        retain their activity and can still match.
 
         Args:
             start_date: Include only sessions with activity at or after this datetime.
@@ -2406,11 +2423,14 @@ class AsyncWatcherClient:
                 None selects all owners allowed by your read scope. Naming another
                 user requires sessions:findings:read:any in either mode; otherwise the server
                 returns 403. An empty ids list is rejected with 422.
+            capture_sources: Match any observed capture source, including duplicate
+                deliveries and scrubbed sessions. A type without a name matches every
+                integration in that category; a name selects that integration exactly.
             sources: Match any listed ingestion source among the session's retained
                 messages. Known values are 'watcher', 'tailscale-aperture',
-                'watcher-gateway', 'watcher-sdk' and 'watcher-hook'; the last
-                three split hook messages by the session's conversation-ID
-                prefix. Custom source strings are accepted. None omits this
+                'watcher-gateway', 'watcher-sdk' and 'watcher-hook'. Explicit
+                capture metadata takes precedence over legacy transport and
+                conversation-prefix classification. Custom source strings are accepted. None omits this
                 filter. An empty list is rejected with 422.
 
         Returns:
@@ -2440,6 +2460,11 @@ class AsyncWatcherClient:
             session_name_contains=session_name_contains,
             users=users,
             sources=sources if sources is not None else UNSET,
+            capture_sources=(
+                [APICaptureSource.from_dict(source.model_dump(mode="json")) for source in capture_sources]
+                if capture_sources is not None
+                else UNSET
+            ),
         )
         body = SessionSearchParams(
             limit=limit,
@@ -2882,7 +2907,9 @@ class AsyncWatcherClient:
         )
 
     @_sdk_method
-    async def get_message(self, session_id: str, message_ref: str) -> MessageDetailResponse:
+    async def get_message(
+        self, session_id: str, message_ref: str, trajectory_id: str | None = None
+    ) -> MessageDetailResponse:
         """Get one message's full stored content by its ``message_ref``.
 
         Trajectory-response messages carry a ``message_ref`` (the message's own
@@ -2892,15 +2919,22 @@ class AsyncWatcherClient:
         Args:
             session_id: Unique identifier of the session.
             message_ref: The message's ``message_ref`` from a trajectory response.
+            trajectory_id: The trajectory the message was read from. For a
+                reconciled transcript, the message then carries that
+                transcript's reading position and calls.
 
         Returns:
             MessageDetailResponse with the single full-content message.
 
         Raises:
-            WatcherNotFoundError: If the session or message does not exist.
+            WatcherNotFoundError: If the session or message does not exist, or
+                the reconciled transcript leaves the message out.
         """
         return await _get_message_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
-            session_id, message_ref, client=self._generated_client
+            session_id,
+            message_ref,
+            client=self._generated_client,
+            trajectory_id=trajectory_id if trajectory_id is not None else UNSET,
         )
 
     # ---- Users ----
@@ -3103,12 +3137,14 @@ class AsyncWatcherClient:
         *,
         users: UserFilter | None = None,
         sources: list[str] | None = None,
+        capture_sources: list[CaptureSource] | None = None,
     ) -> AsyncIterator[SessionSummary]:
         """Iterate over search results, auto-paginating.
 
         Returns an async iterator that fetches pages on demand. Each page makes
         one HTTP request to search_sessions with the given filters. Sessions
-        with no messages never match, regardless of filters.
+        with no recorded message activity never match. Scrubbed sessions retain
+        their activity and can still match.
 
         Args:
             start_date: Include only sessions with activity at or after this datetime.
@@ -3133,6 +3169,8 @@ class AsyncWatcherClient:
                 session name. Does not match the session owner's name or email.
             users: Owner selection, forwarded on every page. See search_sessions
                 for include/exclude semantics, validation, and required permissions.
+            capture_sources: Observed integrations to match, forwarded on every page.
+                See search_sessions for category and name matching.
             sources: Ingestion sources to match, forwarded on every page. See
                 search_sessions for retained-message and selection semantics.
 
@@ -3157,6 +3195,7 @@ class AsyncWatcherClient:
                 session_name_contains=session_name_contains,
                 users=users,
                 sources=sources,
+                capture_sources=capture_sources,
             ),
             page_size=page_size,
         )

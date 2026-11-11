@@ -370,11 +370,12 @@ def test_a_truncated_provider_stream_errors_after_releasing_only_evaluated_calls
 
 
 @pytest.mark.parametrize("api", APIS)
-def test_session_header_and_user_agent_reach_watcher(proxy_url: str, watcher_state: WatcherState, api: str) -> None:
+def test_canonical_identity_and_user_agent_reach_watcher(proxy_url: str, watcher_state: WatcherState, api: str) -> None:
     _call(proxy_url, api, False, **{"x-watcher-session-id": "conversation-7", "user-agent": "my-agent/2.0"})
 
     (sent,) = watcher_state.requests
-    assert sent["external_ids"] == {"other": "litellm:conversation-7"}
+    assert sent["conversation"] == {"namespace": "other", "id": "litellm:conversation-7"}
+    assert sent["source"] == {"type": "gateway", "name": "litellm"}
     assert sent["user_agent"] == "my-agent/2.0"
     assert sent["url"].endswith(
         {"chat_completions": "/chat/completions", "responses": "/responses", "messages": "/messages"}[api]
@@ -399,6 +400,71 @@ def test_requests_without_identity_are_refused_before_the_provider_runs(
     assert response.status_code == 400
     assert provider_state.requests == []
     assert watcher_state.requests == []
+
+
+@pytest.mark.parametrize(
+    ("headers", "identity"),
+    [
+        (
+            {"x-watcher-session-id": "litellm:"},
+            {"client_metadata": {"thread_id": "11111111-1111-4111-8111-111111111111"}},
+        ),
+        ({"user-agent": "claude-cli/1", "x-claude-code-agent-id": "child"}, {}),
+        ({"user-agent": "opencode/1", "x-session-id": "one", "x-opencode-session-id": "two"}, {}),
+    ],
+    ids=[
+        "invalid-override-with-native",
+        "claude-child-without-root",
+        "opencode-conflict",
+    ],
+)
+def test_invalid_identity_never_generates(
+    proxy_url: str,
+    provider_state: ProviderState,
+    watcher_state: WatcherState,
+    headers: dict[str, str],
+    identity: dict[str, Any],
+) -> None:
+    response = httpx.post(
+        f"{proxy_url}/v1/messages",
+        headers={"authorization": "Bearer sk-proxy", **headers},
+        json={
+            "model": "claude-test",
+            "max_tokens": 100,
+            "stream": False,
+            "messages": [{"role": "user", "content": "Hello."}],
+            **identity,
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert provider_state.requests == []
+    assert watcher_state.requests == []
+
+
+@pytest.mark.parametrize(
+    ("api", "agent"), [("messages", "claude-cli/1"), ("responses", "codex_exec/1"), ("chat_completions", "opencode/1")]
+)
+@pytest.mark.parametrize("stream", [False, True])
+def test_custom_only_identity_ignores_native_headers(
+    proxy_url: str, provider_state: ProviderState, watcher_state: WatcherState, api: str, agent: str, stream: bool
+) -> None:
+    provider_state.tools = []
+    _call(
+        proxy_url,
+        api,
+        stream,
+        **{
+            "user-agent": agent,
+            "x-claude-code-session-id": "bad-root",
+            "x-claude-code-agent-id": "",
+            "x-session-id": "x" * 1025,
+            "x-opencode-session-id": "",
+        },
+    )
+    _await_requests(watcher_state, 1)
+    assert len(provider_state.requests) == 1
+    assert watcher_state.requests[0]["conversation"] == {"namespace": "other", "id": "litellm:fixture-session"}
+    assert "external_ids" not in watcher_state.requests[0]
 
 
 def test_multiple_choices_are_refused_before_the_provider_runs(proxy_url: str, provider_state: ProviderState) -> None:

@@ -101,6 +101,8 @@ from .available_tool_call_list_item_ingest_kind_type_0 import (
 )
 from .bypass_reason import BypassReason
 from .callback_request import CallbackRequest
+from .capture_source import CaptureSource
+from .capture_source_type import CaptureSourceType
 from .chat_message_assistant import ChatMessageAssistant
 from .chat_message_assistant_metadata_type_0 import ChatMessageAssistantMetadataType0
 from .chat_message_assistant_source_type_0 import ChatMessageAssistantSourceType0
@@ -170,6 +172,8 @@ from .content_tool_use import ContentToolUse
 from .content_tool_use_tool_type import ContentToolUseToolType
 from .content_video import ContentVideo
 from .content_video_format import ContentVideoFormat
+from .conversation_identity import ConversationIdentity
+from .conversation_identity_namespace import ConversationIdentityNamespace
 from .copilot_entry import CopilotEntry
 from .copilot_entry_data_type_0 import CopilotEntryDataType0
 from .copilot_hook_request import CopilotHookRequest
@@ -552,6 +556,8 @@ __all__ = (
     "AvailableToolCallListItemIngestKindType0",
     "BypassReason",
     "CallbackRequest",
+    "CaptureSource",
+    "CaptureSourceType",
     "ChatMessageAssistant",
     "ChatMessageAssistantMetadataType0",
     "ChatMessageAssistantSourceType0",
@@ -613,6 +619,8 @@ __all__ = (
     "ContentToolUseToolType",
     "ContentVideo",
     "ContentVideoFormat",
+    "ConversationIdentity",
+    "ConversationIdentityNamespace",
     "CopilotEntry",
     "CopilotEntryDataType0",
     "CopilotHookRequest",

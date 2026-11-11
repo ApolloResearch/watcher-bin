@@ -76,6 +76,7 @@ from watcher_sdk._generated.models.user_profile import UserProfile
 from watcher_sdk._generated.models.user_summary import UserSummary
 from watcher_sdk._generated.models.version_response import VersionResponse
 from watcher_sdk.auth_support import AuthExchangeResult, AuthLogoutResult
+from watcher_sdk.capture import CaptureSource, ConversationIdentity
 from watcher_sdk.client import (
     AsyncWatcherClient,
     ChatMessage,
@@ -243,6 +244,8 @@ class WatcherClient:
         url: str = "",
         provider: str | None = None,
         user_agent: str | None = None,
+        conversation: ConversationIdentity | None = None,
+        source: CaptureSource | None = None,
         response_index: int | None = None,
         external_ids: Mapping[str, str | None] | None = None,
         user: str | None = None,
@@ -346,6 +349,7 @@ class WatcherClient:
         *,
         users: UserFilter | None = None,
         sources: list[str] | None = None,
+        capture_sources: list[CaptureSource] | None = None,
     ) -> SessionListResponse: ...
     def search_tool_calls(
         self,
@@ -408,7 +412,9 @@ class WatcherClient:
     def get_trajectory(
         self, session_id: str, trajectory_id: str, view: TrajectoryView = TrajectoryView.TRUNCATED
     ) -> TrajectoryDetailResponse: ...
-    def get_message(self, session_id: str, message_ref: str) -> MessageDetailResponse: ...
+    def get_message(
+        self, session_id: str, message_ref: str, trajectory_id: str | None = None
+    ) -> MessageDetailResponse: ...
     def list_users(self, limit: int = 100, offset: int = 0) -> UserListResponse: ...
     def list_my_session_content_access_requests(
         self,
@@ -469,4 +475,5 @@ class WatcherClient:
         *,
         users: UserFilter | None = None,
         sources: list[str] | None = None,
+        capture_sources: list[CaptureSource] | None = None,
     ) -> Iterator[SessionSummary]: ...

@@ -66,7 +66,15 @@ def litellm_proxy(
     }
     # In its default DEV mode the CLI loads the nearest .env file, which inside
     # this checkout belongs to the Watcher server and names its database.
-    full_env = {**inherited, "LITELLM_MODE": "PRODUCTION", "LITELLM_LOG": "ERROR", **env}
+    # These loopback fixtures exercise callback behavior without client auth.
+    # LiteLLM 1.108 requires an explicit opt-in for such a test-only listener.
+    full_env = {
+        **inherited,
+        "LITELLM_MODE": "PRODUCTION",
+        "LITELLM_LOG": "ERROR",
+        "LITELLM_DANGEROUSLY_PERMIT_WEAK_OR_UNSET_MASTER_KEY": "true",
+        **env,
+    }
     port = free_port()
     log_path = workdir / "proxy.log"
     with log_path.open("w") as log:

@@ -16,6 +16,8 @@ class SpawnedSubagent:
 
     Match both the message reference and tool-use ID when rendering. The same
     native call ID may occur on other stored branches without this association.
+    In a reconciled transcript the message is the one showing the spawning call,
+    which can be the Watcher client's copy of the call another recorder stored first.
 
         Attributes:
             session_id (UUID):

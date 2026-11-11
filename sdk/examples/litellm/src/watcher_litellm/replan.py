@@ -23,8 +23,9 @@ from typing import Any, Literal, overload
 from litellm.litellm_core_utils.core_helpers import independent_snapshot
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
-from watcher_litellm.incremental import PROVIDER_ITEMS
-from watcher_litellm.streams import API
+from watcher_litellm.copilot import current_request
+from watcher_litellm.incremental import is_client_item
+from watcher_litellm.streams import API, response_dict
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 _ADDED_BY_WATCHER = "(added by Watcher, not written by the assistant)"
@@ -101,12 +102,29 @@ class _LocalShellAction(BaseModel):
     user: str | None = None
 
 
+def redundant_namespace(item: dict[str, Any]) -> bool:
+    """Whether a Responses item's namespace only repeats the prefix of its tool name.
+
+    Copilot names each MCP tool with its server as a prefix and also sends the
+    server as the namespace, so the namespace adds nothing to the name.
+    """
+    namespace, name = item.get("namespace"), item.get("name")
+    return isinstance(namespace, str) and isinstance(name, str) and name.startswith(namespace + "-")
+
+
 def _responses_tool_name(item: dict[str, Any]) -> str:
-    """Match Watcher's Codex namespace folding without changing provider item fields."""
+    """Fold namespaces using the active native request's tool naming convention.
+
+    Native Copilot server tools already start with ``<namespace>-``. Other
+    calls use Codex's namespace spelling. The provider item is never changed.
+    """
     name = item["name"]
     namespace = item.get("namespace")
     if not isinstance(name, str) or not name or (namespace is not None and not isinstance(namespace, str)):
         raise ValueError("Invalid Responses tool name or namespace")
+    # Keep native Copilot names in sync with the Watcher server's Responses parser.
+    if current_request.get() is not None and redundant_namespace(item):
+        return name
     if not namespace or namespace == "functions":
         return name
     if namespace.startswith("mcp__"):
@@ -167,6 +185,8 @@ def client_tool_details(api: API, response: dict[str, Any]) -> list[ToolCall]:
                 )
         else:
             for item in response["output"]:
+                if not is_client_item(item):
+                    continue
                 kind = item["type"]
                 if kind == "function_call":
                     name = _responses_tool_name(item)
@@ -185,10 +205,8 @@ def client_tool_details(api: API, response: dict[str, Any]) -> list[ToolCall]:
                     arguments = (
                         _JSON_OBJECT.validate_python(raw, strict=True) if isinstance(raw, dict) else _arguments(raw)
                     )
-                elif kind.endswith("_call") and kind not in PROVIDER_ITEMS:
-                    raise ValueError("Unsupported Responses client call")
                 else:
-                    continue
+                    raise ValueError("Unsupported Responses client call")
                 calls.append(ToolCall(tool_use_id=item["call_id"], tool_name=name, tool_input=arguments))
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError("Malformed client tool response") from exc
@@ -353,7 +371,7 @@ def build_replan_request(
     (except with ``stop``), cache controls, signed thinking,
     encrypted reasoning and metadata are copied unchanged. Recovery must not enable tools excluded for this turn. Responses string
     input becomes an equivalent user message. Provider-run output stays context.
-    Native shell receipts use the API's ``id`` result field. A tool search has
+    Native shell receipts use the API's ``id`` result field. A client tool search has
     no textual result field: its incomplete result provides no tool definitions,
     and a separate user message explains that this is a gateway receipt, not a
     search result. Released searches remain explicitly execution-pending.
@@ -417,7 +435,7 @@ def build_replan_request(
                         "output": result_text(item["call_id"]),
                     }
                 )
-            elif item["type"] == "tool_search_call":
+            elif item["type"] == "tool_search_call" and is_client_item(item):
                 history.append(
                     {
                         "type": "tool_search_output",
@@ -543,5 +561,7 @@ async def complete_replan(
             raise ValueError("Router did not return a streaming alternative")
         return response
     return _JSON_OBJECT.validate_python(
-        response.model_dump(mode="json") if isinstance(response, BaseModel) else response
+        response_dict(response)
+        if api == "responses"
+        else (response.model_dump(mode="json", by_alias=True) if isinstance(response, BaseModel) else response)
     )

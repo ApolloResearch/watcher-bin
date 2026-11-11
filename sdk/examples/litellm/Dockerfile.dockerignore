@@ -1,0 +1,12 @@
+**
+!pyproject.toml
+!README.md
+!LICENSE
+!THIRD_PARTY_LICENSES.md
+!src
+!src/**
+!examples/litellm/pyproject.toml
+!examples/litellm/uv.lock
+!examples/litellm/README.md
+!examples/litellm/src
+!examples/litellm/src/**

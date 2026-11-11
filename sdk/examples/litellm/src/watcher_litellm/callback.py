@@ -23,9 +23,8 @@ Non-streamed proposals remain atomic until an entire allowed alternative can be
 returned. Every request also carries a fixed system notice explaining Watcher's
 notices (``system_notice``). Every Watcher
 request declares that refused calls are withheld (``withholds_refused_calls``),
-so Watcher records them as blocked, except when it re-sends an exchange to an
-older Watcher that rejects the newer fields. The recording of
-the delivered response names every call withheld from a refused proposal
+so Watcher records them as blocked. The recording of the delivered response
+names every call withheld from a refused proposal
 (``withheld_tool_use_ids``), so Watcher can show those calls before it; released
 calls are never named. Watcher skips a named call it never evaluated, such as
 one from a proposal refused locally as a repeat.
@@ -37,34 +36,43 @@ generation, which falls back to the fixed question.
 SSE comments keep every API alive without inventing model content; final text-only
 recording never holds delivery. Transport failures remain explicit stream errors.
 
-Configure ``WATCHER_API_URL`` and ``WATCHER_API_KEY`` on the proxy process.
-Clients can send ``x-watcher-session-id`` to group their requests into one
-Watcher session, recorded under ``SESSION_PREFIX``; requests that carry a native
-session ID, as Claude Code's and Codex's normally do, group by it. Requests without
-either are refused before generation because partial replies cannot reliably
-identify a conversation by shared history.
+Configure ``WATCHER_API_URL`` and ``WATCHER_API_KEY`` on the proxy process,
+or use ``WATCHER_AUTH_MODE=proxy`` with a server-owned proxy token and trusted
+LiteLLM account emails (see ``proxy_auth``). Proxy mode scopes conversation
+IDs by account and forwards only the authenticated account's identity.
+Clients can send ``x-watcher-session-id`` as the sole conversation identity,
+overriding native IDs. Without it, native Claude Code, Codex and OpenCode
+metadata identifies each individual conversation, including children. Shared
+SDK rules validate the chosen identity before generation and when recording.
 """
 
 import asyncio
 import json
 import logging
 import os
-import re
 from collections import deque
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import aclosing, asynccontextmanager
 from typing import Any, TypeVar, cast
 from urllib.parse import urlsplit
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
 from openai._streaming import SSEDecoder
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
+from watcher_litellm.copilot import current_request
 from watcher_litellm.delivery import StreamDelivery, compose_nonstream
-from watcher_litellm.incremental import PROVIDER_ITEMS, Evaluation, IncrementalStream, PendingEvent
+from watcher_litellm.incremental import (
+    Evaluation,
+    IncrementalStream,
+    PendingEvent,
+    is_client_item,
+    is_provider_tool_search,
+)
+from watcher_litellm.proxy_auth import account_email, account_session, proxy_client, require_proxy_configuration
 from watcher_litellm.replan import (
     ToolCall,
     ToolDenial,
@@ -72,6 +80,7 @@ from watcher_litellm.replan import (
     client_tool_details,
     complete_replan,
     denial_notice,
+    redundant_namespace,
     stop_notice,
 )
 from watcher_litellm.streams import (
@@ -79,10 +88,15 @@ from watcher_litellm.streams import (
     IncompleteStream,
     UnsupportedStream,
     as_dict,
+    completed_response,
+    response_dict,
+    response_event,
 )
 from watcher_litellm.system_notice import system_notice_fields
 from watcher_sdk import AsyncWatcherClient, WatcherAPIError, WatcherError
 from watcher_sdk._generated.models import HookCallError, PreToolUseHookResponse
+from watcher_sdk.capture import CaptureSource, ConversationIdentity, validate_conversation_id
+from watcher_sdk.gateway_identity import IDENTITY_HEADER_NAMES, resolve_conversation_identity
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +109,6 @@ _RELEASED = {"allow", "deferred"}
 # Decision sources that read the conversation, so a user's approval can change
 # their next decision. Rules, thresholds and grading-failure policy do not.
 _GRADED = {"policy_gateway", "triage"}
-# Watcher stores each client's x-watcher-session-id under this prefix. Watcher
-# labels sessions whose ID carries a registered gateway prefix as Gateway, and
-# the prefix keeps client-chosen IDs apart from IDs other integrations send. A
-# header that already starts with the prefix is sent unchanged, so a client can
-# send back the stored ID it looked up without it gaining a second prefix.
-SESSION_PREFIX = "litellm:"
 _NOTICE = "Watcher withheld the proposed tool call{plural} ({names}). No tool was run.\n\n{reasons}"
 _MAX_PROPOSALS = 3
 _T = TypeVar("_T")
@@ -186,41 +194,22 @@ def client_body(api: API, body: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in body.items() if key not in added}
 
 
-def session_identity(data: dict[str, Any]) -> str | None:
-    """Use a client-supplied conversation identity, never infer it from a partial reply.
-
-    A native Claude/Codex UUID becomes a stable gateway alias as well as retaining
-    the backend's native identity. Generic clients supply ``x-watcher-session-id``.
-    Content-derived IDs would merge independent conversations sharing an opening.
-    """
+def session_identity(api: API, data: dict[str, Any]) -> ConversationIdentity:
+    """Resolve one conversation, using the admitted account-scoped identity for native Copilot."""
+    native = current_request.get()
+    if native is not None:
+        return ConversationIdentity(namespace="other", id=native.conversation.external_id)
     original = data["proxy_server_request"]
-    headers = {key.lower(): value for key, value in (original.get("headers") or {}).items()}
-    explicit = headers.get("x-watcher-session-id")
-    if explicit:
-        return explicit if explicit.startswith(SESSION_PREFIX) else SESSION_PREFIX + explicit
-    body = original["body"]
-    client_metadata = body.get("client_metadata")
-    candidate = client_metadata.get("thread_id") if isinstance(client_metadata, dict) else None
-    harness = "codex"
-    if candidate is None:
-        metadata = body.get("metadata")
-        user_id = metadata.get("user_id") if isinstance(metadata, dict) else None
-        if isinstance(user_id, str):
-            harness = "claude"
-            try:
-                identity = json.loads(user_id)
-            except ValueError:
-                match = re.search(r"_session_([0-9a-fA-F-]{36})$", user_id)
-                candidate = match[1] if match is not None else None
-            else:
-                candidate = identity.get("session_id") if isinstance(identity, dict) else None
-    if not isinstance(candidate, str):
-        return None
-    try:
-        native_id = UUID(candidate)
-    except ValueError:
-        return None
-    return f"{SESSION_PREFIX}{harness}:{native_id}"
+    headers = original.get("headers") or {}
+    identity = resolve_conversation_identity(
+        client_body(api, original["body"]),
+        {name: value for name, value in headers.items() if name.lower() in IDENTITY_HEADER_NAMES},
+        next((value for name, value in headers.items() if name.lower() == "user-agent"), None),
+    )
+    if identity.namespace == "other":
+        suffix = validate_conversation_id(identity.id.removeprefix("litellm:"), max_length=1024)
+        return ConversationIdentity(namespace="other", id="litellm:" + suffix)
+    return identity
 
 
 def _unsupported_request(api: API, body: dict[str, Any]) -> str | None:
@@ -246,39 +235,6 @@ def _client_status(watcher_status: int) -> int:
     return 503 if watcher_status >= 500 or watcher_status in _TRANSIENT_WATCHER_STATUSES else 422
 
 
-# Raw-format request fields newer than some Watcher servers this example may
-# run against. Those servers forbid unknown fields, so they answer HTTP 422 with
-# an ``extra_forbidden`` validation error located at the field.
-_GATEWAY_FIELDS = frozenset({"withheld_tool_use_ids", "withholds_refused_calls"})
-
-
-class _ValidationError(BaseModel):
-    loc: list[str | int]
-    type: str
-
-
-class _ValidationErrors(BaseModel):
-    detail: list[_ValidationError]
-
-
-def _predates_gateway_fields(error: WatcherAPIError) -> bool:
-    """Whether Watcher rejected the exchange as an older server that does not know the gateway fields."""
-    if error.status_code != 422:
-        return False
-    try:
-        errors = _ValidationErrors.model_validate(error.body)
-    except ValidationError:
-        return False
-    return any(
-        item.type == "extra_forbidden" and item.loc and item.loc[-1] in _GATEWAY_FIELDS for item in errors.detail
-    )
-
-
-# Responses output items the provider runs itself. Every other ``*_call`` item
-# is executed by the client and must have a released Watcher decision.
-_PROVIDER_ITEMS = PROVIDER_ITEMS
-
-
 def client_calls(api: API, response: dict[str, Any]) -> list[tuple[list[str | int], str]]:
     """Every client-executable call in a response, as (path, call ID), in response order.
 
@@ -300,10 +256,35 @@ def client_calls(api: API, response: dict[str, Any]) -> list[tuple[list[str | in
                 calls.append((["content", i], str(block.get("id"))))
     else:
         for i, item in enumerate(response.get("output") or []):
-            kind = str(item.get("type", ""))
-            if kind.endswith("_call") and kind not in _PROVIDER_ITEMS:
+            if is_client_item({**item, "type": str(item.get("type", ""))}):
                 calls.append((["output", i], str(item.get("call_id") or item.get("id"))))
     return calls
+
+
+def watcher_view(api: API, body: dict[str, Any]) -> dict[str, Any]:
+    """The copy of a request or response body Watcher evaluates and records.
+
+    Provider-run Responses searches are left out so this copy also works with
+    Watcher servers that do not accept them. A namespace that
+    only repeats a tool name's prefix is left out so Watcher records the tool
+    under the name Copilot uses. Other APIs are unchanged.
+    """
+    if api != "responses":
+        return body
+    view = dict(body)
+    for key in ("input", "output"):
+        items = body.get(key)
+        if not isinstance(items, list):
+            continue
+        kept: list[Any] = []
+        for item in items:
+            if isinstance(item, dict) and is_provider_tool_search(item):
+                continue
+            if isinstance(item, dict) and current_request.get() is not None and redundant_namespace(item):
+                item = {field: value for field, value in item.items() if field != "namespace"}
+            kept.append(item)
+        view[key] = kept
+    return view
 
 
 def _path_order(path: list[str | int]) -> list[tuple[int, int | str]]:
@@ -467,8 +448,8 @@ class WatcherCallback(CustomLogger):
 
     ``client_factory`` returns a fresh ``AsyncWatcherClient`` per exchange; the
     callback enters and closes it. By default the client is built from
-    ``WATCHER_API_URL`` and ``WATCHER_API_KEY`` when the first exchange is
-    evaluated, so importing the module reads no credentials. ``timeout_seconds``
+    ``WATCHER_API_URL`` and ``WATCHER_API_KEY`` (or proxy authentication settings)
+    when the first exchange is evaluated, so importing the module reads no credentials. ``timeout_seconds``
     bounds the complete Watcher exchange, including connection setup and reading
     its reply. A refused call's remaining budget also bounds its recovery chain;
     initial provider generation is excluded. ``ping_seconds`` controls idle SSE
@@ -493,10 +474,12 @@ class WatcherCallback(CustomLogger):
         self._recordings: set[asyncio.Task[None]] = set()
 
     @asynccontextmanager
-    async def _client(self) -> AsyncGenerator[AsyncWatcherClient]:
+    async def _client(self, user: UserAPIKeyAuth) -> AsyncGenerator[AsyncWatcherClient]:
         client = (
             self.client_factory()
             if self.client_factory is not None
+            else proxy_client(user)
+            if os.environ.get("WATCHER_AUTH_MODE") == "proxy"
             else AsyncWatcherClient(os.environ["WATCHER_API_URL"], api_key=os.environ.get("WATCHER_API_KEY"))
         )
         async with client:
@@ -514,14 +497,19 @@ class WatcherCallback(CustomLogger):
         api = route(data)
         if api is None:
             return data
+        if os.environ.get("WATCHER_AUTH_MODE") == "proxy":
+            account_email(user_api_key_dict)
+            require_proxy_configuration()
         if problem := _unsupported_request(api, data["proxy_server_request"]["body"]):
             raise HTTPException(400, problem)
-        if session_identity(data) is None:
+        try:
+            session_identity(api, data)
+        except ValueError as exc:
             raise HTTPException(
                 400,
-                "Watcher requires x-watcher-session-id or native Claude/Codex session metadata "
-                "to keep incremental decisions in one conversation",
-            )
+                "Watcher requires a valid x-watcher-session-id or native Claude/Codex/OpenCode conversation identity: "
+                + str(exc),
+            ) from None
         fields = system_notice_fields(api, data)
         data.update(fields)
         snapshot = data["proxy_server_request"]
@@ -554,35 +542,19 @@ class WatcherCallback(CustomLogger):
         """Return matched policy refusals; missing, ambiguous or failed decisions are errors.
 
         ``withheld_ids`` names the calls withheld in favor of ``response`` and is
-        sent only when there are some. A Watcher server older than this example
-        rejects that field and ``withholds_refused_calls``; the exchange is then
-        sent once more without them, so it is still evaluated and recorded.
+        sent only when there are some. Failed requests are not retried.
         """
         try:
-            async with self._client() as client:
-                try:
-                    outputs = await self._send_exchange(
-                        client, api, data, response, user, withheld_ids=withheld_ids, withholds_refused_calls=True
-                    )
-                except WatcherAPIError as error:
-                    if not _predates_gateway_fields(error):
-                        raise
-                    dropped = [*(["withheld_tool_use_ids"] if withheld_ids else []), "withholds_refused_calls"]
-                    logger.warning(
-                        "Watcher is older than this example and rejected %s; sending the %s exchange again without %s",
-                        ", ".join(dropped),
-                        api,
-                        "them" if len(dropped) > 1 else "it",
-                    )
-                    outputs = await self._send_exchange(
-                        client, api, data, response, user, withheld_ids=None, withholds_refused_calls=False
-                    )
+            async with self._client(user) as client:
+                outputs = await self._send_exchange(client, api, data, response, user, withheld_ids=withheld_ids)
         except WatcherAPIError as error:
             logger.warning("Watcher rejected a %s exchange with HTTP %s", api, error.status_code)
             raise HTTPException(_client_status(error.status_code), "Watcher could not evaluate this response") from None
         except WatcherError:
             logger.warning("Watcher was unavailable for a %s exchange", api)
             raise HTTPException(503, "Watcher could not evaluate this response") from None
+        except HTTPException:
+            raise
         except Exception as error:
             # An unparseable Watcher reply (for example from a proxy in front of
             # it) must still withhold the response rather than surface as a 500.
@@ -634,23 +606,38 @@ class WatcherCallback(CustomLogger):
         user: UserAPIKeyAuth,
         *,
         withheld_ids: list[str] | None,
-        withholds_refused_calls: bool,
     ) -> list[PreToolUseHookResponse | HookCallError]:
         original = data["proxy_server_request"]
         headers = {key.lower(): value for key, value in (original.get("headers") or {}).items()}
-        session_id = session_identity(data)
-        return await client.pre_tool_use_hook(
-            request_body=client_body(api, original["body"]),
-            response_body=response,
+        identity = session_identity(api, data)
+        is_proxy = os.environ.get("WATCHER_AUTH_MODE") == "proxy"
+        native = current_request.get()
+        if is_proxy and native is None:
+            session_id = identity.id if identity.namespace == "other" else f"{identity.namespace}:{identity.id}"
+            identity = ConversationIdentity(namespace="other", id=account_session(user, session_id))
+        external_ids = None
+        if native is not None:
+            # The custom alias identifies the conversation; the null native key
+            # selects Copilot's tool rules without adding another matching ID.
+            external_ids = {"other": identity.id, "github_copilot_cli": None}
+        outputs = await client.pre_tool_use_hook(
+            request_body=watcher_view(api, client_body(api, original["body"])),
+            response_body=watcher_view(api, response),
             url=urlsplit(original["url"]).path,
             provider=f"litellm/{data.get('model', 'unknown')}",
             user_agent=headers.get("user-agent"),
-            external_ids={"other": session_id} if session_id else None,
-            user=user.user_email or None,
+            conversation=identity if native is None else None,
+            source=CaptureSource(type="gateway", name="litellm"),
+            external_ids=external_ids,
+            user=None if is_proxy else user.user_email or None,
             timeout=self.timeout_seconds,
             withheld_tool_use_ids=withheld_ids,
-            withholds_refused_calls=withholds_refused_calls,
+            withholds_refused_calls=True,
         )
+        if native is not None:
+            await native.conversation.record_spawning_calls(client_tool_details(api, response))
+            await native.conversation.link(client)
+        return outputs
 
     async def async_post_call_success_hook(
         self, data: dict[str, Any], user_api_key_dict: UserAPIKeyAuth, response: Any
@@ -681,11 +668,11 @@ class WatcherCallback(CustomLogger):
         The public hook maps malformed exchanges and provider failures to safe
         HTTP errors; cancellation remains owned by the requesting proxy task.
         """
-        original = as_dict(response)
+        original = response_dict(response) if api == "responses" else as_dict(response)
         started = asyncio.get_running_loop().time()
         denials = await self._decide(api, data, original, user)
         if not denials:
-            return response
+            return original if api == "responses" and isinstance(response, BaseModel) else response
         request = client_body(api, data["proxy_server_request"]["body"])
         candidate = original
         recovery = _Recovery(deadline=started + self.timeout_seconds)
@@ -715,7 +702,7 @@ class WatcherCallback(CustomLogger):
                 break
         delivered = compose_nonstream(api, original, replacement, "\n\n".join(notices))
         self._start_recording(api, data, delivered, user, recovery.withheld_ids())
-        if isinstance(response, BaseModel):
+        if isinstance(response, BaseModel) and api != "responses":
             return type(response).model_validate(delivered)
         return delivered
 
@@ -784,17 +771,23 @@ class WatcherCallback(CustomLogger):
 
     async def _provider_events(self, api: API, response: Any) -> AsyncGenerator[Any]:
         """Decode complete Messages SSE frames and bound raw input for every format."""
+        completed = completed_response(response) if api == "responses" else None
         async with aclosing(self._stream_chunks(api, response)) as chunks:
             if api == "messages":
                 async for event in SSEDecoder().aiter_bytes(chunks):
-                    if event.data:
+                    # GitHub Copilot ends its Messages streams with an OpenAI-style
+                    # ``[DONE]`` frame after ``message_stop``. It carries nothing to
+                    # deliver. A stream that ends before ``message_stop`` fails.
+                    if event.data and event.data != "[DONE]":
                         try:
                             yield json.loads(event.data)
                         except ValueError as exc:
                             raise UnsupportedStream("Malformed Messages SSE data") from exc
             else:
                 async for chunk in chunks:
-                    yield chunk
+                    if api == "responses" and completed is None:
+                        completed = completed_response(response)
+                    yield response_event(chunk, completed) if api == "responses" else chunk
 
     async def _stream_chunks(self, api: API, response: Any) -> AsyncGenerator[Any]:
         """Bound provider input and close external LiteLLM iterators when they support it."""
@@ -1105,7 +1098,8 @@ class WatcherCallback(CustomLogger):
         question, rather than cutting off a half-delivered reply with an error.
         """
         response = await complete_replan(api, request, data, stream=True)
-        async with aclosing(self._stream_chunks(api, response)) as source:
+        source = self._provider_events(api, response) if api == "responses" else self._stream_chunks(api, response)
+        async with aclosing(source):
             chunks = [chunk async for chunk in source]
         state = IncrementalStream(api)
         async with aclosing(self._provider_events(api, _replay(chunks))) as events:

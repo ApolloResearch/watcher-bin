@@ -25,7 +25,10 @@ class GatewayDelivery:
                 ``blocked``: the gateway refused the call because Watcher denied or
                 escalated it. ``cancelled``: Watcher did not refuse the call, but the
                 gateway dropped it with a refused call from the same proposal.
-            delivered_message_ref (str): Message the gateway delivered to the client instead.
+            delivered_message_ref (str): Message the gateway delivered to the client instead, as the trajectory shows it. A
+                reconciled transcript that shows another copy of the delivered message names that copy: the Watcher client's
+                copy of a message making the same tool call, or, for a message of text alone, the copy of that answer in the
+                same turn. When the turn is unclear, the stored message, which that transcript may not show.
             proposal_message_ref (str): Message that proposed the call, on its own branch.
     """
 

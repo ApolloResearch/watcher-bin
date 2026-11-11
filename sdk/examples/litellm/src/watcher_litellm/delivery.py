@@ -23,9 +23,20 @@ from typing import Any
 from uuid import uuid4
 
 import litellm
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from watcher_litellm.incremental import IncrementalStream, PendingEvent, is_client_item, wire_event
 from watcher_litellm.streams import API, IncompleteStream, UnsupportedStream, as_dict, assemble
+
+
+class _ChatReasoningFields(BaseModel):
+    """Copilot's scalar reasoning and opaque state for one Chat response."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    reasoning_text: str | None = None
+    reasoning_opaque: str | None = None
+    refusal: None = None
 
 
 def compose_nonstream(
@@ -66,6 +77,7 @@ def compose_nonstream(
                 "custom_tool_call",
                 "local_shell_call",
                 "tool_search_call",
+                "tool_search_output",
                 "web_search_call",
                 "file_search_call",
                 "code_interpreter_call",
@@ -78,10 +90,10 @@ def compose_nonstream(
         if any(block["type"] not in allowed_types for block in [*blocks, *additions]):
             raise UnsupportedStream("Unsupported content in a resampled response")
         if api == "responses" and any(
-            block["type"] == "tool_search_call" and block.get("execution") != "client"
+            block["type"] == "tool_search_call" and block.get("execution") not in {"client", "server"}
             for block in [*blocks, *additions]
         ):
-            raise UnsupportedStream("Only client-executed tool searches can be composed")
+            raise UnsupportedStream("Only client-executed or provider-run tool searches can be composed")
         cut = next(
             (
                 index
@@ -127,9 +139,22 @@ def compose_nonstream(
 
 
 def _compose_chat(original: dict[str, Any], replacement: dict[str, Any] | None, notice: str) -> dict[str, Any]:
-    """Combine scalar Chat fields without guessing how multimodal or extension fields merge."""
-    message_fields = {"role", "content", "tool_calls", "function_call", "reasoning_content", "refusal"}
-    empty_defaults = {"annotations": [[]], "provider_specific_fields": [{}, {"refusal": None}]}
+    """Combine scalar Chat fields, keeping opaque state with the replacement's calls.
+
+    The replacement supplies its own provider reasoning fields as one unit;
+    rejected reasoning stays in the upstream recovery history only. Unsupported
+    multimodal and extension fields still fail closed.
+    """
+    message_fields = {
+        "role",
+        "content",
+        "tool_calls",
+        "function_call",
+        "reasoning_content",
+        "refusal",
+        "provider_specific_fields",
+    }
+    empty_defaults = {"annotations": [[]]}
     for response in [original, *([replacement] if replacement is not None else [])]:
         if len(response["choices"]) != 1 or response["choices"][0]["index"] != 0:
             raise UnsupportedStream("Only one Chat choice can be composed")
@@ -141,6 +166,11 @@ def _compose_chat(original: dict[str, Any], replacement: dict[str, Any] | None, 
             for key, value in message.items()
         ):
             raise UnsupportedStream("Unsupported Chat message fields in a resampled response")
+        if message.get("provider_specific_fields") is not None:
+            try:
+                _ChatReasoningFields.model_validate(message["provider_specific_fields"])
+            except ValidationError as exc:
+                raise UnsupportedStream("Unsupported Chat provider fields in a resampled response") from exc
         if any(
             message.get(key) is not None and not isinstance(message[key], str)
             for key in ("content", "reasoning_content", "refusal")
@@ -149,6 +179,9 @@ def _compose_chat(original: dict[str, Any], replacement: dict[str, Any] | None, 
     choice = original["choices"][0]
     message = choice["message"]
     other = replacement["choices"][0]["message"] if replacement is not None else {}
+    message.pop("provider_specific_fields", None)
+    if "provider_specific_fields" in other:
+        message["provider_specific_fields"] = other["provider_specific_fields"]
     message["content"] = "\n\n".join(part for part in [message.get("content"), notice, other.get("content")] if part)
     for key in ("reasoning_content", "refusal"):
         if message.get(key) or other.get(key):

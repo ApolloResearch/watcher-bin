@@ -1,0 +1,159 @@
+# Copilot calls GPT, Grok and MAI models over Responses, Claude over Anthropic
+# Messages and Gemini over Chat Completions. GPT, Claude and Gemini have family
+# wildcards at the end; exact names win over them.
+#
+# Native GPT requests keep Responses through the provider callback, including
+# wildcard matches. Grok and MAI entries carry mode: responses so their requests
+# also keep the format GitHub accepts.
+model_list:
+  - model_name: gpt-6-luna
+    litellm_params:
+      model: github_copilot/gpt-6-luna
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-6-sol
+    litellm_params:
+      model: github_copilot/gpt-6-sol
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-6.1-sol
+    litellm_params:
+      model: github_copilot/gpt-6.1-sol
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-6.1-terra
+    litellm_params:
+      model: github_copilot/gpt-6.1-terra
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-5.6-luna
+    litellm_params:
+      model: github_copilot/gpt-5.6-luna
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-5.6-sol
+    litellm_params:
+      model: github_copilot/gpt-5.6-sol
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-5.6-terra
+    litellm_params:
+      model: github_copilot/gpt-5.6-terra
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-5.6-luna-utility
+    litellm_params:
+      model: github_copilot/gpt-5.6-luna-utility
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-5.4-nano
+    litellm_params:
+      model: github_copilot/gpt-5.4-nano
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-5.3-codex
+    litellm_params:
+      model: github_copilot/gpt-5.3-codex
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: grok-4.7
+    litellm_params:
+      model: github_copilot/grok-4.7
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: grok-4.6
+    litellm_params:
+      model: github_copilot/grok-4.6
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: mai-code-1.1-flash
+    litellm_params:
+      model: github_copilot/mai-code-1.1-flash
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  - model_name: gpt-*
+    litellm_params:
+      model: github_copilot/gpt-*
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+    model_info:
+      mode: responses
+  # LiteLLM drops Claude's adaptive thinking for a model missing from its
+  # catalog. Give such a model its own entry with
+  # model_info.supports_adaptive_thinking: true to keep it.
+  - model_name: claude-*
+    litellm_params:
+      model: github_copilot/claude-*
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+  # Copilot sends reasoning_effort to Gemini; LiteLLM refuses it unless allowed here.
+  - model_name: gemini-*
+    litellm_params:
+      model: github_copilot/gemini-*
+      litellm_credential_name: native-copilot
+      github_copilot_auth_type: per_user_oauth
+      allowed_openai_params: [reasoning_effort]
+
+credential_list:
+  - credential_name: native-copilot
+    credential_info: {}
+    credential_values:
+      github_copilot_auth_type: per_user_oauth
+
+litellm_settings:
+  callbacks:
+    - watcher_litellm.copilot.provider_callback
+    - watcher_litellm.callback.watcher_callback
+  telemetry: false
+  turn_off_message_logging: true
+
+router_settings:
+  num_retries: 0
+  fallbacks: []
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  disable_spend_logs: true
+  custom_auth: watcher_litellm.copilot.authenticate
+  pass_through_endpoints:
+    - path: /copilot/meta
+      target: https://api.githubcopilot.com/meta
+      headers: {}
+      forward_headers: true
+      auth: false
+    - path: /copilot/models
+      target: https://api.githubcopilot.com/models
+      headers: {}
+      forward_headers: true
+      auth: false
+    - path: /copilot/auto
+      target: https://api.githubcopilot.com/auto
+      headers: {}
+      forward_headers: true
+      auth: false

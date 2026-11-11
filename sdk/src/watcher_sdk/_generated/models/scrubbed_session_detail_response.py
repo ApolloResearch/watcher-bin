@@ -21,6 +21,7 @@ from ..models.scrubbed_session_detail_response_ingest_kinds_item import (
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.capture_source import CaptureSource
     from ..models.grade_result import GradeResult
     from ..models.related_session_summary import RelatedSessionSummary
     from ..models.scrubbed_session_detail_response_external_ids_type_0 import (
@@ -49,7 +50,8 @@ class ScrubbedSessionDetailResponse:
             tolerate additional platform strings.
         started_at (datetime.datetime):
         ended_at (datetime.datetime):
-        message_count (int):
+        message_count (int): Messages in the session's longest trajectory; for a conversation the Watcher client and a
+            gateway both recorded, its longest reconciled transcript.
         created_at (datetime.datetime):
         retained_grades (list[GradeResult]):
         is_subagent (bool | Unset): Whether this session has a recorded parent relationship. Default: False.
@@ -67,11 +69,13 @@ class ScrubbedSessionDetailResponse:
             originator) keep the first value stored, in the order Watcher stores messages: later messages fill a missing
             value but never replace one. 'agent_version' is the highest coding-agent release any stored message named, in
             semantic-versioning order, so it follows an upgrade but need not be the release running now. A key is absent
-            when no stored message reported a usable value, as for sessions recorded only through a gateway hook. Clients
-            must tolerate additional keys.
+            when no stored message reported a usable value. Clients must tolerate additional keys.
         ingest_kinds (list[ScrubbedSessionDetailResponseIngestKindsItem] | Unset): Sorted distinct recorded delivery
             paths, including duplicate uploads. Empty means no recorded delivery history; unknown stored values report
             other.
+        capture_sources (list[CaptureSource] | Unset): Distinct integrations observed delivering this session, including
+            duplicate uploads. Retained after content scrubbing. Historical categories without a known integration have a
+            null name.
         sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted; same
             values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone.
         content_state (Literal['scrubbed'] | Unset):  Default: 'scrubbed'.
@@ -100,6 +104,7 @@ class ScrubbedSessionDetailResponse:
     external_ids: None | ScrubbedSessionDetailResponseExternalIdsType0 | Unset = UNSET
     metadata: None | ScrubbedSessionDetailResponseMetadataType0 | Unset = UNSET
     ingest_kinds: list[ScrubbedSessionDetailResponseIngestKindsItem] | Unset = UNSET
+    capture_sources: list[CaptureSource] | Unset = UNSET
     sources: list[str] | Unset = UNSET
     content_state: Literal["scrubbed"] | Unset = "scrubbed"
     is_content_scrubbed: bool | Unset = True
@@ -201,6 +206,13 @@ class ScrubbedSessionDetailResponse:
                 ingest_kinds_item = ingest_kinds_item_data.value
                 ingest_kinds.append(ingest_kinds_item)
 
+        capture_sources: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.capture_sources, Unset):
+            capture_sources = []
+            for capture_sources_item_data in self.capture_sources:
+                capture_sources_item = capture_sources_item_data.to_dict()
+                capture_sources.append(capture_sources_item)
+
         sources: list[str] | Unset = UNSET
         if not isinstance(self.sources, Unset):
             sources = self.sources
@@ -260,6 +272,8 @@ class ScrubbedSessionDetailResponse:
             field_dict["metadata"] = metadata
         if ingest_kinds is not UNSET:
             field_dict["ingest_kinds"] = ingest_kinds
+        if capture_sources is not UNSET:
+            field_dict["capture_sources"] = capture_sources
         if sources is not UNSET:
             field_dict["sources"] = sources
         if content_state is not UNSET:
@@ -277,6 +291,7 @@ class ScrubbedSessionDetailResponse:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.capture_source import CaptureSource
         from ..models.grade_result import GradeResult
         from ..models.related_session_summary import RelatedSessionSummary
         from ..models.scrubbed_session_detail_response_external_ids_type_0 import (
@@ -431,6 +446,17 @@ class ScrubbedSessionDetailResponse:
 
                 ingest_kinds.append(ingest_kinds_item)
 
+        _capture_sources = d.pop("capture_sources", UNSET)
+        capture_sources: list[CaptureSource] | Unset = UNSET
+        if _capture_sources is not UNSET:
+            capture_sources = []
+            for capture_sources_item_data in _capture_sources:
+                capture_sources_item = CaptureSource.from_dict(
+                    capture_sources_item_data
+                )
+
+                capture_sources.append(capture_sources_item)
+
         sources = cast(list[str], d.pop("sources", UNSET))
 
         content_state = cast(Literal["scrubbed"] | Unset, d.pop("content_state", UNSET))
@@ -481,6 +507,7 @@ class ScrubbedSessionDetailResponse:
             external_ids=external_ids,
             metadata=metadata,
             ingest_kinds=ingest_kinds,
+            capture_sources=capture_sources,
             sources=sources,
             content_state=content_state,
             is_content_scrubbed=is_content_scrubbed,

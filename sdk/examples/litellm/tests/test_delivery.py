@@ -644,9 +644,9 @@ def test_native_responses_call_can_replace_a_denied_nonstream_call(kind: str) ->
         ("responses", {"output": [{"type": "future_client_call"}]}, " Denied. ", "Unsupported content"),
         (
             "responses",
-            {"output": [{"type": "tool_search_call", "execution": "server"}]},
+            {"output": [{"type": "tool_search_call", "execution": "remote"}]},
             " Denied. ",
-            "client-executed",
+            "client-executed or provider-run",
         ),
         ("responses", {}, " Denied. ", "Malformed resampled response"),
         ("chat_completions", {"choices": []}, " Denied. ", "Only one Chat choice"),
@@ -1018,3 +1018,31 @@ def test_stream_error_preserves_visible_prefix_and_uses_the_native_error_shape(a
             "error": {"type": "watcher_timeout", "code": "watcher_timeout", "message": "Watcher timed out."}
         }
         assert all(not event.get("choices") or not event["choices"][0]["delta"].get("tool_calls") for event in events)
+
+
+@pytest.mark.parametrize("location", ["original", "replacement"])
+def test_compose_preserves_provider_search_context(location: str) -> None:
+    original = response("responses", "original", ["denied"])
+    replacement = response("responses", "replacement", [])
+    search = {
+        "type": "tool_search_call",
+        "id": "search",
+        "call_id": None,
+        "execution": "server",
+        "arguments": {"query": "lookup"},
+        "status": "completed",
+    }
+    output = {
+        "type": "tool_search_output",
+        "id": "search_output",
+        "call_id": None,
+        "execution": "server",
+        "tools": [],
+        "status": "completed",
+    }
+    target = original if location == "original" else replacement
+    target["output"][:0] = [search, output]
+    composed = compose_nonstream("responses", original, replacement, "Watcher blocked the call.")
+    assert search in composed["output"]
+    assert output in composed["output"]
+    assert all(item.get("call_id") != "denied" for item in composed["output"])

@@ -1,7 +1,8 @@
 """Adapt authenticated LiteLLM accounts to Watcher's trusted-proxy interface.
 
-Only the gateway process holds the proxy token. The operator must provision
-account email addresses from a trusted source and restrict access to Watcher.
+Only the gateway process holds the proxy token. Account emails come from the
+operator; unmapped native Copilot accounts use verified numeric GitHub IDs.
+Restrict access to Watcher to trusted gateway and authentication-proxy callers.
 """
 
 import json
@@ -40,6 +41,23 @@ def account_email(user: UserAPIKeyAuth) -> str:
     return email
 
 
+def account_identity(user: UserAPIKeyAuth) -> str:
+    """Return the validated email or an email-less authenticated GitHub ID.
+
+    Only trusted authentication code may supply ``user_id``. A missing email
+    permits a canonical ``github:<numeric-id>`` identity, never a master key.
+    A supplied email must pass the same checks as other LiteLLM accounts.
+    """
+    if (
+        not user.user_email
+        and user.user_id is not None
+        and re.fullmatch(r"github:[1-9][0-9]*", user.user_id)
+        and user.api_key != LITELLM_PROXY_MASTER_KEY_ALIAS
+    ):
+        return user.user_id
+    return account_email(user)
+
+
 def require_proxy_configuration() -> None:
     """Refuse missing server credentials before paying for provider generation."""
     for setting in ("WATCHER_API_URL", "WATCHER_PROXY_AUTH_TOKEN"):
@@ -52,9 +70,9 @@ def account_session(user: UserAPIKeyAuth, session_id: str) -> str:
 
     JSON framing keeps arbitrary client IDs from colliding with the account ID.
     The caller must use this result only once, at the Watcher request boundary.
-    ``account_email`` validates the account first and may raise HTTP 401.
+    ``account_identity`` validates the account first and may raise HTTP 401.
     """
-    account_email(user)
+    account_identity(user)
     identity = json.dumps(["watcher-litellm", user.user_id, session_id], separators=(",", ":"))
     return "litellm:" + str(uuid5(NAMESPACE_URL, identity))
 
@@ -65,7 +83,7 @@ def proxy_client(user: UserAPIKeyAuth) -> AsyncWatcherClient:
     Require ``WATCHER_API_URL`` and a nonblank ``WATCHER_PROXY_AUTH_TOKEN``.
     Optional ``WATCHER_PROXY_HEADER_USER`` and ``WATCHER_PROXY_HEADER_ROLE``
     default to ``x-forwarded-user`` and ``x-forwarded-user-role``. Send the
-    validated account email and member role. Invalid attribution raises HTTP
+    validated account identity and member role. Invalid attribution raises HTTP
     401; missing settings or an empty token raise configuration errors.
     """
     token = os.environ["WATCHER_PROXY_AUTH_TOKEN"]
@@ -75,7 +93,7 @@ def proxy_client(user: UserAPIKeyAuth) -> AsyncWatcherClient:
         base_url=os.environ["WATCHER_API_URL"],
         headers={
             "x-auth-proxy-token": token,
-            os.environ.get("WATCHER_PROXY_HEADER_USER", "x-forwarded-user"): account_email(user),
+            os.environ.get("WATCHER_PROXY_HEADER_USER", "x-forwarded-user"): account_identity(user),
             os.environ.get("WATCHER_PROXY_HEADER_ROLE", "x-forwarded-user-role"): "member",
         },
     )

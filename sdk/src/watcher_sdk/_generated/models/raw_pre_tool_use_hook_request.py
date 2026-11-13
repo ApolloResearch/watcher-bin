@@ -80,6 +80,13 @@ class RawPreToolUseHookRequest:
             conversation (ConversationIdentity | None | Unset): One authoritative conversation identity. When supplied,
                 neither external_ids nor native body metadata add matching aliases. Does not grant access. A recognized harness
                 takes precedence; otherwise a native namespace selects the harness and its grading rules.
+            parent_conversation (ConversationIdentity | None | Unset): Optional immediate parent, requiring a distinct
+                conversation in the same namespace. Watcher links after recording; the parent may initially have no messages.
+                Link failures preserve the capture and retry when later captures include the parent identity. Existing ingestion
+                permissions apply; this adds no matching aliases.
+            spawning_tool_use_id (None | str | Unset): Optional native call ID that spawned this child, requiring
+                parent_conversation. Watcher resolves it against the parent's stored messages. Missing messages leave the call
+                ID stored with no message link; later child captures carrying parent identity retry resolution.
             source (CaptureSource | None | Unset): Delivery integration: type gateway, sdk or other, with an optional stable
                 integration name. Raw captures cannot use client. The resolved type is shared by session and decision recording;
                 the name is reporting metadata. Neither selects a conversation or grants permissions. Accepted captures retain
@@ -115,6 +122,8 @@ class RawPreToolUseHookRequest:
     provider: None | str | Unset = UNSET
     user_agent: None | str | Unset = UNSET
     conversation: ConversationIdentity | None | Unset = UNSET
+    parent_conversation: ConversationIdentity | None | Unset = UNSET
+    spawning_tool_use_id: None | str | Unset = UNSET
     source: CaptureSource | None | Unset = UNSET
     response_index: int | None | Unset = UNSET
     external_ids: None | RawPreToolUseHookRequestExternalIdsType0 | Unset = UNSET
@@ -167,6 +176,20 @@ class RawPreToolUseHookRequest:
             conversation = self.conversation.to_dict()
         else:
             conversation = self.conversation
+
+        parent_conversation: dict[str, Any] | None | Unset
+        if isinstance(self.parent_conversation, Unset):
+            parent_conversation = UNSET
+        elif isinstance(self.parent_conversation, ConversationIdentity):
+            parent_conversation = self.parent_conversation.to_dict()
+        else:
+            parent_conversation = self.parent_conversation
+
+        spawning_tool_use_id: None | str | Unset
+        if isinstance(self.spawning_tool_use_id, Unset):
+            spawning_tool_use_id = UNSET
+        else:
+            spawning_tool_use_id = self.spawning_tool_use_id
 
         source: dict[str, Any] | None | Unset
         if isinstance(self.source, Unset):
@@ -250,6 +273,10 @@ class RawPreToolUseHookRequest:
             field_dict["user_agent"] = user_agent
         if conversation is not UNSET:
             field_dict["conversation"] = conversation
+        if parent_conversation is not UNSET:
+            field_dict["parent_conversation"] = parent_conversation
+        if spawning_tool_use_id is not UNSET:
+            field_dict["spawning_tool_use_id"] = spawning_tool_use_id
         if source is not UNSET:
             field_dict["source"] = source
         if response_index is not UNSET:
@@ -343,6 +370,38 @@ class RawPreToolUseHookRequest:
             return cast(ConversationIdentity | None | Unset, data)
 
         conversation = _parse_conversation(d.pop("conversation", UNSET))
+
+        def _parse_parent_conversation(
+            data: object,
+        ) -> ConversationIdentity | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                parent_conversation_type_0 = ConversationIdentity.from_dict(data)
+
+                return parent_conversation_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ConversationIdentity | None | Unset, data)
+
+        parent_conversation = _parse_parent_conversation(
+            d.pop("parent_conversation", UNSET)
+        )
+
+        def _parse_spawning_tool_use_id(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        spawning_tool_use_id = _parse_spawning_tool_use_id(
+            d.pop("spawning_tool_use_id", UNSET)
+        )
 
         def _parse_source(data: object) -> CaptureSource | None | Unset:
             if data is None:
@@ -477,6 +536,8 @@ class RawPreToolUseHookRequest:
             provider=provider,
             user_agent=user_agent,
             conversation=conversation,
+            parent_conversation=parent_conversation,
+            spawning_tool_use_id=spawning_tool_use_id,
             source=source,
             response_index=response_index,
             external_ids=external_ids,

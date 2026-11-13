@@ -41,7 +41,44 @@ def test_account_identity_survives_key_rotation_and_separates_shared_session_ids
     assert account_session(alice, "another-conversation") != account_session(alice, "same-conversation")
 
 
-async def test_proxy_client_uses_server_headers_and_closes_its_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_github_identity_without_email_has_stable_account_scoped_sessions() -> None:
+    unmapped = UserAPIKeyAuth(user_id="github:1")
+    mapped = UserAPIKeyAuth(user_id="github:1", user_email="alice@example.com")
+    other = UserAPIKeyAuth(user_id="github:2")
+    assert account_session(unmapped, "same-conversation") == account_session(mapped, "same-conversation")
+    assert account_session(unmapped, "same-conversation") != account_session(other, "same-conversation")
+
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        UserAPIKeyAuth(user_id="github:0"),
+        UserAPIKeyAuth(user_id="github:01"),
+        UserAPIKeyAuth(user_id="github:-1"),
+        UserAPIKeyAuth(user_id="github:alice"),
+        UserAPIKeyAuth(user_id="github:١"),
+        UserAPIKeyAuth(user_id="github:1\n"),
+        UserAPIKeyAuth(user_id="id"),
+        UserAPIKeyAuth(user_id="github:1", user_email="invalid"),
+        UserAPIKeyAuth(user_id="github:1", api_key=LITELLM_PROXY_MASTER_KEY_ALIAS),
+    ],
+)
+def test_fallback_does_not_accept_invalid_or_master_identities(user: UserAPIKeyAuth) -> None:
+    with pytest.raises(HTTPException) as refused:
+        account_session(user, "conversation")
+    assert refused.value.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("user", "identity"),
+    [
+        (UserAPIKeyAuth(user_id="alice", user_email="Alice@Example.com"), "alice@example.com"),
+        (UserAPIKeyAuth(user_id="github:123456"), "github:123456"),
+    ],
+)
+async def test_proxy_client_uses_server_headers_and_closes_its_transport(
+    monkeypatch: pytest.MonkeyPatch, user: UserAPIKeyAuth, identity: str
+) -> None:
     monkeypatch.setenv("WATCHER_API_URL", "http://watcher")
     monkeypatch.setenv("WATCHER_PROXY_AUTH_TOKEN", "server-owned-secret")
     monkeypatch.setenv("WATCHER_PROXY_HEADER_USER", "x-company-user")
@@ -60,16 +97,23 @@ async def test_proxy_client_uses_server_headers_and_closes_its_transport(monkeyp
         return client
 
     monkeypatch.setattr("watcher_litellm.proxy_auth.httpx.AsyncClient", with_transport)
-    async with proxy_client(UserAPIKeyAuth(user_id="alice", user_email="Alice@Example.com")) as client:
+    async with proxy_client(user) as client:
         assert (await client.version()).version == "test"
     assert requests[0].headers["x-auth-proxy-token"] == "server-owned-secret"
-    assert requests[0].headers["x-company-user"] == "alice@example.com"
+    assert requests[0].headers["x-company-user"] == identity
     assert requests[0].headers["x-company-role"] == "member"
     assert "authorization" not in requests[0].headers
     assert clients[0].is_closed
 
 
-@pytest.mark.parametrize("is_proxy", [False, True])
+@pytest.mark.parametrize(
+    ("is_proxy", "user", "watcher_identity"),
+    [
+        (False, UserAPIKeyAuth(user_id="alice", user_email="alice@example.com"), "alice@example.com"),
+        (True, UserAPIKeyAuth(user_id="alice", user_email="alice@example.com"), "alice@example.com"),
+        (True, UserAPIKeyAuth(user_id="github:123456"), "github:123456"),
+    ],
+)
 @pytest.mark.parametrize(
     "identity_headers,identity",
     [
@@ -97,21 +141,24 @@ async def test_proxy_client_uses_server_headers_and_closes_its_transport(monkeyp
 async def test_callback_attributes_only_the_authenticated_account(
     monkeypatch: pytest.MonkeyPatch,
     is_proxy: bool,
+    user: UserAPIKeyAuth,
+    watcher_identity: str,
     identity_headers: dict[str, str],
     identity: ConversationIdentity,
 ) -> None:
     monkeypatch.setenv("WATCHER_AUTH_MODE", "proxy" if is_proxy else "api_key")
     requests = []
+    request_headers: list[httpx.Headers] = []
 
     def capture(request: httpx.Request) -> httpx.Response:
         requests.append(json.loads(request.content))
+        request_headers.append(request.headers)
         return httpx.Response(200, json=[])
 
     def client() -> AsyncWatcherClient:
         http = httpx.AsyncClient(base_url="http://watcher", transport=httpx.MockTransport(capture))
         return AsyncWatcherClient("http://watcher", httpx_client=http)
 
-    user = UserAPIKeyAuth(user_id="alice", user_email="alice@example.com")
     data = {
         "model": "fixture",
         "messages": [{"role": "user", "content": "Hello"}],
@@ -137,6 +184,8 @@ async def test_callback_attributes_only_the_authenticated_account(
     assert len(requests) == 1
     assert requests[0].get("user") == (None if is_proxy else "alice@example.com")
     if is_proxy:
+        assert request_headers[0]["x-forwarded-user"] == watcher_identity
+        assert request_headers[0]["x-forwarded-user-role"] == "member"
         session_id = identity.id if identity.namespace == "other" else f"{identity.namespace}:{identity.id}"
         expected = {"namespace": "other", "id": account_session(user, session_id)}
     else:
@@ -144,6 +193,59 @@ async def test_callback_attributes_only_the_authenticated_account(
     assert requests[0]["conversation"] == expected
     assert requests[0]["source"] == {"type": "gateway", "name": "litellm"}
     assert "external_ids" not in requests[0]
+
+
+@pytest.mark.parametrize("is_proxy", [False, True])
+@pytest.mark.parametrize("custom", [False, True])
+async def test_parent_reference_matches_the_parents_own_capture(
+    monkeypatch: pytest.MonkeyPatch, is_proxy: bool, custom: bool
+) -> None:
+    monkeypatch.setenv("WATCHER_AUTH_MODE", "proxy" if is_proxy else "api_key")
+    monkeypatch.setenv("WATCHER_API_URL", "http://watcher")
+    monkeypatch.setenv("WATCHER_PROXY_AUTH_TOKEN", "server-owned-secret")
+    captures = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        captures.append(json.loads(request.content))
+        return httpx.Response(200, json=[])
+
+    def client() -> AsyncWatcherClient:
+        return AsyncWatcherClient(
+            "http://watcher",
+            httpx_client=httpx.AsyncClient(base_url="http://watcher", transport=httpx.MockTransport(capture)),
+        )
+
+    callback = WatcherCallback(client)
+    parent_id = "11111111-1111-4111-8111-111111111111"
+    child_id = "22222222-2222-4222-8222-222222222222"
+    response = {"object": "response", "status": "completed", "output": []}
+    for account in ("alice", "bob"):
+        user = UserAPIKeyAuth(user_id=account, user_email=f"{account}@example.com")
+        for thread in (parent_id, child_id):
+            metadata = {"thread_id": thread}
+            headers = {"user-agent": "codex_exec/1"}
+            if custom:
+                headers["x-watcher-session-id"] = "litellm:" + thread
+            if thread == child_id:
+                metadata["x-codex-parent-thread-id"] = parent_id
+                if custom:
+                    headers["x-watcher-parent-session-id"] = parent_id
+            data = {
+                "model": "fixture",
+                "proxy_server_request": {
+                    "url": "http://proxy/v1/responses",
+                    "headers": headers,
+                    "body": {"model": "fixture", "input": [], "client_metadata": metadata},
+                },
+            }
+            await callback.async_pre_call_hook(user, None, data, "responses")
+            await callback.async_post_call_success_hook(data, user, response)
+    assert len(captures) == 4
+    assert captures[1]["parent_conversation"] == captures[0]["conversation"]
+    assert captures[3]["parent_conversation"] == captures[2]["conversation"]
+    assert captures[1]["conversation"] != captures[1]["parent_conversation"]
+    assert (captures[0]["conversation"] != captures[2]["conversation"]) is is_proxy
+    assert all("external_ids" not in capture for capture in captures)
 
 
 def test_empty_proxy_token_fails_configuration(monkeypatch: pytest.MonkeyPatch) -> None:

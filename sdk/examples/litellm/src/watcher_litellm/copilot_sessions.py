@@ -7,15 +7,15 @@ to their own task UUID. Both are scoped to the authenticated account.
 Synchronous children carry no spawning call ID, so matching uses a SHA-256
 digest of the exact task prompt, scoped to its root and parent task. The map
 retains digests, opaque IDs and matching state, never prompt text or credentials.
-Duplicate prompts remain unlinked; no arrival-order inference is used. New
-children of parent tasks handled by a replica that does not record spawning
-calls also remain unlinked.
+Duplicate prompts yield no spawning call ID; no arrival-order inference is used.
+New children of parent tasks handled by a replica that does not record spawning
+calls also lack that ID. The callback sends these identities with each capture;
+Watcher owns relationship recording.
 Apply the shipped SQL migration separately before starting gateway replicas.
 """
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import os
@@ -32,8 +32,6 @@ from litellm.proxy._types import UserAPIKeyAuth
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 
 from watcher_litellm.proxy_auth import account_session
-from watcher_sdk import AsyncWatcherClient
-from watcher_sdk._generated.models import AgentRelationshipRequest
 
 if TYPE_CHECKING:
     from watcher_litellm.replan import ToolCall
@@ -139,8 +137,8 @@ class Conversation(BaseModel):
         """Assign a unique exact-prompt match once, shared across gateway replicas.
 
         The parent task scopes matching across resume. A missing or duplicate
-        prompt leaves the current parent-only relationship intact. Once assigned,
-        the call ID is immutable, including when a later task repeats its prompt.
+        prompt yields no call ID. Once assigned, the call ID is immutable,
+        including when a later task repeats its prompt.
         """
         if self.parent_external_id is None or self.root_id is None or self.task_id is None:
             return None
@@ -166,46 +164,6 @@ class Conversation(BaseModel):
                 self.root_id,
                 self.task_id,
             )
-
-    async def link(self, client: AsyncWatcherClient) -> None:
-        """Link a child and retry its spawning ID until Watcher records the call.
-
-        Raw hooks record after replying. The existing 30-second bound covers
-        both session discovery and spawning-message retries. Once the parent
-        relationship exists, expiry leaves its known call ID for a later request
-        to retry. Errors before that point still prevent releasing the child.
-        """
-        if self.parent_external_id is None:
-            return
-        is_linked = False
-        try:
-            async with asyncio.timeout(30):
-                delay = 0.1
-                spawning_id = await self.spawning_tool_use_id()
-                while True:
-                    children = await client.search_sessions(external_ids={"other": [self.external_id]}, limit=2)
-                    parents = await client.search_sessions(external_ids={"other": [self.parent_external_id]}, limit=2)
-                    if children.total > 1 or parents.total > 1:
-                        raise HTTPException(409, "Copilot conversation mapping is ambiguous")
-                    if children.sessions and parents.sessions:
-                        relationship = await client.put_agent_relationship(
-                            child_session_id=children.sessions[0].session_id,
-                            relationship=AgentRelationshipRequest(
-                                parent_session_id=UUID(parents.sessions[0].session_id),
-                                spawning_tool_use_id=spawning_id,
-                            ),
-                        )
-                        is_linked = True
-                        if spawning_id is None or (
-                            isinstance(relationship.spawning_message_trajectory_hash, str)
-                            and relationship.spawning_message_trajectory_hash
-                        ):
-                            return
-                    await asyncio.sleep(delay)
-                    delay = min(delay * 2, 1)
-        except TimeoutError:
-            if not is_linked:
-                raise
 
 
 @asynccontextmanager

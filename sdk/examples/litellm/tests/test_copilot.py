@@ -92,7 +92,7 @@ async def test_request_limit_applies_before_and_after_decompression(monkeypatch,
 
 
 @pytest.mark.parametrize("path", ["/copilot/responses", "/copilot/auto", "/copilot/meta", "/copilot/models"])
-@pytest.mark.parametrize("authorization, status", [("", 401), ("Bearer invalid", 401), ("Bearer unmapped-secret", 403)])
+@pytest.mark.parametrize("authorization, status", [("", 401), ("Bearer invalid", 401)])
 @pytest.mark.parametrize("encoding", ["identity", "gzip", "zstd"])
 async def test_unverified_account_never_reads_or_decodes_the_body(path, authorization, status, encoding):
     async def request_body():
@@ -435,7 +435,7 @@ async def test_native_entry_point_loads_operator_configuration(tmp_path, monkeyp
     monkeypatch.setenv("WATCHER_AUTH_MODE", "proxy")
     monkeypatch.setenv("WATCHER_COPILOT_USERS_FILE", str(users))
     users.write_text("[]")
-    with pytest.raises(ValueError, match="nonempty"):
+    with pytest.raises(ValueError, match="ID-to-email mapping"):
         copilot._gateway()
     users.write_text("1: alice@example.test\n")
     with pytest.raises(ValueError, match="quoted numeric"):
@@ -452,6 +452,24 @@ async def test_native_entry_point_loads_operator_configuration(tmp_path, monkeyp
 
         await copilot.app({"type": "websocket"}, receive, send)
         assert messages == [{"type": "websocket.close", "code": 1008}]
+    finally:
+        copilot._gateway.cache_clear()
+
+
+@pytest.mark.parametrize("contents", [None, "{}"])
+def test_native_entry_point_allows_no_email_mapping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contents: str | None
+) -> None:
+    monkeypatch.setenv("WATCHER_AUTH_MODE", "proxy")
+    if contents is None:
+        monkeypatch.delenv("WATCHER_COPILOT_USERS_FILE", raising=False)
+    else:
+        users = tmp_path / "users.yaml"
+        users.write_text(contents)
+        monkeypatch.setenv("WATCHER_COPILOT_USERS_FILE", str(users))
+    copilot._gateway.cache_clear()
+    try:
+        assert copilot._gateway().users == {}
     finally:
         copilot._gateway.cache_clear()
 
@@ -616,8 +634,19 @@ NATIVE_FORMATS = [
     + [(*native_format, "identity") for native_format in NATIVE_FORMATS[1:]],
 )
 @pytest.mark.requires_docker
+@pytest.mark.parametrize(
+    ("users", "expected_email"),
+    [({"1": "alice@example.test"}, "alice@example.test"), ({}, None), ({"99": "bob@example.test"}, None)],
+)
 async def test_native_request_supplies_verified_identity_and_private_credentials(
-    database_url: str, encoding: str, path: str, target: str, native_body: dict, format_headers: set[str]
+    database_url: str,
+    encoding: str,
+    path: str,
+    target: str,
+    native_body: dict,
+    format_headers: set[str],
+    users: dict[str, str],
+    expected_email: str | None,
 ) -> None:
     captured = []
 
@@ -626,6 +655,7 @@ async def test_native_request_supplies_verified_identity_and_private_credentials
         user = await authenticate(request, "")
         identity = current_request.get()
         assert identity is not None
+        assert user.user_id == "github:1"
         provider = await provider_callback.async_pre_call_deployment_hook({"custom_llm_provider": "github_copilot"})
         captured.append(
             {
@@ -642,7 +672,7 @@ async def test_native_request_supplies_verified_identity_and_private_credentials
         await JSONResponse({"ok": True})(scope, receive, send)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(github_response)) as github:
-        app = CopilotGateway(downstream, {"1": "alice@example.test"}, github)
+        app = CopilotGateway(downstream, users, github)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
             body = json.dumps({**native_body, "metadata": {"user": "forged"}}).encode()
             if encoding == "gzip":
@@ -663,7 +693,7 @@ async def test_native_request_supplies_verified_identity_and_private_credentials
             )
     assert response.status_code == 200
     assert (captured[0]["path"], captured[0]["raw_path"]) == (target, target.encode())
-    assert captured[0]["email"] == "alice@example.test"
+    assert captured[0]["email"] == expected_email
     assert captured[0]["body"] == native_body
     assert set(captured[0]["headers"]) == {"content-type", "content-length", "user-agent"}
     forwarded = set(captured[0]["provider"]["extra_headers"])
@@ -680,7 +710,6 @@ async def test_native_request_supplies_verified_identity_and_private_credentials
     ("authorization", "path", "extra_body", "status"),
     [
         ("Bearer invalid", "/copilot/responses", {}, 401),
-        ("Bearer unmapped-secret", "/copilot/responses", {}, 403),
         ("", "/copilot/responses", {}, 401),
         ("Bearer alice-secret", "/responses", {}, 404),
         ("Bearer alice-secret", "/v1/responses", {}, 404),
@@ -865,121 +894,22 @@ async def test_discovery_uses_stock_routes_without_gateway_identity_headers(
     assert response.json() == {"path": path}
 
 
-async def test_child_link_waits_for_recording_then_preserves_parent() -> None:
-    searches = []
-    links = []
-    child_id = "00000000-0000-0000-0000-000000000001"
-    parent_id = "00000000-0000-0000-0000-000000000002"
-
-    def watcher(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        if request.method == "PUT":
-            links.append({"path": request.url.path, "body": body})
-            return httpx.Response(
-                200,
-                json={
-                    "relationship_id": "00000000-0000-0000-0000-000000000003",
-                    "parent_session_id": parent_id,
-                    "child_session_id": child_id,
-                    "created_at": "2026-11-10T00:00:00Z",
-                },
-            )
-        alias = body["filters"]["external_ids"]["other"][0]
-        searches.append(alias)
-        # Both sessions are being recorded after their hook responses. The
-        # first search of each alias sees no stored transcript yet.
-        sessions = (
-            []
-            if searches.count(alias) == 1
-            else [
-                {
-                    "session_id": child_id if alias == "child" else parent_id,
-                    "agent_platform": "other",
-                    "trajectory_count": 1,
-                    "message_count": 2,
-                    "started_at": "2026-11-10T00:00:00Z",
-                    "ended_at": "2026-11-10T00:00:00Z",
-                }
-            ]
-        )
-        return httpx.Response(200, json={"sessions": sessions, "total": len(sessions), "limit": 2, "offset": 0})
-
-    transport = httpx.AsyncClient(base_url="http://watcher", transport=httpx.MockTransport(watcher))
-    async with AsyncWatcherClient("http://watcher", httpx_client=transport) as client:
-        await Conversation(external_id="parent", parent_external_id=None).link(client)
-        assert searches == []
-        await Conversation(external_id="child", parent_external_id="parent").link(client)
-    assert len(links) == 1
-    assert links[0]["path"] == f"/v1/sessions/{child_id}/agent-relationship"
-    assert links[0]["body"]["parent_session_id"] == parent_id
-
-
-async def test_ambiguous_mapping_cannot_create_parent_link() -> None:
-    def watcher(request: httpx.Request) -> httpx.Response:
-        assert request.method == "POST"
-        return httpx.Response(200, json={"sessions": [], "total": 2, "limit": 2, "offset": 0})
-
-    transport = httpx.AsyncClient(base_url="http://watcher", transport=httpx.MockTransport(watcher))
-    async with AsyncWatcherClient("http://watcher", httpx_client=transport) as client:
-        with pytest.raises(HTTPException, match="ambiguous"):
-            await Conversation(external_id="child", parent_external_id="parent").link(client)
-
-
-@pytest.mark.parametrize(("is_child", "is_ambiguous"), [(False, False), (True, False), (True, True)])
-async def test_callback_uses_native_alias_and_links_after_recording(monkeypatch, is_child, is_ambiguous):
+@pytest.mark.parametrize("is_child", [False, True])
+@pytest.mark.parametrize("email", ["alice@example.test", None])
+async def test_callback_carries_native_parent_without_extra_requests(monkeypatch, is_child, email):
     from watcher_litellm.callback import WatcherCallback
 
-    requests = []
-    parent = "00000000-0000-0000-0000-000000000002"
-    child = "00000000-0000-0000-0000-000000000001"
+    captures = []
 
     def watcher(request):
-        body = json.loads(request.content)
-        requests.append((request.method, request.url.path, body))
-        if request.url.path.endswith("pre-tool-use"):
-            assert body["external_ids"] == {
-                "other": "native-child" if is_child else "native-root",
-                "github_copilot_cli": None,
-            }
-            assert "conversation" not in body
-            assert body["source"] == {"type": "gateway", "name": "litellm"}
-            assert body.get("user") is None
-            return httpx.Response(200, json=[])
-        if request.method == "PUT":
-            assert body["parent_session_id"] == parent
-            return httpx.Response(
-                200,
-                json={
-                    "relationship_id": "00000000-0000-0000-0000-000000000003",
-                    "parent_session_id": parent,
-                    "child_session_id": child,
-                    "created_at": "2026-11-10T00:00:00Z",
-                },
-            )
-        alias = body["filters"]["external_ids"]["other"][0]
-        return httpx.Response(
-            200,
-            json={
-                "sessions": [
-                    {
-                        "session_id": child if alias == "native-child" else parent,
-                        "agent_platform": "other",
-                        "trajectory_count": 1,
-                        "message_count": 1,
-                        "started_at": "2026-11-10T00:00:00Z",
-                        "ended_at": "2026-11-10T00:00:00Z",
-                    }
-                ],
-                "total": 2 if is_ambiguous else 1,
-                "limit": 2,
-                "offset": 0,
-            },
-        )
+        assert request.url.path.endswith("pre-tool-use")
+        captures.append(json.loads(request.content))
+        return httpx.Response(200, json=[])
 
     monkeypatch.setenv("WATCHER_AUTH_MODE", "proxy")
     identity = copilot.NativeRequest(
         user_id="github:1",
-        user_email="alice@example.test",
+        user_email=email,
         conversation=Conversation(
             external_id="native-child" if is_child else "native-root",
             parent_external_id="native-root" if is_child else None,
@@ -995,31 +925,29 @@ async def test_callback_uses_native_alias_and_links_after_recording(monkeypatch,
 
     try:
         response = {"id": "r", "output": []}
-        operation = WatcherCallback(watcher_client).async_post_call_success_hook(
-            {
-                "model": "m",
-                "proxy_server_request": {
-                    "url": "http://gateway/responses",
-                    "headers": {},
-                    "body": {"model": "m", "input": "hello"},
+        assert (
+            await WatcherCallback(watcher_client).async_post_call_success_hook(
+                {
+                    "model": "m",
+                    "proxy_server_request": {
+                        "url": "http://gateway/responses",
+                        "headers": {},
+                        "body": {"model": "m", "input": "hello"},
+                    },
                 },
-            },
-            UserAPIKeyAuth(user_id=identity.user_id, user_email=identity.user_email),
-            response,
+                UserAPIKeyAuth(user_id=identity.user_id, user_email=identity.user_email),
+                response,
+            )
+            is response
         )
-        if is_ambiguous:
-            with pytest.raises(HTTPException) as error:
-                await operation
-            assert error.value.status_code == 409
-            assert "ambiguous" in error.value.detail
-        else:
-            assert await operation is response
     finally:
         current_request.reset(reset)
-    assert requests[0][1].endswith("pre-tool-use")
-    assert len(requests) == (3 if is_ambiguous else 4 if is_child else 1)
-    if is_child and not is_ambiguous:
-        assert requests[-1][0] == "PUT"
+    (body,) = captures
+    assert body["conversation"] == {"namespace": "other", "id": "native-child" if is_child else "native-root"}
+    assert body.get("parent_conversation") == ({"namespace": "other", "id": "native-root"} if is_child else None)
+    assert body["external_ids"] == {"github_copilot_cli": None}
+    assert body["source"] == {"type": "gateway", "name": "litellm"}
+    assert body.get("user") is None
 
 
 @pytest.mark.parametrize("rate_headers", [{"x-ratelimit-remaining": "0"}, {"retry-after": "60"}])

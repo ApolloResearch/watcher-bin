@@ -1323,6 +1323,8 @@ class AsyncWatcherClient:
         provider: str | None = None,
         user_agent: str | None = None,
         conversation: ConversationIdentity | None = None,
+        parent_conversation: ConversationIdentity | None = None,
+        spawning_tool_use_id: str | None = None,
         source: CaptureSource | None = None,
         response_index: int | None = None,
         external_ids: Mapping[str, str | None] | None = None,
@@ -1368,6 +1370,8 @@ class AsyncWatcherClient:
         provider: str | None = None,
         user_agent: str | None = None,
         conversation: ConversationIdentity | None = None,
+        parent_conversation: ConversationIdentity | None = None,
+        spawning_tool_use_id: str | None = None,
         source: CaptureSource | None = None,
         response_index: int | None = None,
     ) -> HookAppendResponse | PreToolUseHookResponse | list[PreToolUseHookResponse | HookCallError]:
@@ -1616,6 +1620,13 @@ class AsyncWatcherClient:
             conversation: Raw pairs only. One authoritative identity selected by the
                 integration. Native body IDs and external_ids are not added as aliases.
                 Omit to retain legacy alias merging. Use distinct IDs for separate children.
+            parent_conversation: Raw pairs only. Optional immediate parent in the same
+                identity scheme as conversation. Linking follows transcript/decision
+                recording; a failed link preserves the capture and retries on later captures
+                carrying the parent identity.
+            spawning_tool_use_id: Raw pairs only, requiring parent_conversation. The native
+                call that spawned this child. Missing parent messages leave its message link
+                unresolved until a later child capture carrying parent identity retries.
             source: Raw pairs only. The delivery integration, recorded independently of
                 identity and permissions, including when all messages already exist.
 
@@ -1645,7 +1656,11 @@ class AsyncWatcherClient:
                 "provider": provider,
                 "user_agent": user_agent,
                 "conversation": conversation.model_dump(mode="json") if conversation is not None else None,
+                "parent_conversation": parent_conversation.model_dump(mode="json")
+                if parent_conversation is not None
+                else None,
                 "source": source.model_dump(mode="json") if source is not None else None,
+                "spawning_tool_use_id": spawning_tool_use_id,
                 "response_index": response_index,
                 "external_ids": dict(external_ids) if external_ids is not None else None,
                 "user": user,
@@ -1664,8 +1679,15 @@ class AsyncWatcherClient:
                 lambda: RawPreToolUseHookRequest.from_dict(raw),
                 timeout if timeout is not None else _HOOK_REQUEST_TIMEOUT_SECONDS,
             )
-        if conversation is not None or source is not None:
-            raise ValueError("conversation and source are only supported with a raw pair")
+        if (
+            conversation is not None
+            or parent_conversation is not None
+            or spawning_tool_use_id is not None
+            or source is not None
+        ):
+            raise ValueError(
+                "conversation, parent_conversation, spawning_tool_use_id and source are only supported with a raw pair"
+            )
         if withheld_tool_use_ids is not None:
             raise ValueError("withheld_tool_use_ids is only supported with a raw pair")
         if withholds_refused_calls is not None:

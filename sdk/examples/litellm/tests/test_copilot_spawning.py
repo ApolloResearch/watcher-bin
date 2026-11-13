@@ -12,10 +12,12 @@ import httpx
 import pytest
 from fastapi import HTTPException
 from litellm.proxy._types import UserAPIKeyAuth
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
+from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
 from testcontainers.postgres import PostgresContainer
+from watcher_litellm.callback import WatcherCallback
 from watcher_litellm.copilot import CopilotGateway, current_request
 from watcher_litellm.copilot_migrate import migrate
 from watcher_litellm.copilot_sessions import Conversation, child_prompt_digest, register_task, spawning_calls
@@ -225,66 +227,6 @@ async def test_late_candidate_can_link_but_changed_call_is_refused(database_url:
 
 
 @pytest.mark.requires_docker
-@pytest.mark.parametrize("pending_hash", [None, ""])
-async def test_relationship_retries_same_id_until_parent_message_exists(
-    database_url: str, monkeypatch: pytest.MonkeyPatch, pending_hash: str | None
-) -> None:
-    user = UserAPIKeyAuth(user_id="github:1", user_email="alice@example.test")
-    session, parent_task = uuid4(), uuid4()
-    parent = await register_task(user, session, parent_task, None)
-    await parent.record_spawning_calls(parent_calls("spawn", "read"))
-    child = await register_task(user, session, uuid4(), parent_task, child_body("read"))
-    parent_id, child_id = str(uuid4()), str(uuid4())
-    relationships: list[dict[str, JsonValue]] = []
-
-    async def no_delay(delay: float) -> None:
-        return None
-
-    def watcher(request: httpx.Request) -> httpx.Response:
-        body = TypeAdapter(dict[str, JsonValue]).validate_json(request.content)
-        if request.method == "PUT":
-            relationships.append(body)
-            return httpx.Response(
-                200,
-                json={
-                    "relationship_id": str(uuid4()),
-                    "parent_session_id": parent_id,
-                    "child_session_id": child_id,
-                    "created_at": "2026-11-11T00:00:00Z",
-                    "spawning_tool_use_id": body["spawning_tool_use_id"],
-                    "spawning_message_trajectory_hash": "stored" if len(relationships) == 3 else pending_hash,
-                },
-            )
-        is_child = child.external_id in request.content.decode()
-        return httpx.Response(
-            200,
-            json={
-                "sessions": [
-                    {
-                        "session_id": child_id if is_child else parent_id,
-                        "agent_platform": "other",
-                        "trajectory_count": 1,
-                        "message_count": 1,
-                        "started_at": "2026-11-11T00:00:00Z",
-                        "ended_at": "2026-11-11T00:00:00Z",
-                    }
-                ],
-                "total": 1,
-                "limit": 2,
-                "offset": 0,
-            },
-        )
-
-    monkeypatch.setattr("watcher_litellm.copilot_sessions.asyncio.sleep", no_delay)
-    http = httpx.AsyncClient(base_url="http://watcher", transport=httpx.MockTransport(watcher))
-    async with AsyncWatcherClient("http://watcher", httpx_client=http) as client:
-        await child.link(client)
-    assert len(relationships) == 3
-    assert all(body["spawning_tool_use_id"] == "spawn" for body in relationships)
-    assert all(body["parent_session_id"] == parent_id for body in relationships)
-
-
-@pytest.mark.requires_docker
 async def test_missing_initial_wrapper_cannot_be_replaced_on_resume(database_url: str) -> None:
     user = UserAPIKeyAuth(user_id="github:1", user_email="alice@example.test")
     session, parent_id, child_id = uuid4(), uuid4(), uuid4()
@@ -315,18 +257,40 @@ async def test_migration_keeps_old_replica_inserts_working(database_url: str) ->
 
 @pytest.mark.requires_docker
 @pytest.mark.parametrize("api", ["responses", "messages", "chat_completions"])
-async def test_native_child_request_registers_its_prompt(database_url: str, api: API) -> None:
+async def test_native_child_capture_carries_parent_and_spawning_call(
+    database_url: str, api: API, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WATCHER_AUTH_MODE", "proxy")
     user = UserAPIKeyAuth(user_id="github:1", user_email="alice@example.test")
     session, parent_id = uuid4(), uuid4()
     parent = await register_task(user, session, parent_id, None)
     await parent.record_spawning_calls(parent_calls("spawn", "read"))
-    captured: list[str | None] = []
+    captures = []
+
+    def watcher(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("pre-tool-use")
+        captures.append(json.loads(request.content))
+        return httpx.Response(200, json=[])
+
+    def watcher_client() -> AsyncWatcherClient:
+        http = httpx.AsyncClient(base_url="http://watcher", transport=httpx.MockTransport(watcher))
+        return AsyncWatcherClient("http://watcher", httpx_client=http)
 
     async def downstream(scope: Scope, receive: Receive, send: Send) -> None:
         identity = current_request.get()
         assert identity is not None
-        captured.append(await identity.conversation.spawning_tool_use_id())
-        await JSONResponse({"ok": True})(scope, receive, send)
+        request = Request(scope, receive)
+        response = {
+            "responses": {"id": "r", "output": []},
+            "messages": {"id": "m", "content": [{"type": "text", "text": "Done."}]},
+            "chat_completions": {"choices": [{"message": {"role": "assistant", "content": "Done."}}]},
+        }[api]
+        result = await WatcherCallback(watcher_client).async_post_call_success_hook(
+            {"model": "m", "proxy_server_request": {"url": str(request.url), "body": await request.json()}},
+            user,
+            response,
+        )
+        await JSONResponse(result)(scope, receive, send)
 
     def github(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"id": 1})
@@ -350,65 +314,10 @@ async def test_native_child_request_registers_its_prompt(database_url: str, api:
                 },
             )
     assert response.status_code == 200
-    assert captured == ["spawn"]
-
-
-@pytest.mark.parametrize("is_linked", [False, True])
-async def test_link_timeout_only_succeeds_after_relationship_exists(
-    is_linked: bool, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    parent_id, child_id = str(uuid4()), str(uuid4())
-    child = Conversation(external_id="child", parent_external_id="parent")
-
-    async def spawning_id(self: Conversation) -> str:
-        return "spawn"
-
-    async def timeout(delay: float) -> None:
-        raise TimeoutError
-
-    def watcher(request: httpx.Request) -> httpx.Response:
-        if not is_linked:
-            raise TimeoutError
-        if request.method == "PUT":
-            return httpx.Response(
-                200,
-                json={
-                    "relationship_id": str(uuid4()),
-                    "parent_session_id": parent_id,
-                    "child_session_id": child_id,
-                    "created_at": "2026-11-11T00:00:00Z",
-                    "spawning_tool_use_id": "spawn",
-                    "spawning_message_trajectory_hash": None,
-                },
-            )
-        return httpx.Response(
-            200,
-            json={
-                "sessions": [
-                    {
-                        "session_id": child_id,
-                        "agent_platform": "other",
-                        "trajectory_count": 1,
-                        "message_count": 1,
-                        "started_at": "2026-11-11T00:00:00Z",
-                        "ended_at": "2026-11-11T00:00:00Z",
-                    }
-                ],
-                "total": 1,
-                "limit": 2,
-                "offset": 0,
-            },
-        )
-
-    monkeypatch.setattr(Conversation, "spawning_tool_use_id", spawning_id)
-    monkeypatch.setattr("watcher_litellm.copilot_sessions.asyncio.sleep", timeout)
-    http = httpx.AsyncClient(base_url="http://watcher", transport=httpx.MockTransport(watcher))
-    async with AsyncWatcherClient("http://watcher", httpx_client=http) as client:
-        if is_linked:
-            await child.link(client)
-        else:
-            with pytest.raises(TimeoutError):
-                await child.link(client)
+    (capture,) = captures
+    assert capture["spawning_tool_use_id"] == "spawn"
+    assert capture["parent_conversation"] == {"namespace": "other", "id": parent.external_id}
+    assert capture["conversation"] != capture["parent_conversation"]
 
 
 async def legacy_registration(parent: Conversation) -> None:

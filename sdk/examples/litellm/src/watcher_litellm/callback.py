@@ -72,7 +72,7 @@ from watcher_litellm.incremental import (
     is_client_item,
     is_provider_tool_search,
 )
-from watcher_litellm.proxy_auth import account_email, account_session, proxy_client, require_proxy_configuration
+from watcher_litellm.proxy_auth import account_identity, account_session, proxy_client, require_proxy_configuration
 from watcher_litellm.replan import (
     ToolCall,
     ToolDenial,
@@ -96,7 +96,7 @@ from watcher_litellm.system_notice import system_notice_fields
 from watcher_sdk import AsyncWatcherClient, WatcherAPIError, WatcherError
 from watcher_sdk._generated.models import HookCallError, PreToolUseHookResponse
 from watcher_sdk.capture import CaptureSource, ConversationIdentity, validate_conversation_id
-from watcher_sdk.gateway_identity import IDENTITY_HEADER_NAMES, resolve_conversation_identity
+from watcher_sdk.gateway_identity import IDENTITY_HEADER_NAMES, GatewayConversation, resolve_gateway_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -194,22 +194,44 @@ def client_body(api: API, body: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in body.items() if key not in added}
 
 
-def session_identity(api: API, data: dict[str, Any]) -> ConversationIdentity:
-    """Resolve one conversation, using the admitted account-scoped identity for native Copilot."""
+def resolve_scoped_gateway_conversation(api: API, data: dict[str, Any], user: UserAPIKeyAuth) -> GatewayConversation:
+    """Select conversation and parent with identical custom and account scoping.
+
+    Native Copilot's task map already supplies account-scoped identities.
+    Captures carry parent evidence without another HTTP request or waiting
+    for relationship recording.
+    """
     native = current_request.get()
     if native is not None:
-        return ConversationIdentity(namespace="other", id=native.conversation.external_id)
+        return GatewayConversation(
+            conversation=ConversationIdentity(namespace="other", id=native.conversation.external_id),
+            parent_conversation=ConversationIdentity(namespace="other", id=native.conversation.parent_external_id)
+            if native.conversation.parent_external_id is not None
+            else None,
+        )
     original = data["proxy_server_request"]
     headers = original.get("headers") or {}
-    identity = resolve_conversation_identity(
+    selected = resolve_gateway_conversation(
         client_body(api, original["body"]),
         {name: value for name, value in headers.items() if name.lower() in IDENTITY_HEADER_NAMES},
         next((value for name, value in headers.items() if name.lower() == "user-agent"), None),
     )
-    if identity.namespace == "other":
-        suffix = validate_conversation_id(identity.id.removeprefix("litellm:"), max_length=1024)
-        return ConversationIdentity(namespace="other", id="litellm:" + suffix)
-    return identity
+
+    def scoped(identity: ConversationIdentity) -> ConversationIdentity:
+        if identity.namespace == "other":
+            suffix = validate_conversation_id(identity.id.removeprefix("litellm:"), max_length=1024)
+            identity = ConversationIdentity(namespace="other", id="litellm:" + suffix)
+        if os.environ.get("WATCHER_AUTH_MODE") == "proxy":
+            session_id = identity.id if identity.namespace == "other" else f"{identity.namespace}:{identity.id}"
+            identity = ConversationIdentity(namespace="other", id=account_session(user, session_id))
+        return identity
+
+    selected.conversation = scoped(selected.conversation)
+    if selected.parent_conversation is not None:
+        selected.parent_conversation = scoped(selected.parent_conversation)
+        if selected.parent_conversation == selected.conversation:
+            raise ValueError("conversation_cannot_parent_itself")
+    return selected
 
 
 def _unsupported_request(api: API, body: dict[str, Any]) -> str | None:
@@ -498,12 +520,12 @@ class WatcherCallback(CustomLogger):
         if api is None:
             return data
         if os.environ.get("WATCHER_AUTH_MODE") == "proxy":
-            account_email(user_api_key_dict)
+            account_identity(user_api_key_dict)
             require_proxy_configuration()
         if problem := _unsupported_request(api, data["proxy_server_request"]["body"]):
             raise HTTPException(400, problem)
         try:
-            session_identity(api, data)
+            resolve_scoped_gateway_conversation(api, data, user_api_key_dict)
         except ValueError as exc:
             raise HTTPException(
                 400,
@@ -609,26 +631,21 @@ class WatcherCallback(CustomLogger):
     ) -> list[PreToolUseHookResponse | HookCallError]:
         original = data["proxy_server_request"]
         headers = {key.lower(): value for key, value in (original.get("headers") or {}).items()}
-        identity = session_identity(api, data)
+        selected = resolve_scoped_gateway_conversation(api, data, user)
         is_proxy = os.environ.get("WATCHER_AUTH_MODE") == "proxy"
         native = current_request.get()
-        if is_proxy and native is None:
-            session_id = identity.id if identity.namespace == "other" else f"{identity.namespace}:{identity.id}"
-            identity = ConversationIdentity(namespace="other", id=account_session(user, session_id))
-        external_ids = None
-        if native is not None:
-            # The custom alias identifies the conversation; the null native key
-            # selects Copilot's tool rules without adding another matching ID.
-            external_ids = {"other": identity.id, "github_copilot_cli": None}
         outputs = await client.pre_tool_use_hook(
             request_body=watcher_view(api, client_body(api, original["body"])),
             response_body=watcher_view(api, response),
             url=urlsplit(original["url"]).path,
             provider=f"litellm/{data.get('model', 'unknown')}",
             user_agent=headers.get("user-agent"),
-            conversation=identity if native is None else None,
+            conversation=selected.conversation,
+            parent_conversation=selected.parent_conversation,
+            spawning_tool_use_id=await native.conversation.spawning_tool_use_id() if native is not None else None,
             source=CaptureSource(type="gateway", name="litellm"),
-            external_ids=external_ids,
+            # The null key selects Copilot's tool rules without adding a matching alias.
+            external_ids={"github_copilot_cli": None} if native is not None else None,
             user=None if is_proxy else user.user_email or None,
             timeout=self.timeout_seconds,
             withheld_tool_use_ids=withheld_ids,
@@ -636,7 +653,6 @@ class WatcherCallback(CustomLogger):
         )
         if native is not None:
             await native.conversation.record_spawning_calls(client_tool_details(api, response))
-            await native.conversation.link(client)
         return outputs
 
     async def async_post_call_success_hook(

@@ -4,7 +4,7 @@ Serve ``app`` with uvicorn and load ``authenticate`` as LiteLLM custom auth.
 Discovery and selection use LiteLLM's configured pass-throughs. Inference on
 the Responses, Anthropic Messages and Chat Completions routes uses the ordinary
 provider and the separately registered Watcher callback. GitHub's verified
-numeric account ID selects an operator-provisioned Watcher email. The request
+numeric account ID identifies the user, with an optional mapped email. The request
 context holds credentials only in memory, outside request metadata and Watcher
 recordings. This supports github.com accounts, not GHE hosts.
 """
@@ -31,7 +31,7 @@ from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.llms.github_copilot.per_user_auth import GithubCopilotUserSession
 from litellm.proxy._types import UserAPIKeyAuth
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -181,7 +181,7 @@ class NativeRequest(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     user_id: str
-    user_email: str
+    user_email: str | None
     conversation: Conversation
     provider_session: GithubCopilotUserSession = Field(repr=False, exclude=True)
     provider_headers: dict[str, str] = Field(repr=False, exclude=True)
@@ -259,7 +259,8 @@ provider_callback = NativeProviderCallback()
 class CopilotGateway:
     """Validate native identity before passing inference into LiteLLM.
 
-    ``users`` maps immutable GitHub numeric IDs to Watcher email identities.
+    ``users`` optionally maps GitHub numeric IDs to Watcher email identities.
+    Unmapped accounts use their verified GitHub ID as the Watcher identity.
     Only fixed discovery, the three inference routes and health are exposed.
     The entire untrusted body is validated before any provider request; routing
     overrides are refused. Compressed bodies are bounded after decompression as well.
@@ -369,7 +370,7 @@ class CopilotGateway:
             raise HTTPException(503, "Copilot session storage unavailable") from error
         return NativeRequest(
             user_id=user.user_id,
-            user_email=account_email(user),
+            user_email=user.user_email,
             conversation=conversation,
             provider_session=GithubCopilotUserSession(
                 token=token.removeprefix("Bearer "), api_base="https://api.githubcopilot.com"
@@ -406,9 +407,7 @@ class CopilotGateway:
             logger.warning("copilot_github_invalid_response", error_type=type(error).__name__)
             raise HTTPException(503, "GitHub identity verification unavailable") from error
         user_id = str(account.id)
-        if user_id not in self.users:
-            raise HTTPException(403, "GitHub account is not mapped to a Watcher identity")
-        return UserAPIKeyAuth(user_id="github:" + user_id, user_email=self.users[user_id])
+        return UserAPIKeyAuth(user_id="github:" + user_id, user_email=self.users.get(user_id))
 
     def _headers(self, request: Request, body_length: int) -> list[tuple[bytes, bytes]]:
         """Retain native discovery headers, describing the already decoded body."""
@@ -528,11 +527,14 @@ def _gateway() -> CopilotGateway:
 
     if os.environ.get("WATCHER_AUTH_MODE") != "proxy":
         raise ValueError("Native Copilot requires WATCHER_AUTH_MODE=proxy")
-    users = yaml.safe_load(Path(os.environ["WATCHER_COPILOT_USERS_FILE"]).read_text())
-    if not isinstance(users, dict) or not users:
-        raise ValueError("WATCHER_COPILOT_USERS_FILE must contain a nonempty ID-to-email mapping")
-    if any(not isinstance(user_id, str) for user_id in users):
-        raise ValueError("Copilot users must be keyed by quoted numeric GitHub account ID")
+    users: dict[str, str] = {}
+    if users_file := os.environ.get("WATCHER_COPILOT_USERS_FILE"):
+        raw_users = yaml.safe_load(Path(users_file).read_text())
+        if not isinstance(raw_users, dict):
+            raise ValueError("WATCHER_COPILOT_USERS_FILE must contain an ID-to-email mapping")
+        if any(not isinstance(user_id, str) for user_id in raw_users):
+            raise ValueError("Copilot users must be keyed by quoted numeric GitHub account ID")
+        users = TypeAdapter(dict[str, str]).validate_python(raw_users, strict=True)
     return CopilotGateway(litellm_app, users)
 
 

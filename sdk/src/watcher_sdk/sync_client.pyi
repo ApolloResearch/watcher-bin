@@ -245,6 +245,8 @@ class WatcherClient:
         provider: str | None = None,
         user_agent: str | None = None,
         conversation: ConversationIdentity | None = None,
+        parent_conversation: ConversationIdentity | None = None,
+        spawning_tool_use_id: str | None = None,
         source: CaptureSource | None = None,
         response_index: int | None = None,
         external_ids: Mapping[str, str | None] | None = None,

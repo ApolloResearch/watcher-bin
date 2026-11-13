@@ -256,6 +256,13 @@ In API-key mode, custom IDs receive a `litellm:` prefix unless already present.
 The value after that prefix must be nonempty. With an override, no native IDs are retained as
 matching aliases. Identity and authentication headers are not forwarded to Watcher.
 
+Claude Code, Codex and OpenCode supply native parent identities. Custom
+integrations can pair `x-watcher-session-id` with `x-watcher-parent-session-id`;
+without the latter, no new parent link is created and existing links are
+preserved. See the
+[parent identity contract](../../../customer-docs/docs/api/hooks.md#raw-provider-request-and-response)
+for validation, account scoping and linking behavior.
+
 The Analyzer reports LiteLLM from the capture source, independently of the
 conversation ID. It retains every observed integration, including duplicate
 uploads, and can filter by LiteLLM or the Gateway category.
@@ -314,9 +321,11 @@ Provision each LiteLLM account with a stable `user_id` and a verified
 to identify the developer and assign their sessions. It must match the email
 their sign-in proxy sends to Watcher. The operator owns that mapping;
 client headers and request-body fields do not establish identity. Shared
-master keys and accounts without an ID or valid email are rejected in this
-mode. Emails must be ASCII because they travel in HTTP headers. The callback
-sends the trusted email with the `member` role and scopes
+master keys are rejected. Accounts require an ID and valid email, except
+trusted canonical `github:<numeric-id>` identities may omit email. The native
+Copilot adapter verifies these IDs through GitHub. Emails must be ASCII because
+they travel in HTTP headers. The callback sends the trusted identity with
+the `member` role and scopes
 conversation IDs to the authenticated account. Rotating its key preserves
 its sessions; two accounts supplying the same conversation ID remain distinct.
 Native root and child identities are resolved by the same rules as API-key
@@ -385,8 +394,9 @@ the list:
    watcher-litellm-copilot-config > copilot.yaml
    ```
 
-2. Create `copilot-users.yaml` with operator-verified, immutable GitHub account
-   IDs as quoted keys and developers' company emails as values. For example:
+2. Optionally create `copilot-users.yaml` to match Copilot sessions to
+   developers' browser sign-in identities. Use operator-verified, immutable
+   GitHub account IDs as quoted keys and company emails as values:
 
    ```yaml
    "123456": developer@example.com
@@ -396,23 +406,45 @@ the list:
    the mapped company email to identify the developer and assign their sessions.
    It must match the email their sign-in proxy sends to Watcher. Verify the
    mapping with your company directory; do not infer it from a public GitHub
-   profile. The gateway verifies the
-   account and mapping before reading request bodies, including discovery and
-   model selection. Unmapped accounts cannot use these routes or run inference.
-   The mapping and server secrets are controlled by operators, not by the
-   developers sending model requests.
+   profile. Without a mapping, Watcher uses the identity
+   `github:<numeric-id>`, for example `github:123456`. The file may be `{}`
+   or list only some accounts. With no file configured, all accounts use
+   GitHub-ID identities. A configured file must exist and contain a YAML
+   mapping with valid emails; invalid files are rejected.
+
+   The gateway verifies GitHub credentials before reading request bodies,
+   including discovery and model selection. The map is not an access
+   allowlist: unmapped accounts are admitted too. GitHub checks Copilot
+   entitlement and model access upstream. Use network controls to restrict
+   who can reach the gateway when needed. Operators control the mapping;
+   client headers and request-body fields cannot choose the Watcher owner.
+
+   An email-based browser login, including Entra, does not own sessions
+   recorded under the developer's GitHub-ID identity. Reviewing those
+   sessions requires cross-user permissions or an approved access request.
+   Mapping changes do not reassign existing sessions. Continuing a
+   conversation after a change can create a separate Watcher session under
+   the new identity.
 
 3. Configure the gateway process:
 
    ```bash
    export CONFIG_FILE_PATH="$PWD/copilot.yaml"
-   export WATCHER_COPILOT_USERS_FILE="$PWD/copilot-users.yaml"
    export WATCHER_AUTH_MODE=proxy
    export WATCHER_API_URL=https://watcher.example.com/api
    export WATCHER_PROXY_AUTH_TOKEN=...
    export LITELLM_MASTER_KEY=...
    export DATABASE_URL=postgresql://litellm:password@database:5432/litellm
    ```
+
+   If you created an email mapping file, also set:
+
+   ```bash
+   export WATCHER_COPILOT_USERS_FILE="$PWD/copilot-users.yaml"
+   ```
+
+   Leave `WATCHER_COPILOT_USERS_FILE` unset to use GitHub-ID identities for
+   all accounts. Restart every gateway replica after editing the file.
 
    Use a strong generated master key and secret storage for credentials.
    `DATABASE_URL` names the gateway's PostgreSQL database, separate from
@@ -494,12 +526,13 @@ the list:
 
 Native `x-client-session-id` identifies the root conversation across resume.
 Task and parent headers identify child conversations. The adapter stores the
-mapping before inference, creates separate Watcher child sessions and links
-them through Watcher's relationship API. Parent/child linkage waits for
-Watcher recording before releasing a child's executable tool call. An unknown
-parent, conflicting ancestry, storage failure or linkage failure stops that
-request. Deleting the mapping table breaks resumes and must be coordinated
-with retiring the corresponding sessions.
+mapping before inference and sends both identities, plus any matched spawning
+call ID, with every captured child exchange. Watcher records these links through
+the shared capture path. A failed link does not fail the response; later child
+captures retry it, including unresolved spawning-message links. Without another
+capture a failed link can remain missing. Unknown parents, conflicting ancestry
+and unavailable task storage still stop the request. Deleting the mapping table
+breaks resumes and must be coordinated with retiring the corresponding sessions.
 
 ## Observe and enforce
 

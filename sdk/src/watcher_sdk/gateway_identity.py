@@ -1,7 +1,7 @@
 """Resolve native or custom conversation identity at a gateway boundary.
 
 Adapters validate the original request before generation and send the resulting
-``ConversationIdentity`` to Watcher. Headers stay at the gateway. Selection
+identities to Watcher. Headers stay at the gateway. Selection
 reads no transcript history, performs no I/O and grants no access.
 """
 
@@ -10,15 +10,21 @@ import re
 from collections.abc import Mapping
 from uuid import UUID
 
+from pydantic import BaseModel
+
 from watcher_sdk.capture import ConversationIdentity, validate_conversation_id
 
 IDENTITY_HEADER_NAMES = frozenset(
     {
         "x-watcher-session-id",
+        "x-watcher-parent-session-id",
         "x-claude-code-session-id",
         "x-claude-code-agent-id",
+        "x-claude-code-parent-agent-id",
         "x-opencode-session-id",
+        "x-opencode-parent-session-id",
         "x-session-id",
+        "x-parent-session-id",
     }
 )
 _CLAUDE_HEADERS = frozenset({"x-claude-code-session-id", "x-claude-code-agent-id"})
@@ -26,6 +32,67 @@ _OPENCODE_HEADERS = frozenset({"x-opencode-session-id", "x-session-id"})
 _OPENCODE_USER_AGENT = re.compile(r"^opencode(?:[/\s]|$)")
 _CODEX_USER_AGENT = re.compile(r"^codex(?:[_/\s-]|$)", re.IGNORECASE)
 _CLAUDE_METADATA = re.compile(r"user_\w+_account_[\w-]+_session_(.+)")
+
+
+class GatewayConversation(BaseModel):
+    """Selected identity and optional immediate parent.
+
+    The parent is evidence supplied by the caller, not an authorization grant.
+    Adapters must apply the same identity transformation to both fields.
+    """
+
+    conversation: ConversationIdentity
+    parent_conversation: ConversationIdentity | None = None
+
+
+def resolve_gateway_conversation(
+    request_body: Mapping[str, object], request_headers: Mapping[str, object], user_agent: str | None
+) -> GatewayConversation:
+    """Validate the selected conversation and its explicitly identified immediate parent.
+
+    ``resolve_conversation_identity`` defines custom precedence and native
+    identity requirements; this function adds parent validation.
+    Custom overrides accept only ``x-watcher-parent-session-id`` as parent
+    evidence. Codex supplies a parent-thread ID; Claude supplies the root plus
+    an optional parent-agent ID for nested children. OpenCode supplies parent
+    session headers. Missing evidence leaves the conversation unlinked;
+    malformed relevant evidence or self-parentage raises ValueError
+    before generation. Headers for other harnesses remain irrelevant.
+    """
+    conversation = resolve_conversation_identity(request_body, request_headers, user_agent)
+    custom_parent = _selected_headers(request_headers, frozenset({"x-watcher-parent-session-id"}))
+    parent = None
+    if custom_parent:
+        if conversation.namespace != "other":
+            raise ValueError("custom_parent_requires_custom_conversation")
+        parent = ConversationIdentity(namespace="other", id=custom_parent["x-watcher-parent-session-id"])
+    elif conversation.namespace == "codex":
+        metadata = request_body.get("client_metadata")
+        if isinstance(metadata, dict) and "x-codex-parent-thread-id" in metadata:
+            parent = ConversationIdentity(namespace="codex", id=_uuid(metadata["x-codex-parent-thread-id"]))
+    elif conversation.namespace == "claude_code":
+        headers = _selected_headers(request_headers, frozenset({"x-claude-code-parent-agent-id"}))
+        if conversation.id.startswith("subagent:"):
+            root, _agent = json.loads(conversation.id.removeprefix("subagent:"))
+            parent_agent = headers.get("x-claude-code-parent-agent-id")
+            parent = ConversationIdentity(
+                namespace="claude_code",
+                id="subagent:" + json.dumps([root, parent_agent]) if parent_agent is not None else root,
+            )
+        elif headers:
+            raise ValueError("claude_parent_requires_child_identity")
+    elif conversation.namespace == "opencode":
+        headers = _selected_headers(request_headers, frozenset({"x-opencode-parent-session-id", "x-parent-session-id"}))
+        parent_id = headers.get("x-opencode-parent-session-id")
+        alias = headers.get("x-parent-session-id")
+        if parent_id is not None and alias is not None and parent_id != alias:
+            raise ValueError("conflicting_opencode_parent_identity")
+        parent_id = parent_id or alias
+        if parent_id is not None:
+            parent = ConversationIdentity(namespace="opencode", id=parent_id)
+    if parent == conversation:
+        raise ValueError("conversation_cannot_parent_itself")
+    return GatewayConversation(conversation=conversation, parent_conversation=parent)
 
 
 def claude_metadata_session(request_body: Mapping[str, object]) -> str | None:

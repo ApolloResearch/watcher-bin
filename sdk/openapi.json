@@ -12114,6 +12114,30 @@
             ],
             "description": "One authoritative conversation identity. When supplied, neither external_ids nor native body metadata add matching aliases. Does not grant access. A recognized harness takes precedence; otherwise a native namespace selects the harness and its grading rules."
           },
+          "parent_conversation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional immediate parent, requiring a distinct conversation in the same namespace. Watcher links after recording; the parent may initially have no messages. Link failures preserve the capture and retry when later captures include the parent identity. Existing ingestion permissions apply; this adds no matching aliases."
+          },
+          "spawning_tool_use_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spawning Tool Use Id",
+            "description": "Optional native call ID that spawned this child, requiring parent_conversation. Watcher resolves it against the parent's stored messages. Missing messages leave the call ID stored with no message link; later child captures carrying parent identity retry resolution."
+          },
           "source": {
             "anyOf": [
               {

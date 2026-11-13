@@ -411,11 +411,35 @@ def test_requests_without_identity_are_refused_before_the_provider_runs(
         ),
         ({"user-agent": "claude-cli/1", "x-claude-code-agent-id": "child"}, {}),
         ({"user-agent": "opencode/1", "x-session-id": "one", "x-opencode-session-id": "two"}, {}),
+        ({"user-agent": "opencode/1", "x-opencode-session-id": "child", "x-parent-session-id": ""}, {}),
+        ({"x-watcher-session-id": "child", "x-watcher-parent-session-id": "litellm:child"}, {}),
+        (
+            {
+                "user-agent": "claude-cli/2.1.314",
+                "x-claude-code-session-id": "11111111-1111-4111-8111-111111111111",
+                "x-claude-code-agent-id": "child",
+                "x-claude-code-parent-agent-id": "",
+            },
+            {},
+        ),
+        (
+            {"user-agent": "codex_exec/1"},
+            {
+                "client_metadata": {
+                    "thread_id": "11111111-1111-4111-8111-111111111111",
+                    "x-codex-parent-thread-id": "invalid",
+                }
+            },
+        ),
     ],
     ids=[
         "invalid-override-with-native",
         "claude-child-without-root",
         "opencode-conflict",
+        "invalid-opencode-parent",
+        "self-parent-after-prefix-normalization",
+        "invalid-claude-parent",
+        "invalid-native-parent",
     ],
 )
 def test_invalid_identity_never_generates(

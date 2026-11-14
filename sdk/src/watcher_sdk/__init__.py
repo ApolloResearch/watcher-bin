@@ -48,7 +48,7 @@ Error handling::
             print(f"Rate limited, retry after {e.retry_after}s")
 
 Exported models (from the generated API schema):
-    ApertureLog, AvailableSessionDetailResponse, ClaudeCodeTrajectory, CodexTrajectory, CopilotTrajectory,
+    AvailableSessionDetailResponse, ClaudeCodeTrajectory, CodexTrajectory, CopilotTrajectory,
     CreateGraderRequest, GradeRequest, GradeResponse,
     GradeResult, GraderDetail, GraderListResponse, GraderSearchRequest,
     GraderSearchResponse, GraderSummary, HealthResponse, IngestRequest,
@@ -68,7 +68,6 @@ if TYPE_CHECKING:
     from watcher_sdk._generated.models import (
         AgentRelationshipRequest,
         AgentRelationshipResponse,
-        ApertureLog,
         AvailableSessionDetailResponse,
         ClaudeCodeAgentIdentity,
         ClaudeCodeTrajectory,
@@ -141,7 +140,6 @@ if TYPE_CHECKING:
 _EXPORTS: dict[str, str] = {
     "AgentRelationshipRequest": "watcher_sdk._generated.models",
     "AgentRelationshipResponse": "watcher_sdk._generated.models",
-    "ApertureLog": "watcher_sdk._generated.models",
     "AvailableSessionDetailResponse": "watcher_sdk._generated.models",
     "ClaudeCodeAgentIdentity": "watcher_sdk._generated.models",
     "ClaudeCodeTrajectory": "watcher_sdk._generated.models",
@@ -279,7 +277,6 @@ __all__ = [
     "ClaudeCodeAgentIdentity",
     "IngestToolCallReference",
     "ResolvedIngestToolCall",
-    "ApertureLog",
     "AvailableSessionDetailResponse",
     "ClaudeCodeTrajectory",
     "CodexTrajectory",

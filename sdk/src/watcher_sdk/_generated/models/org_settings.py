@@ -41,11 +41,6 @@ class OrgSettings:
             name (str):
             settings_distribution (OrgSettingsSettingsDistribution):
             restrict_cross_user_session_content (bool):
-            s3_output_bucket (None | str | Unset):
-            s3_output_prefix (str | Unset):  Default: 'flagged-sessions/'.
-            s3_input_prefix (str | Unset):  Default: ''.
-            s3_assume_role_arn (None | str | Unset):
-            polling_enabled (bool | Unset):  Default: True.
             notifications_enabled (bool | Unset):  Default: False.
             flag_threshold (float | Unset):  Default: 7.0.
             slack_webhook_configured (bool | Unset):  Default: False.
@@ -61,11 +56,6 @@ class OrgSettings:
     name: str
     settings_distribution: OrgSettingsSettingsDistribution
     restrict_cross_user_session_content: bool
-    s3_output_bucket: None | str | Unset = UNSET
-    s3_output_prefix: str | Unset = "flagged-sessions/"
-    s3_input_prefix: str | Unset = ""
-    s3_assume_role_arn: None | str | Unset = UNSET
-    polling_enabled: bool | Unset = True
     notifications_enabled: bool | Unset = False
     flag_threshold: float | Unset = 7.0
     slack_webhook_configured: bool | Unset = False
@@ -88,24 +78,6 @@ class OrgSettings:
         settings_distribution = self.settings_distribution.value
 
         restrict_cross_user_session_content = self.restrict_cross_user_session_content
-
-        s3_output_bucket: None | str | Unset
-        if isinstance(self.s3_output_bucket, Unset):
-            s3_output_bucket = UNSET
-        else:
-            s3_output_bucket = self.s3_output_bucket
-
-        s3_output_prefix = self.s3_output_prefix
-
-        s3_input_prefix = self.s3_input_prefix
-
-        s3_assume_role_arn: None | str | Unset
-        if isinstance(self.s3_assume_role_arn, Unset):
-            s3_assume_role_arn = UNSET
-        else:
-            s3_assume_role_arn = self.s3_assume_role_arn
-
-        polling_enabled = self.polling_enabled
 
         notifications_enabled = self.notifications_enabled
 
@@ -149,16 +121,6 @@ class OrgSettings:
                 "restrict_cross_user_session_content": restrict_cross_user_session_content,
             }
         )
-        if s3_output_bucket is not UNSET:
-            field_dict["s3_output_bucket"] = s3_output_bucket
-        if s3_output_prefix is not UNSET:
-            field_dict["s3_output_prefix"] = s3_output_prefix
-        if s3_input_prefix is not UNSET:
-            field_dict["s3_input_prefix"] = s3_input_prefix
-        if s3_assume_role_arn is not UNSET:
-            field_dict["s3_assume_role_arn"] = s3_assume_role_arn
-        if polling_enabled is not UNSET:
-            field_dict["polling_enabled"] = polling_enabled
         if notifications_enabled is not UNSET:
             field_dict["notifications_enabled"] = notifications_enabled
         if flag_threshold is not UNSET:
@@ -196,32 +158,6 @@ class OrgSettings:
         restrict_cross_user_session_content = d.pop(
             "restrict_cross_user_session_content"
         )
-
-        def _parse_s3_output_bucket(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        s3_output_bucket = _parse_s3_output_bucket(d.pop("s3_output_bucket", UNSET))
-
-        s3_output_prefix = d.pop("s3_output_prefix", UNSET)
-
-        s3_input_prefix = d.pop("s3_input_prefix", UNSET)
-
-        def _parse_s3_assume_role_arn(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        s3_assume_role_arn = _parse_s3_assume_role_arn(
-            d.pop("s3_assume_role_arn", UNSET)
-        )
-
-        polling_enabled = d.pop("polling_enabled", UNSET)
 
         notifications_enabled = d.pop("notifications_enabled", UNSET)
 
@@ -286,11 +222,6 @@ class OrgSettings:
             name=name,
             settings_distribution=settings_distribution,
             restrict_cross_user_session_content=restrict_cross_user_session_content,
-            s3_output_bucket=s3_output_bucket,
-            s3_output_prefix=s3_output_prefix,
-            s3_input_prefix=s3_input_prefix,
-            s3_assume_role_arn=s3_assume_role_arn,
-            polling_enabled=polling_enabled,
             notifications_enabled=notifications_enabled,
             flag_threshold=flag_threshold,
             slack_webhook_configured=slack_webhook_configured,

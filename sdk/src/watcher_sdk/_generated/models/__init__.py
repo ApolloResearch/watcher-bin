@@ -43,6 +43,9 @@ from .agent_inventory_user_list_response import AgentInventoryUserListResponse
 from .agent_inventory_user_machine import AgentInventoryUserMachine
 from .agent_relationship_request import AgentRelationshipRequest
 from .agent_relationship_response import AgentRelationshipResponse
+from .aperture_delivery import ApertureDelivery
+from .aperture_delivery_request_body import ApertureDeliveryRequestBody
+from .aperture_delivery_response_body_type_0 import ApertureDeliveryResponseBodyType0
 from .aperture_hook_accepted import ApertureHookAccepted
 from .aperture_hook_metadata import ApertureHookMetadata
 from .aperture_hook_request import ApertureHookRequest
@@ -50,20 +53,10 @@ from .aperture_hook_request_request_body import ApertureHookRequestRequestBody
 from .aperture_hook_request_response_body_type_0 import (
     ApertureHookRequestResponseBodyType0,
 )
-from .aperture_log import ApertureLog
-from .aperture_pre_request import AperturePreRequest
-from .aperture_pre_request_request_body import AperturePreRequestRequestBody
 from .aperture_pre_request_response import AperturePreRequestResponse
 from .aperture_pre_request_response_action import AperturePreRequestResponseAction
 from .aperture_pre_request_response_request_body_type_0 import (
     AperturePreRequestResponseRequestBodyType0,
-)
-from .aperture_pre_response_request import AperturePreResponseRequest
-from .aperture_pre_response_request_request_body import (
-    AperturePreResponseRequestRequestBody,
-)
-from .aperture_pre_response_request_response_body import (
-    AperturePreResponseRequestResponseBody,
 )
 from .aperture_pre_response_response import AperturePreResponseResponse
 from .aperture_pre_response_response_action import AperturePreResponseResponseAction
@@ -71,7 +64,9 @@ from .aperture_response_window import ApertureResponseWindow
 from .aperture_selected_tool_call import ApertureSelectedToolCall
 from .aperture_selected_tool_call_params import ApertureSelectedToolCallParams
 from .aperture_tool_modification import ApertureToolModification
-from .aperture_tool_modification_params import ApertureToolModificationParams
+from .aperture_tool_modification_params_type_0 import (
+    ApertureToolModificationParamsType0,
+)
 from .applied_decision import AppliedDecision
 from .auth_client_config import AuthClientConfig
 from .auth_client_config_auth_mode import AuthClientConfigAuthMode
@@ -520,27 +515,24 @@ __all__ = (
     "AgentInventoryUserMachine",
     "AgentRelationshipRequest",
     "AgentRelationshipResponse",
+    "ApertureDelivery",
+    "ApertureDeliveryRequestBody",
+    "ApertureDeliveryResponseBodyType0",
     "ApertureHookAccepted",
     "ApertureHookMetadata",
     "ApertureHookRequest",
     "ApertureHookRequestRequestBody",
     "ApertureHookRequestResponseBodyType0",
-    "ApertureLog",
-    "AperturePreRequest",
-    "AperturePreRequestRequestBody",
     "AperturePreRequestResponse",
     "AperturePreRequestResponseAction",
     "AperturePreRequestResponseRequestBodyType0",
-    "AperturePreResponseRequest",
-    "AperturePreResponseRequestRequestBody",
-    "AperturePreResponseRequestResponseBody",
     "AperturePreResponseResponse",
     "AperturePreResponseResponseAction",
     "ApertureResponseWindow",
     "ApertureSelectedToolCall",
     "ApertureSelectedToolCallParams",
     "ApertureToolModification",
-    "ApertureToolModificationParams",
+    "ApertureToolModificationParamsType0",
     "AppliedDecision",
     "AuthClientConfig",
     "AuthClientConfigAuthMode",

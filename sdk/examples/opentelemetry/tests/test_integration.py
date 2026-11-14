@@ -36,6 +36,7 @@ def row(index=1, **updates):
         "severity_score": 7,
         "coverage_state": "decided",
         "decision_category": "auto_denied",
+        "is_flagged": True,
         "content_state": "available",
         "user_email": "person@example.invalid",
         "user_first_name": "Private Person",
@@ -357,7 +358,7 @@ async def test_pagination_counts_require_integers(field, value):
 
 
 async def test_later_oversized_batch_prevents_all_transmission(http_fixture):
-    source_rows = [row(1, decision_category=None, severity_score=None), row(2)]
+    source_rows = [row(1, decision_category=None, severity_score=None, is_flagged=False), row(2)]
     first = DecisionRecord.model_validate(source_rows[0])
     second = DecisionRecord.model_validate(source_rows[1])
     maximum = len(encode_records([first], observed_at=END))

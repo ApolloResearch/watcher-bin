@@ -20,7 +20,7 @@ T = TypeVar("T", bound="AperturePreResponseResponse")
 
 @_attrs_define
 class AperturePreResponseResponse:
-    """Allow, replace selected call arguments, or block the pending callback.
+    """Allow, edit individual pending calls, or block the pending callback.
 
     Attributes:
         action (AperturePreResponseResponseAction):

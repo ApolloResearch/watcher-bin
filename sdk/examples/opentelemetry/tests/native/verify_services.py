@@ -151,6 +151,7 @@ async def main(destination: str) -> None:
                     )
                     source_requests = []
                     source_row = record.model_dump(mode="json") | {
+                        "is_flagged": True,
                         "tool_name": "private_fixture_tool",
                         "tool_input_preview": "PRIVATE_FIXTURE_ARGUMENTS",
                         "user_email": "private-fixture@example.invalid",

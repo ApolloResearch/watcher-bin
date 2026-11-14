@@ -21,7 +21,6 @@ from watcher_sdk._generated.models.admin_session_content_access_request_list_res
 from watcher_sdk._generated.models.agent_relationship_request import AgentRelationshipRequest
 from watcher_sdk._generated.models.agent_relationship_response import AgentRelationshipResponse
 from watcher_sdk._generated.models.aperture_hook_accepted import ApertureHookAccepted
-from watcher_sdk._generated.models.aperture_log import ApertureLog
 from watcher_sdk._generated.models.aperture_pre_request_response import AperturePreRequestResponse
 from watcher_sdk._generated.models.aperture_pre_response_response import AperturePreResponseResponse
 from watcher_sdk._generated.models.auth_client_config import AuthClientConfig
@@ -125,7 +124,7 @@ class WatcherClient:
     def check_permissions(self, permissions: list[str] | tuple[str, ...]) -> PermissionCheckResponse: ...
     def _ingest_incremental(self, body: bytes, *, format: str) -> IngestResponse: ...
     def ingest(
-        self, source: str, trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog]
+        self, source: str, trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory]
     ) -> IngestResponse: ...
     def put_agent_relationship(
         self, *, child_session_id: str, relationship: AgentRelationshipRequest
@@ -262,10 +261,9 @@ class WatcherClient:
         withholds_refused_calls: bool | None = None,
     ) -> list[PreToolUseHookResponse | HookCallError]: ...
     def aperture_entire_request_hook(self, payload: Mapping[str, Any]) -> ApertureHookAccepted: ...
-    def aperture_pre_request_hook(self, payload: Mapping[str, Any]) -> AperturePreRequestResponse: ...
-    def aperture_pre_response_hook(
+    def aperture_hook(
         self, payload: Mapping[str, Any], *, timeout: float = 310.0
-    ) -> AperturePreResponseResponse: ...
+    ) -> ApertureHookAccepted | AperturePreRequestResponse | AperturePreResponseResponse: ...
     @overload
     def pre_tool_use(
         self,
@@ -447,7 +445,7 @@ class WatcherClient:
     def ingest_and_grade(
         self,
         source: str,
-        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog],
+        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory],
         grader_ids: list[str],
     ) -> tuple[IngestResponse, GradeResponse]: ...
 

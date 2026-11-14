@@ -27,6 +27,7 @@ def row(index=1, **updates):
         "severity_score": 7,
         "coverage_state": "decided",
         "decision_category": "auto_denied",
+        "is_flagged": True,
         "content_state": "available",
         "user_email": "person@example.invalid",
         "tool_input_preview": "PRIVATE_ARGUMENTS",
@@ -311,7 +312,13 @@ async def test_real_http_hec_batch_contains_two_complete_ordered_events(http_fix
             page(
                 [
                     row(1),
-                    row(2, occurred_at="2026-07-01T10:00:01+00:00", severity_score=3, decision_category="cleared"),
+                    row(
+                        2,
+                        occurred_at="2026-07-01T10:00:01+00:00",
+                        severity_score=3,
+                        decision_category="cleared",
+                        is_flagged=False,
+                    ),
                 ]
             ),
         )

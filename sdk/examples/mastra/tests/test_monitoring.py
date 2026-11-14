@@ -241,6 +241,7 @@ class Fixture:
                         "tool_use_id": call["tool_use_id"],
                         "tool_name": call["tool_name"],
                         "applied_decision": "escalate",
+                        "is_flagged": True,
                         "decision_category": self.human_choices.get(call["tool_use_id"]),
                     }
                     for call in calls

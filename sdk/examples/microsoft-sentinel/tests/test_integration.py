@@ -27,6 +27,7 @@ def row(index=1, **updates):
         "severity_score": 7,
         "coverage_state": "decided",
         "decision_category": "auto_denied",
+        "is_flagged": True,
         "content_state": "available",
         "user_email": "person@example.invalid",
         "tool_input_preview": "PRIVATE_ARGUMENTS",

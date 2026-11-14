@@ -7,7 +7,6 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
-    from ..models.aperture_log import ApertureLog
     from ..models.claude_code_trajectory import ClaudeCodeTrajectory
     from ..models.codex_trajectory import CodexTrajectory
     from ..models.copilot_trajectory import CopilotTrajectory
@@ -22,29 +21,24 @@ class IngestRequest:
 
     Attributes:
         source (str):
-        trajectories (list[ApertureLog | ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory]):
+        trajectories (list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory]):
     """
 
     source: str
-    trajectories: list[
-        ApertureLog | ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory
-    ]
+    trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.claude_code_trajectory import ClaudeCodeTrajectory
         from ..models.codex_trajectory import CodexTrajectory
-        from ..models.copilot_trajectory import CopilotTrajectory
 
         source = self.source
 
         trajectories = []
         for trajectories_item_data in self.trajectories:
             trajectories_item: dict[str, Any]
-            if (
-                isinstance(trajectories_item_data, ClaudeCodeTrajectory)
-                or isinstance(trajectories_item_data, CodexTrajectory)
-                or isinstance(trajectories_item_data, CopilotTrajectory)
+            if isinstance(trajectories_item_data, ClaudeCodeTrajectory) or isinstance(
+                trajectories_item_data, CodexTrajectory
             ):
                 trajectories_item = trajectories_item_data.to_dict()
             else:
@@ -65,7 +59,6 @@ class IngestRequest:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.aperture_log import ApertureLog
         from ..models.claude_code_trajectory import ClaudeCodeTrajectory
         from ..models.codex_trajectory import CodexTrajectory
         from ..models.copilot_trajectory import CopilotTrajectory
@@ -79,9 +72,7 @@ class IngestRequest:
 
             def _parse_trajectories_item(
                 data: object,
-            ) -> (
-                ApertureLog | ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory
-            ):
+            ) -> ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory:
                 try:
                     if not isinstance(data, dict):
                         raise TypeError()
@@ -98,19 +89,11 @@ class IngestRequest:
                     return trajectories_item_type_1
                 except (TypeError, ValueError, AttributeError, KeyError):
                     pass
-                try:
-                    if not isinstance(data, dict):
-                        raise TypeError()
-                    trajectories_item_type_2 = CopilotTrajectory.from_dict(data)
-
-                    return trajectories_item_type_2
-                except (TypeError, ValueError, AttributeError, KeyError):
-                    pass
                 if not isinstance(data, dict):
                     raise TypeError()
-                trajectories_item_type_3 = ApertureLog.from_dict(data)
+                trajectories_item_type_2 = CopilotTrajectory.from_dict(data)
 
-                return trajectories_item_type_3
+                return trajectories_item_type_2
 
             trajectories_item = _parse_trajectories_item(trajectories_item_data)
 

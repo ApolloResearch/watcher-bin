@@ -132,6 +132,7 @@ async def configured_client(
                             "message_ref": "m1",
                             "tool_name": call["tool_name"],
                             "applied_decision": "escalate",
+                            "is_flagged": True,
                             "decision_category": human_choices.get(call["tool_use_id"]),
                         }
                         for call in calls

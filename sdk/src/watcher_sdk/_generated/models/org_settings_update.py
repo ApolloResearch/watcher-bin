@@ -22,11 +22,6 @@ class OrgSettingsUpdate:
 
     Attributes:
         name (None | str | Unset):
-        s3_output_bucket (None | str | Unset):
-        s3_output_prefix (None | str | Unset):
-        s3_input_prefix (None | str | Unset):
-        s3_assume_role_arn (None | str | Unset):
-        polling_enabled (bool | None | Unset):
         notifications_enabled (bool | None | Unset):
         flag_threshold (float | None | Unset):
         slack_webhook_url (None | str | Unset):
@@ -37,11 +32,6 @@ class OrgSettingsUpdate:
     """
 
     name: None | str | Unset = UNSET
-    s3_output_bucket: None | str | Unset = UNSET
-    s3_output_prefix: None | str | Unset = UNSET
-    s3_input_prefix: None | str | Unset = UNSET
-    s3_assume_role_arn: None | str | Unset = UNSET
-    polling_enabled: bool | None | Unset = UNSET
     notifications_enabled: bool | None | Unset = UNSET
     flag_threshold: float | None | Unset = UNSET
     slack_webhook_url: None | str | Unset = UNSET
@@ -58,36 +48,6 @@ class OrgSettingsUpdate:
             name = UNSET
         else:
             name = self.name
-
-        s3_output_bucket: None | str | Unset
-        if isinstance(self.s3_output_bucket, Unset):
-            s3_output_bucket = UNSET
-        else:
-            s3_output_bucket = self.s3_output_bucket
-
-        s3_output_prefix: None | str | Unset
-        if isinstance(self.s3_output_prefix, Unset):
-            s3_output_prefix = UNSET
-        else:
-            s3_output_prefix = self.s3_output_prefix
-
-        s3_input_prefix: None | str | Unset
-        if isinstance(self.s3_input_prefix, Unset):
-            s3_input_prefix = UNSET
-        else:
-            s3_input_prefix = self.s3_input_prefix
-
-        s3_assume_role_arn: None | str | Unset
-        if isinstance(self.s3_assume_role_arn, Unset):
-            s3_assume_role_arn = UNSET
-        else:
-            s3_assume_role_arn = self.s3_assume_role_arn
-
-        polling_enabled: bool | None | Unset
-        if isinstance(self.polling_enabled, Unset):
-            polling_enabled = UNSET
-        else:
-            polling_enabled = self.polling_enabled
 
         notifications_enabled: bool | None | Unset
         if isinstance(self.notifications_enabled, Unset):
@@ -146,16 +106,6 @@ class OrgSettingsUpdate:
         field_dict.update({})
         if name is not UNSET:
             field_dict["name"] = name
-        if s3_output_bucket is not UNSET:
-            field_dict["s3_output_bucket"] = s3_output_bucket
-        if s3_output_prefix is not UNSET:
-            field_dict["s3_output_prefix"] = s3_output_prefix
-        if s3_input_prefix is not UNSET:
-            field_dict["s3_input_prefix"] = s3_input_prefix
-        if s3_assume_role_arn is not UNSET:
-            field_dict["s3_assume_role_arn"] = s3_assume_role_arn
-        if polling_enabled is not UNSET:
-            field_dict["polling_enabled"] = polling_enabled
         if notifications_enabled is not UNSET:
             field_dict["notifications_enabled"] = notifications_enabled
         if flag_threshold is not UNSET:
@@ -189,53 +139,6 @@ class OrgSettingsUpdate:
             return cast(None | str | Unset, data)
 
         name = _parse_name(d.pop("name", UNSET))
-
-        def _parse_s3_output_bucket(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        s3_output_bucket = _parse_s3_output_bucket(d.pop("s3_output_bucket", UNSET))
-
-        def _parse_s3_output_prefix(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        s3_output_prefix = _parse_s3_output_prefix(d.pop("s3_output_prefix", UNSET))
-
-        def _parse_s3_input_prefix(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        s3_input_prefix = _parse_s3_input_prefix(d.pop("s3_input_prefix", UNSET))
-
-        def _parse_s3_assume_role_arn(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        s3_assume_role_arn = _parse_s3_assume_role_arn(
-            d.pop("s3_assume_role_arn", UNSET)
-        )
-
-        def _parse_polling_enabled(data: object) -> bool | None | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(bool | None | Unset, data)
-
-        polling_enabled = _parse_polling_enabled(d.pop("polling_enabled", UNSET))
 
         def _parse_notifications_enabled(data: object) -> bool | None | Unset:
             if data is None:
@@ -338,11 +241,6 @@ class OrgSettingsUpdate:
 
         org_settings_update = cls(
             name=name,
-            s3_output_bucket=s3_output_bucket,
-            s3_output_prefix=s3_output_prefix,
-            s3_input_prefix=s3_input_prefix,
-            s3_assume_role_arn=s3_assume_role_arn,
-            polling_enabled=polling_enabled,
             notifications_enabled=notifications_enabled,
             flag_threshold=flag_threshold,
             slack_webhook_url=slack_webhook_url,

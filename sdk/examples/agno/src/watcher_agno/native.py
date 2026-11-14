@@ -35,7 +35,8 @@ class CaptureModelCalls:
 
     async def ainvoke(self, messages, **kwargs):
         self.watcher_messages = messages
-        return await super().ainvoke(messages, **kwargs)
+        # The Agno model provider that follows this mixin in the subclass's bases defines ainvoke.
+        return await super().ainvoke(messages, **kwargs)  # ty: ignore[unresolved-attribute]
 
 
 def _before_tool(monitor, model, previous_hook):

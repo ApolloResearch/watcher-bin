@@ -9,57 +9,74 @@ from attrs import field as _attrs_field
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.aperture_delivery_request_body import ApertureDeliveryRequestBody
+    from ..models.aperture_delivery_response_body_type_0 import (
+        ApertureDeliveryResponseBodyType0,
+    )
     from ..models.aperture_hook_metadata import ApertureHookMetadata
-    from ..models.aperture_pre_response_request_request_body import (
-        AperturePreResponseRequestRequestBody,
-    )
-    from ..models.aperture_pre_response_request_response_body import (
-        AperturePreResponseRequestResponseBody,
-    )
     from ..models.aperture_response_window import ApertureResponseWindow
     from ..models.aperture_selected_tool_call import ApertureSelectedToolCall
 
 
-T = TypeVar("T", bound="AperturePreResponseRequest")
+T = TypeVar("T", bound="ApertureDelivery")
 
 
 @_attrs_define
-class AperturePreResponseRequest:
-    """Blocking callback with original context and the exact calls awaiting release.
+class ApertureDelivery:
+    """Any delivery to Watcher's single Aperture hook URL; ``metadata.stage`` says which stage sent it.
 
-    Attributes:
-        metadata (ApertureHookMetadata): Tailscale Aperture-owned identity fields; unknown additions are accepted.
+    The fields are the union of the three stages' payloads: ``pre_request``
+    sends only the request, ``pre_response`` adds the response so far, the
+    pending ``tool_calls`` and the ``response_window``, and ``post_complete``
+    (or an Aperture that names no stage) sends the completed exchange.
 
-            ``request_id`` identifies a capture, never a conversation. ``session_id``
-            is Aperture's own session id: one it took from the client (prefix
-            ``xsid_`` or ``pisn_``) is recorded as the conversation id of a capture
-            without a native one, and any other value is ignored. The provider key
-            and URL describe routing and do not identify the developer's harness.
-            ``user_agent`` supplies application evidence to the format parser. The
-            parser applies the supported harness's marker and system-identity rules;
-            selecting a wire format alone never admits an application. These fields
-            classify captured traffic; they do not authenticate the caller.
-        request_body (AperturePreResponseRequestRequestBody):
-        response_body (AperturePreResponseRequestResponseBody):
-        tool_calls (list[ApertureSelectedToolCall] | None | Unset):
-        response_window (ApertureResponseWindow | None | Unset):
+        Attributes:
+            metadata (ApertureHookMetadata): Tailscale Aperture-owned identity fields; unknown additions are accepted.
+
+                ``request_id`` identifies a capture, never a conversation. ``session_id``
+                is Aperture's own session id, sent at every stage and identical across a
+                conversation's calls: one it took from the client (prefix
+                ``xsid_`` or ``pisn_``) is recorded as the conversation id of a capture
+                without a native one, and any other value is ignored. ``stage`` names the
+                stage calling the hook (see ``ApertureStage``) and ``events`` the hook's
+                subscriptions this call serves; both are absent from older Aperture
+                deliveries, and a value of an unexpected type is treated as absent.
+                The provider key
+                and URL describe routing and do not identify the developer's harness.
+                ``user_agent`` supplies application evidence to the format parser. The
+                parser applies the supported harness's marker and system-identity rules;
+                selecting a wire format alone never admits an application. These fields
+                classify captured traffic; they do not authenticate the caller.
+            request_body (ApertureDeliveryRequestBody):
+            response_body (ApertureDeliveryResponseBodyType0 | None | Unset):
+            tool_calls (list[ApertureSelectedToolCall] | None | Unset):
+            response_window (ApertureResponseWindow | None | Unset):
     """
 
     metadata: ApertureHookMetadata
-    request_body: AperturePreResponseRequestRequestBody
-    response_body: AperturePreResponseRequestResponseBody
+    request_body: ApertureDeliveryRequestBody
+    response_body: ApertureDeliveryResponseBodyType0 | None | Unset = UNSET
     tool_calls: list[ApertureSelectedToolCall] | None | Unset = UNSET
     response_window: ApertureResponseWindow | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.aperture_delivery_response_body_type_0 import (
+            ApertureDeliveryResponseBodyType0,
+        )
         from ..models.aperture_response_window import ApertureResponseWindow
 
         metadata = self.metadata.to_dict()
 
         request_body = self.request_body.to_dict()
 
-        response_body = self.response_body.to_dict()
+        response_body: dict[str, Any] | None | Unset
+        if isinstance(self.response_body, Unset):
+            response_body = UNSET
+        elif isinstance(self.response_body, ApertureDeliveryResponseBodyType0):
+            response_body = self.response_body.to_dict()
+        else:
+            response_body = self.response_body
 
         tool_calls: list[dict[str, Any]] | None | Unset
         if isinstance(self.tool_calls, Unset):
@@ -87,9 +104,10 @@ class AperturePreResponseRequest:
             {
                 "metadata": metadata,
                 "request_body": request_body,
-                "response_body": response_body,
             }
         )
+        if response_body is not UNSET:
+            field_dict["response_body"] = response_body
         if tool_calls is not UNSET:
             field_dict["tool_calls"] = tool_calls
         if response_window is not UNSET:
@@ -99,26 +117,37 @@ class AperturePreResponseRequest:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.aperture_delivery_request_body import ApertureDeliveryRequestBody
+        from ..models.aperture_delivery_response_body_type_0 import (
+            ApertureDeliveryResponseBodyType0,
+        )
         from ..models.aperture_hook_metadata import ApertureHookMetadata
-        from ..models.aperture_pre_response_request_request_body import (
-            AperturePreResponseRequestRequestBody,
-        )
-        from ..models.aperture_pre_response_request_response_body import (
-            AperturePreResponseRequestResponseBody,
-        )
         from ..models.aperture_response_window import ApertureResponseWindow
         from ..models.aperture_selected_tool_call import ApertureSelectedToolCall
 
         d = dict(src_dict)
         metadata = ApertureHookMetadata.from_dict(d.pop("metadata"))
 
-        request_body = AperturePreResponseRequestRequestBody.from_dict(
-            d.pop("request_body")
-        )
+        request_body = ApertureDeliveryRequestBody.from_dict(d.pop("request_body"))
 
-        response_body = AperturePreResponseRequestResponseBody.from_dict(
-            d.pop("response_body")
-        )
+        def _parse_response_body(
+            data: object,
+        ) -> ApertureDeliveryResponseBodyType0 | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                response_body_type_0 = ApertureDeliveryResponseBodyType0.from_dict(data)
+
+                return response_body_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ApertureDeliveryResponseBodyType0 | None | Unset, data)
+
+        response_body = _parse_response_body(d.pop("response_body", UNSET))
 
         def _parse_tool_calls(
             data: object,
@@ -165,7 +194,7 @@ class AperturePreResponseRequest:
 
         response_window = _parse_response_window(d.pop("response_window", UNSET))
 
-        aperture_pre_response_request = cls(
+        aperture_delivery = cls(
             metadata=metadata,
             request_body=request_body,
             response_body=response_body,
@@ -173,8 +202,8 @@ class AperturePreResponseRequest:
             response_window=response_window,
         )
 
-        aperture_pre_response_request.additional_properties = d
-        return aperture_pre_response_request
+        aperture_delivery.additional_properties = d
+        return aperture_delivery
 
     @property
     def additional_keys(self) -> list[str]:

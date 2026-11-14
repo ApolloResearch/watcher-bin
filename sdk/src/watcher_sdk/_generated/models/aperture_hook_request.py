@@ -35,9 +35,14 @@ class ApertureHookRequest:
             metadata (ApertureHookMetadata): Tailscale Aperture-owned identity fields; unknown additions are accepted.
 
                 ``request_id`` identifies a capture, never a conversation. ``session_id``
-                is Aperture's own session id: one it took from the client (prefix
+                is Aperture's own session id, sent at every stage and identical across a
+                conversation's calls: one it took from the client (prefix
                 ``xsid_`` or ``pisn_``) is recorded as the conversation id of a capture
-                without a native one, and any other value is ignored. The provider key
+                without a native one, and any other value is ignored. ``stage`` names the
+                stage calling the hook (see ``ApertureStage``) and ``events`` the hook's
+                subscriptions this call serves; both are absent from older Aperture
+                deliveries, and a value of an unexpected type is treated as absent.
+                The provider key
                 and URL describe routing and do not identify the developer's harness.
                 ``user_agent`` supplies application evidence to the format parser. The
                 parser applies the supported harness's marker and system-identity rules;

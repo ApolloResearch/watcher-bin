@@ -1008,22 +1008,40 @@
         "tags": [
           "hooks"
         ],
-        "summary": "Aperture Entire Request Hook",
-        "description": "Deprecated Tailscale Aperture observation alias for POST /v1/hooks/aperture/entire-request. Existing subscriptions remain supported.",
-        "operationId": "aperture_entire_request_hook_v1_hooks_aperture_post",
+        "summary": "Aperture Hook",
+        "description": "Serve every Tailscale Aperture hook stage from one URL, switching on metadata.stage.\n\npre_request adds Watcher's fixed notice to the provider request, without\ngrading. pre_response evaluates the pending tool calls before Aperture\nreleases them and answers allow, per-call edits (a notice through the\nclient's shell tool, or removal) or a block. post_complete, or a delivery\nthat names no stage, is observed asynchronously like\nPOST /v1/hooks/aperture/entire-request and answered 202. The API key must\nhave sessions:write:any so metadata.login_name can attribute the session.\n\nConfigure two Aperture hooks with this URL: one fail_open hook for the\npre_request and entire_request events, and one tool_call_pre_response hook\nwith fail_policy=\"fail_closed\", block_response=\"message\",\nfail_response=\"message\" and a timeout above 300 seconds. Send\nrequest_body, response_body and tools.",
+        "operationId": "aperture_hook_v1_hooks_aperture_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ApertureHookRequest"
+                "$ref": "#/components/schemas/ApertureDelivery"
               }
             }
           },
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "pre_request: the request unchanged or with Watcher's notice; pre_response: allow, per-call edits, or a block",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AperturePreRequestResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AperturePreResponseResponse"
+                    }
+                  ],
+                  "title": "Response 200 Aperture Hook V1 Hooks Aperture Post"
+                }
+              }
+            }
+          },
           "202": {
-            "description": "Successful Response",
+            "description": "post_complete (or no stage): admitted for observation",
             "content": {
               "application/json": {
                 "schema": {
@@ -1038,103 +1056,14 @@
           "413": {
             "description": "The webhook exceeds the hook request size limit"
           },
+          "422": {
+            "description": "The delivery is malformed, or its pending calls could not be safely evaluated"
+          },
           "503": {
-            "description": "The bounded delivery workers are full; this delivery was not accepted"
+            "description": "Delivery capacity is full, or a refusal could not be recorded"
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "deprecated": true
-      }
-    },
-    "/v1/hooks/aperture/pre-response": {
-      "post": {
-        "tags": [
-          "hooks"
-        ],
-        "summary": "Aperture Pre Response Hook",
-        "description": "Evaluate Aperture's pending tool calls before the gateway releases them.\n\nConfigure a blocking tool_call_pre_response hook sending request_body,\nresponse_body and tools, with fail_policy=\"fail_closed\" and a timeout exceeding\n300 seconds. The authenticated caller requires sessions:write:any; Aperture\nmetadata attributes the captured conversation to its developer. The server\napplies the organization's existing enforcement and grading-failure policy.\nDenied shell calls become harmless notice commands. Other denied tools\nblock the pending callback. There is no resampling or tool-name replacement.\nRefused calls are recorded before responding; allowed calls record asynchronously.",
-        "operationId": "aperture_pre_response_hook_v1_hooks_aperture_pre_response_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AperturePreResponseRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AperturePreResponseResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/hooks/aperture/pre-request": {
-      "post": {
-        "tags": [
-          "hooks"
-        ],
-        "summary": "Aperture Pre Request Hook",
-        "description": "Insert the fixed shell-rewrite notice without grading or policy lookups.\n\nConfigure Aperture's pre_request event with request_body and fail_open.\nThis hook is informational; enforcement remains on tool_call_pre_response.",
-        "operationId": "aperture_pre_request_hook_v1_hooks_aperture_pre_request_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AperturePreRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AperturePreRequestResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
+          "504": {
+            "description": "Evaluating pending calls exceeded the 300-second budget"
           }
         }
       }
@@ -4853,6 +4782,61 @@
         "title": "AgentRelationshipResponse",
         "description": "The stored original spawning relationship; retries retain the same ID."
       },
+      "ApertureDelivery": {
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/ApertureHookMetadata"
+          },
+          "request_body": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Request Body"
+          },
+          "response_body": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Body"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ApertureSelectedToolCall"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Calls"
+          },
+          "response_window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApertureResponseWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "metadata",
+          "request_body"
+        ],
+        "title": "ApertureDelivery",
+        "description": "Any delivery to Watcher's single Aperture hook URL; ``metadata.stage`` says which stage sent it.\n\nThe fields are the union of the three stages' payloads: ``pre_request``\nsends only the request, ``pre_response`` adds the response so far, the\npending ``tool_calls`` and the ``response_window``, and ``post_complete``\n(or an Aperture that names no stage) sends the completed exchange."
+      },
       "ApertureHookAccepted": {
         "properties": {
           "status": {
@@ -4918,6 +4902,31 @@
               }
             ],
             "title": "User Agent"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
           }
         },
         "type": "object",
@@ -4928,7 +4937,7 @@
           "url"
         ],
         "title": "ApertureHookMetadata",
-        "description": "Tailscale Aperture-owned identity fields; unknown additions are accepted.\n\n``request_id`` identifies a capture, never a conversation. ``session_id``\nis Aperture's own session id: one it took from the client (prefix\n``xsid_`` or ``pisn_``) is recorded as the conversation id of a capture\nwithout a native one, and any other value is ignored. The provider key\nand URL describe routing and do not identify the developer's harness.\n``user_agent`` supplies application evidence to the format parser. The\nparser applies the supported harness's marker and system-identity rules;\nselecting a wire format alone never admits an application. These fields\nclassify captured traffic; they do not authenticate the caller."
+        "description": "Tailscale Aperture-owned identity fields; unknown additions are accepted.\n\n``request_id`` identifies a capture, never a conversation. ``session_id``\nis Aperture's own session id, sent at every stage and identical across a\nconversation's calls: one it took from the client (prefix\n``xsid_`` or ``pisn_``) is recorded as the conversation id of a capture\nwithout a native one, and any other value is ignored. ``stage`` names the\nstage calling the hook (see ``ApertureStage``) and ``events`` the hook's\nsubscriptions this call serves; both are absent from older Aperture\ndeliveries, and a value of an unexpected type is treated as absent.\nThe provider key\nand URL describe routing and do not identify the developer's harness.\n``user_agent`` supplies application evidence to the format parser. The\nparser applies the supported harness's marker and system-identity rules;\nselecting a wire format alone never admits an application. These fields\nclassify captured traffic; they do not authenticate the caller."
       },
       "ApertureHookRequest": {
         "properties": {
@@ -4961,50 +4970,6 @@
         "title": "ApertureHookRequest",
         "description": "The fixed webhook envelope with both required send types enabled.\n\nRaw request and reconstructed response objects are forwarded to the selected\nformat parser. A null or absent response represents an upstream call that\nproduced no response body and is skipped: Aperture omits ``response_body``\nwhen the client disconnects before the provider answers (capture status 0).\nExtra metadata and send types are ignored."
       },
-      "ApertureLog": {
-        "properties": {
-          "format": {
-            "type": "string",
-            "const": "aperture-log",
-            "title": "Format"
-          },
-          "bucket": {
-            "type": "string",
-            "title": "Bucket"
-          },
-          "key": {
-            "type": "string",
-            "title": "Key"
-          }
-        },
-        "type": "object",
-        "required": [
-          "format",
-          "bucket",
-          "key"
-        ],
-        "title": "ApertureLog",
-        "description": "A whole-file Tailscale Aperture proxy capture, referenced by its object storage location."
-      },
-      "AperturePreRequest": {
-        "properties": {
-          "metadata": {
-            "$ref": "#/components/schemas/ApertureHookMetadata"
-          },
-          "request_body": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Request Body"
-          }
-        },
-        "type": "object",
-        "required": [
-          "metadata",
-          "request_body"
-        ],
-        "title": "AperturePreRequest",
-        "description": "Aperture's original provider request before inference."
-      },
       "AperturePreRequestResponse": {
         "properties": {
           "action": {
@@ -5034,55 +4999,6 @@
         ],
         "title": "AperturePreRequestResponse",
         "description": "Allow unchanged requests or replace the entire body with the notice added."
-      },
-      "AperturePreResponseRequest": {
-        "properties": {
-          "metadata": {
-            "$ref": "#/components/schemas/ApertureHookMetadata"
-          },
-          "request_body": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Request Body"
-          },
-          "response_body": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Response Body"
-          },
-          "tool_calls": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/ApertureSelectedToolCall"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tool Calls"
-          },
-          "response_window": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ApertureResponseWindow"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "metadata",
-          "request_body",
-          "response_body"
-        ],
-        "title": "AperturePreResponseRequest",
-        "description": "Blocking callback with original context and the exact calls awaiting release."
       },
       "AperturePreResponseResponse": {
         "properties": {
@@ -5126,7 +5042,7 @@
           "action"
         ],
         "title": "AperturePreResponseResponse",
-        "description": "Allow, replace selected call arguments, or block the pending callback."
+        "description": "Allow, edit individual pending calls, or block the pending callback."
       },
       "ApertureResponseWindow": {
         "properties": {
@@ -5145,8 +5061,15 @@
       "ApertureSelectedToolCall": {
         "properties": {
           "id": {
-            "type": "string",
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Id"
           },
           "name": {
@@ -5164,12 +5087,11 @@
         },
         "type": "object",
         "required": [
-          "id",
           "name",
           "params"
         ],
         "title": "ApertureSelectedToolCall",
-        "description": "One complete pending call supplied by Aperture's tool-call hook."
+        "description": "One complete pending call supplied by Aperture's tool-call hook.\n\n``id`` is absent for Gemini calls, which carry no native ID; those are\nmatched to the response by position (see ``translate_aperture_pre_response``)."
       },
       "ApertureToolModification": {
         "properties": {
@@ -5177,21 +5099,50 @@
             "type": "string",
             "title": "Id"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "params": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "type": "object",
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Params"
+          },
+          "remove": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "const": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remove"
           }
         },
         "type": "object",
         "required": [
-          "id",
-          "params"
+          "id"
         ],
         "title": "ApertureToolModification",
-        "description": "Argument replacement for an existing native call; its tool and ID stay fixed."
+        "description": "Aperture's edit of one pending native call, which keeps its ID; other calls are released unchanged.\n\n``params`` replaces the call's arguments. ``name`` also renames the call to\nanother tool the client declared in the request. ``remove`` drops the call\nfrom the response instead; when no call is left, Aperture ends the response\nas a text answer, so the client waits for no tool result."
       },
       "AppliedDecision": {
         "type": "string",
@@ -8996,7 +8947,7 @@
           "other"
         ],
         "title": "ExternalIdSource",
-        "description": "Where an external conversation id in a hook request comes from.\n\nKeys of `PreToolUseHookRequest.external_ids`. Each maps onto the external-id\nsource the matching ingest path already stores, so a hook-recorded decision\nconverges onto the session Watcher Live (`claude_code`, `codex`) or the\nTailscale Aperture log ingest (`aperture`) created for the same\nconversation; `other` is the gateway's own id and matches only other hook\ncalls. `github_copilot_cli` is GitHub Copilot CLI's own session id, which\nthe Watcher client sends for the sessions it records through this hook.\n`opencode` is the native conversation ID forwarded by gateway integrations."
+        "description": "Where an external conversation id in a hook request comes from.\n\nKeys of `PreToolUseHookRequest.external_ids`. Each maps onto the external-id\nsource the matching ingest path already stores, so a hook-recorded decision\nconverges onto the session Watcher Live (`claude_code`, `codex`) or an\nearlier Tailscale Aperture hook call (`aperture`) created for the same\nconversation; `other` is the gateway's own id and matches only other hook\ncalls. `github_copilot_cli` is GitHub Copilot CLI's own session id, which\nthe Watcher client sends for the sessions it records through this hook.\n`opencode` is the native conversation ID forwarded by gateway integrations."
       },
       "GatewayAction": {
         "type": "string",
@@ -10552,7 +10503,7 @@
           "trajectory"
         ],
         "title": "IngestAppendRequest",
-        "description": "Request body for POST /v1/sessions/{session_id}/trajectories/{trajectory_id}/append.\n\nAppends a delta of raw transcript entries to an existing session's chain.\nThe session and the anchor (the trajectory_id of the last message the\nclient successfully uploaded) are named in the path; the server continues\nthe chain after the anchor, so a session ingested through any mix of full\nand append uploads stores rows identical to full-only ingestion. Tailscale\nAperture logs are whole-file proxy captures with no client-side cursor, so\nthey have no append form."
+        "description": "Request body for POST /v1/sessions/{session_id}/trajectories/{trajectory_id}/append.\n\nAppends a delta of raw transcript entries to an existing session's chain.\nThe session and the anchor (the trajectory_id of the last message the\nclient successfully uploaded) are named in the path; the server continues\nthe chain after the anchor, so a session ingested through any mix of full\nand append uploads stores rows identical to full-only ingestion."
       },
       "IngestRequest": {
         "properties": {
@@ -10571,15 +10522,11 @@
                 },
                 {
                   "$ref": "#/components/schemas/CopilotTrajectory"
-                },
-                {
-                  "$ref": "#/components/schemas/ApertureLog"
                 }
               ],
               "discriminator": {
                 "propertyName": "format",
                 "mapping": {
-                  "aperture-log": "#/components/schemas/ApertureLog",
                   "claude-code-jsonl": "#/components/schemas/ClaudeCodeTrajectory",
                   "codex-jsonl": "#/components/schemas/CodexTrajectory",
                   "copilot-events-jsonl": "#/components/schemas/CopilotTrajectory"
@@ -11399,43 +11346,6 @@
             "type": "string",
             "title": "Name"
           },
-          "s3_output_bucket": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "S3 Output Bucket"
-          },
-          "s3_output_prefix": {
-            "type": "string",
-            "title": "S3 Output Prefix",
-            "default": "flagged-sessions/"
-          },
-          "s3_input_prefix": {
-            "type": "string",
-            "title": "S3 Input Prefix",
-            "default": ""
-          },
-          "s3_assume_role_arn": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "S3 Assume Role Arn"
-          },
-          "polling_enabled": {
-            "type": "boolean",
-            "title": "Polling Enabled",
-            "default": true
-          },
           "notifications_enabled": {
             "type": "boolean",
             "title": "Notifications Enabled",
@@ -11536,61 +11446,6 @@
               }
             ],
             "title": "Name"
-          },
-          "s3_output_bucket": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "S3 Output Bucket"
-          },
-          "s3_output_prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "S3 Output Prefix"
-          },
-          "s3_input_prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "S3 Input Prefix"
-          },
-          "s3_assume_role_arn": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "S3 Assume Role Arn"
-          },
-          "polling_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Polling Enabled"
           },
           "notifications_enabled": {
             "anyOf": [

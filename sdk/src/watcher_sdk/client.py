@@ -45,8 +45,7 @@ import watcher_sdk._generated.api.graders.search_graders_endpoint_v1_graders_sea
 import watcher_sdk._generated.api.graders.update_grader_endpoint_v1_graders_grader_id_patch as _update_grader_api
 import watcher_sdk._generated.api.health.health_v1_health_get as _health_api
 import watcher_sdk._generated.api.hooks.aperture_entire_request_hook_v1_hooks_aperture_entire_request_post as _aperture_entire_request_hook_api
-import watcher_sdk._generated.api.hooks.aperture_pre_request_hook_v1_hooks_aperture_pre_request_post as _aperture_pre_request_hook_api
-import watcher_sdk._generated.api.hooks.aperture_pre_response_hook_v1_hooks_aperture_pre_response_post as _aperture_pre_response_hook_api
+import watcher_sdk._generated.api.hooks.aperture_hook_v1_hooks_aperture_post as _aperture_hook_api
 import watcher_sdk._generated.api.hooks.pre_tool_use_hook_v1_hooks_pre_tool_use_post as _pre_tool_use_hook_api
 import watcher_sdk._generated.api.ingest.ingest_append_endpoint_v1_sessions_session_id_trajectories_trajectory_hash_append_post as _ingest_append_api
 import watcher_sdk._generated.api.ingest.ingest_v1_ingest_post as _ingest_api
@@ -92,11 +91,10 @@ import watcher_sdk._generated.api.version.version_v1_version_get as _version_api
 from watcher_sdk._generated.models import (
     ActivatedMonitorsResponse,
     AdminSessionContentAccessRequestListResponse,
+    ApertureDelivery,
     ApertureHookAccepted,
     ApertureHookRequest,
-    AperturePreRequest,
     AperturePreRequestResponse,
-    AperturePreResponseRequest,
     AperturePreResponseResponse,
     AuthClientConfig,
     AvailableSessionDetailResponse,
@@ -173,7 +171,6 @@ from watcher_sdk._generated.models import (
 )
 from watcher_sdk._generated.models.agent_relationship_request import AgentRelationshipRequest
 from watcher_sdk._generated.models.agent_relationship_response import AgentRelationshipResponse
-from watcher_sdk._generated.models.aperture_log import ApertureLog
 from watcher_sdk._generated.models.callback_request import CallbackRequest
 from watcher_sdk._generated.models.capture_source import CaptureSource as APICaptureSource
 from watcher_sdk._generated.models.claude_code_trajectory import ClaudeCodeTrajectory
@@ -945,7 +942,7 @@ class AsyncWatcherClient:
     async def ingest(
         self,
         source: str,
-        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog],
+        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory],
     ) -> IngestResponse:
         """Ingest trajectories for storage and deduplication.
 
@@ -953,9 +950,8 @@ class AsyncWatcherClient:
             source: Identifier for the data source (e.g. pipeline name or tool name).
             trajectories: List of trajectories to ingest. Each can be a
                 ClaudeCodeTrajectory (Claude Code JSONL entries), a CodexTrajectory
-                (Codex rollout JSONL entries), a CopilotTrajectory (one
-                conversation's events from a GitHub Copilot CLI events.jsonl),
-                or an ApertureLog (S3 reference).
+                (Codex rollout JSONL entries), or a CopilotTrajectory (one
+                conversation's events from a GitHub Copilot CLI events.jsonl).
 
         Returns:
             IngestResponse containing the session_id and trajectory_ids for the
@@ -989,7 +985,7 @@ class AsyncWatcherClient:
             source: Identifier for the data source, as in :meth:`ingest`.
             trajectory: The delta entries in Claude Code or Codex JSONL form,
                 or a GitHub Copilot CLI conversation's events (led by the log's
-                ``session.start``). Aperture logs have no append form.
+                ``session.start``).
 
         Raises:
             WatcherAPIError: with status 404 when the server predates the
@@ -1547,7 +1543,7 @@ class AsyncWatcherClient:
             external_ids: Distinct conversation IDs from the harness and gateway,
                 keyed by source (`"claude_code"`, `"codex"`, `"aperture"`,
                 `"other"` for the gateway's own id); a recorded session
-                converges with the one Watcher Live or the Aperture log ingest
+                converges with the one Watcher Live or an earlier Aperture capture
                 created for the same conversation. Required unless
                 `ephemeral`; send every id you have. A caller with none
                 records id-less with an explicit `None` value
@@ -1832,37 +1828,22 @@ class AsyncWatcherClient:
         _raise_for_response(response)
         return response.parsed  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
 
-    async def aperture_pre_request_hook(self, payload: Mapping[str, Any]) -> AperturePreRequestResponse:
-        """Add Watcher's fixed explanation to an Aperture provider request.
-
-        Send the original ``metadata`` and ``request_body`` envelope. This
-        informational hook does not grade calls; the returned action either
-        permits the unchanged request or supplies its replacement body. Uses
-        the client's configured timeout and never retries automatically.
-        """
-        body = AperturePreRequest.from_dict(payload)
-        try:
-            response = await _aperture_pre_request_hook_api.asyncio_detailed(client=self._generated_client, body=body)
-        except httpx.ConnectError as e:
-            raise WatcherConnectionError(str(e)) from e
-        except httpx.TimeoutException as e:
-            raise WatcherTimeoutError(str(e)) from e
-        _raise_for_response(response)
-        return response.parsed  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
-
-    async def aperture_pre_response_hook(
+    async def aperture_hook(
         self, payload: Mapping[str, Any], *, timeout: float = 310.0
-    ) -> AperturePreResponseResponse:
-        """Evaluate pending Aperture calls before release, without automatic retries.
+    ) -> ApertureHookAccepted | AperturePreRequestResponse | AperturePreResponseResponse:
+        """Send one Aperture hook delivery to Watcher's single Aperture URL; ``metadata.stage`` picks the stage.
 
-        Supply the original request and response bodies, metadata, and the
-        selected ``tool_calls``. Requires ``sessions:write:any``. The server
-        applies organization policy and returns Aperture's allow, modify or
-        block action. Keep the timeout above the server's 300-second budget.
-        A transport failure must not be treated as permission to execute.
+        ``pre_request`` returns the request unchanged or with Watcher's notice
+        (``AperturePreRequestResponse``). ``pre_response`` evaluates the
+        pending ``tool_calls`` and returns allow, per-call edits or a block
+        (``AperturePreResponseResponse``); keep the timeout above the server's
+        300-second budget, and never treat a transport failure as permission
+        to execute. ``post_complete``, or no stage, is admitted for
+        asynchronous observation (``ApertureHookAccepted``). Requires
+        ``sessions:write:any``. Never retries automatically.
         """
-        body = AperturePreResponseRequest.from_dict(payload)
-        kwargs = _aperture_pre_response_hook_api._get_kwargs(body=body)
+        body = ApertureDelivery.from_dict(payload)
+        kwargs = _aperture_hook_api._get_kwargs(body=body)
         kwargs["timeout"] = timeout
         try:
             raw = await self._generated_client.get_async_httpx_client().request(**kwargs)
@@ -1871,8 +1852,13 @@ class AsyncWatcherClient:
         except httpx.TimeoutException as e:
             raise WatcherTimeoutError(str(e)) from e
         _raise_for_http_error(raw.status_code, raw.content, raw.headers)
-        response = _aperture_pre_response_hook_api._build_response(client=self._generated_client, response=raw)
-        return response.parsed  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+        # Both 200 bodies carry an ``action``, so the delivery's stage, not the
+        # body's shape, says which one this is.
+        if raw.status_code == 202:
+            return ApertureHookAccepted.from_dict(raw.json())
+        if (payload.get("metadata") or {}).get("stage") == "pre_request":
+            return AperturePreRequestResponse.from_dict(raw.json())
+        return AperturePreResponseResponse.from_dict(raw.json())
 
     async def _org_hook_baseline(self) -> _HookBaseline | None:
         """The org baseline for local deterministic evaluation, cached.
@@ -3087,7 +3073,7 @@ class AsyncWatcherClient:
     async def ingest_and_grade(
         self,
         source: str,
-        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory | ApertureLog],
+        trajectories: list[ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory],
         grader_ids: list[str],
     ) -> tuple[IngestResponse, GradeResponse]:
         """Ingest trajectories and immediately grade them.

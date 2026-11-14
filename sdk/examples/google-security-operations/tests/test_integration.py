@@ -46,6 +46,7 @@ def row(index=1, **updates):
         "severity_score": 7,
         "coverage_state": "decided",
         "decision_category": "auto_denied",
+        "is_flagged": True,
         "content_state": "available",
         "user_email": "PRIVATE_EMAIL@example.invalid",
         "user_first_name": "PRIVATE_NAME",
@@ -160,6 +161,7 @@ async def test_scrubbed_row_without_tool_fields_through_public_sdk(http_fixture)
         "tool_call_id": str(UUID(int=1)),
         "session_id": str(UUID(int=100)),
         "occurred_at": "2026-07-01T10:00:00.123456+00:00",
+        "is_flagged": False,
         "content_state": "scrubbed",
     }
     destination_requests = []

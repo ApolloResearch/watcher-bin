@@ -241,11 +241,16 @@ class AgentInventorySettings(PermissionedSettingsModel):
 class PolicyMonitorSettings(PermissionedSettingsModel):
     """Graders and thresholds for the live policy pipeline that gates tool calls."""
 
+    # Legacy keys, accepted and ignored: blocking review always runs the managed
+    # monitors. Marked deprecated so the Analyzer's settings editor stops
+    # offering them; still parsed because existing documents name them.
     policy_gateway_grader_id: StrSetting = Field(
         description="Legacy custom gateway grader. Blocking review always runs the managed gateway monitor; current Watcher clients ignore this field.",
+        json_schema_extra={"deprecated": True},
     )
     policy_triage_grader_id: StrSetting = Field(
         description="Legacy custom triage grader. Blocking review always runs the managed triage monitor; current Watcher clients ignore this field.",
+        json_schema_extra={"deprecated": True},
     )
     # Legacy key, accepted and ignored. The pre-tool guard stage never ran: no
     # hook consumed this grader id. StrictSettingsModel forbids unknown keys, and

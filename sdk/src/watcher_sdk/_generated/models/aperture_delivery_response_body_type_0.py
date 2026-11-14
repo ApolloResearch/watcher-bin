@@ -6,11 +6,11 @@ from typing import Any, Self, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="ApertureToolModificationParams")
+T = TypeVar("T", bound="ApertureDeliveryResponseBodyType0")
 
 
 @_attrs_define
-class ApertureToolModificationParams:
+class ApertureDeliveryResponseBodyType0:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -23,10 +23,10 @@ class ApertureToolModificationParams:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
-        aperture_tool_modification_params = cls()
+        aperture_delivery_response_body_type_0 = cls()
 
-        aperture_tool_modification_params.additional_properties = d
-        return aperture_tool_modification_params
+        aperture_delivery_response_body_type_0.additional_properties = d
+        return aperture_delivery_response_body_type_0
 
     @property
     def additional_keys(self) -> list[str]:

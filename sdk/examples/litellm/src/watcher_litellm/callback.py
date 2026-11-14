@@ -1104,6 +1104,7 @@ class WatcherCallback(CustomLogger):
                     yield event
                 return
             if final:
+                assert isinstance(response, list)
                 response = _replay(response)
 
     async def _final_chunks(self, api: API, request: dict[str, Any], data: dict[str, Any]) -> list[Any]:

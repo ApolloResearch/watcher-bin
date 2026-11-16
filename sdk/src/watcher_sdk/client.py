@@ -1188,11 +1188,13 @@ class AsyncWatcherClient:
             input: Structured monitoring input as a dict matching the API's
                 ``MonitoringInput`` shape (``messages``, ``tool_name``,
                 ``tool_input``, ``cwd``, ``triage_assessment``,
-                ``prior_decisions``, ``grading_guidelines``). Send the
+                ``prior_decisions``). Send the
                 transcript as structured ``messages`` (chat-message dicts the
                 server renders under the monitor's context policy); the
                 pre-rendered ``transcript`` parts form is deprecated and kept
-                only for the client-compatibility window.
+                only for the client-compatibility window. A
+                ``grading_guidelines`` value is accepted but ignored; the
+                monitors apply the organization's custom instructions instead.
             tool_use_id: The local transcript tool-use ID of the gated call
                 being graded, persisted (with ``session_id``) on the grade row
                 so the later decision upload can link it even if this response
@@ -1451,8 +1453,9 @@ class AsyncWatcherClient:
             input: One call, a list sharing the same messages, or None for ingestion only,
                 each matching the API's `MonitoringInput` shape —
                 `{"tool_name": ..., "tool_input": ..., "tool_use_id": ...,
-                "cwd": ..., "messages": [...], "prior_decisions": [...],
-                "grading_guidelines": ...}`. For multiple inputs, supply one
+                "cwd": ..., "messages": [...], "prior_decisions": [...]}`
+                (a `grading_guidelines` value is accepted but ignored).
+                For multiple inputs, supply one
                 top-level `messages` transcript and omit each input's messages
                 (null or empty nested lists are also accepted). A scalar or
                 one-item list may instead carry its transcript in the input.

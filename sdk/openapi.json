@@ -11119,7 +11119,8 @@
                 "type": "null"
               }
             ],
-            "title": "Grading Guidelines"
+            "title": "Grading Guidelines",
+            "description": "Ignored. Grading policy comes from the organization's custom instructions."
           }
         },
         "type": "object",
@@ -11127,7 +11128,7 @@
           "tool_name"
         ],
         "title": "MonitoringInput",
-        "description": "Structured inputs for monitoring one gated tool call.\n\nThe caller sends *what the monitor looks at*; the server owns how it is\nformatted into a prompt, so prompt structure can change without a client\nrelease.\n\nThe conversation context is ``messages`` \u2014 the transcript as structured\n``ChatMessage`` objects. The server applies the monitor's served\ncontext policy (user-message window, tool outputs / agent reasoning\nwithheld) and renders the prompt, so a caller sends its conversation\nwithout reimplementing the calibrated renderer. When both forms are sent\n``messages`` wins.\n\n``transcript`` \u2014 the same context as pre-rendered per-message text parts,\nrendered client-side \u2014 is deprecated: current clients send only\n``messages`` (a client is never newer than its server), so the form exists\nfor clients that predate structured messages and is dropped once the\ncompatibility window moves past them.\n\n``grading_guidelines`` is the watched repository's own guidelines document\n(e.g. WATCHER.md), included verbatim as caller-side data."
+        "description": "Structured inputs for monitoring one gated tool call.\n\nThe caller sends *what the monitor looks at*; the server owns how it is\nformatted into a prompt, so prompt structure can change without a client\nrelease.\n\nThe conversation context is ``messages`` \u2014 the transcript as structured\n``ChatMessage`` objects. The server applies the monitor's served\ncontext policy (user-message window, tool outputs / agent reasoning\nwithheld) and renders the prompt, so a caller sends its conversation\nwithout reimplementing the calibrated renderer. When both forms are sent\n``messages`` wins.\n\n``transcript`` \u2014 the same context as pre-rendered per-message text parts,\nrendered client-side \u2014 is deprecated: current clients send only\n``messages`` (a client is never newer than its server), so the form exists\nfor clients that predate structured messages and is dropped once the\ncompatibility window moves past them.\n\n``grading_guidelines`` is accepted and ignored; grading policy comes from\nthe organization's custom instructions."
       },
       "MonitoringRequest": {
         "properties": {

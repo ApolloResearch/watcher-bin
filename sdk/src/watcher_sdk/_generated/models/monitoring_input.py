@@ -41,8 +41,8 @@ class MonitoringInput:
     for clients that predate structured messages and is dropped once the
     compatibility window moves past them.
 
-    ``grading_guidelines`` is the watched repository's own guidelines document
-    (e.g. WATCHER.md), included verbatim as caller-side data.
+    ``grading_guidelines`` is accepted and ignored; grading policy comes from
+    the organization's custom instructions.
 
         Attributes:
             tool_name (str):
@@ -54,7 +54,8 @@ class MonitoringInput:
             cwd (None | str | Unset):
             triage_assessment (None | TriageAssessment | Unset):
             prior_decisions (list[PriorHumanDecision] | Unset):
-            grading_guidelines (None | str | Unset):
+            grading_guidelines (None | str | Unset): Ignored. Grading policy comes from the organization's custom
+                instructions.
     """
 
     tool_name: str

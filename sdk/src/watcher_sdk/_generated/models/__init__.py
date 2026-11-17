@@ -84,6 +84,9 @@ from .available_session_detail_response_ingest_kinds_item import (
 from .available_session_detail_response_metadata_type_0 import (
     AvailableSessionDetailResponseMetadataType0,
 )
+from .available_session_detail_response_transcript_state import (
+    AvailableSessionDetailResponseTranscriptState,
+)
 from .available_tool_call_list_item import AvailableToolCallListItem
 from .available_tool_call_list_item_coverage_state import (
     AvailableToolCallListItemCoverageState,
@@ -369,6 +372,9 @@ from .session_capture_counts import SessionCaptureCounts
 from .session_content_access_request_list_response import (
     SessionContentAccessRequestListResponse,
 )
+from .session_content_access_request_pending_count import (
+    SessionContentAccessRequestPendingCount,
+)
 from .session_content_access_request_status import SessionContentAccessRequestStatus
 from .session_content_access_request_summary import SessionContentAccessRequestSummary
 from .session_content_access_request_view import SessionContentAccessRequestView
@@ -464,6 +470,7 @@ from .trajectory_detail_response_tool_call_decisions import (
 from .trajectory_list_in_session_response import TrajectoryListInSessionResponse
 from .trajectory_summary import TrajectorySummary
 from .trajectory_view import TrajectoryView
+from .transcript_state import TranscriptState
 from .triage_assessment import TriageAssessment
 from .triage_result import TriageResult
 from .update_grader_request import UpdateGraderRequest
@@ -542,6 +549,7 @@ __all__ = (
     "AvailableSessionDetailResponseExternalIdsType0",
     "AvailableSessionDetailResponseIngestKindsItem",
     "AvailableSessionDetailResponseMetadataType0",
+    "AvailableSessionDetailResponseTranscriptState",
     "AvailableToolCallListItem",
     "AvailableToolCallListItemCoverageState",
     "AvailableToolCallListItemDecisionCategoryType0",
@@ -753,6 +761,7 @@ __all__ = (
     "SessionAnalyticsTrendPoint",
     "SessionCaptureCounts",
     "SessionContentAccessRequestListResponse",
+    "SessionContentAccessRequestPendingCount",
     "SessionContentAccessRequestStatus",
     "SessionContentAccessRequestSummary",
     "SessionContentAccessRequestView",
@@ -820,6 +829,7 @@ __all__ = (
     "TrajectoryListInSessionResponse",
     "TrajectorySummary",
     "TrajectoryView",
+    "TranscriptState",
     "TriageAssessment",
     "TriageResult",
     "UpdateGraderRequest",

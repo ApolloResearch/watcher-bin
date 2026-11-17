@@ -167,7 +167,8 @@ class ToolThresholdPair(BaseModel):
     deny_threshold: int
 
 
-type ToolInput = JsonValue
+# ty before 0.0.82 cannot resolve pydantic 2.14's recursive JsonValue and reports this alias as a cycle.
+type ToolInput = JsonValue  # ty: ignore[cyclic-type-alias-definition]
 
 
 _SHELL_TOOL_NAMES = frozenset(

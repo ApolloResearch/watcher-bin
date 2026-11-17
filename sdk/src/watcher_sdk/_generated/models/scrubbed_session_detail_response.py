@@ -78,11 +78,12 @@ class ScrubbedSessionDetailResponse:
             null name.
         sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted; same
             values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone.
-        content_state (Literal['scrubbed'] | Unset):  Default: 'scrubbed'.
-        is_content_scrubbed (bool | Unset):  Default: True.
+        transcript_state (Literal['scrubbed'] | Unset):  Default: 'scrubbed'.
         latest_trajectory_id (None | Unset):
         trajectories (list[TrajectorySummary] | Unset):
         grades (list[GradeResult] | Unset):
+        is_content_scrubbed (bool | Unset): Deprecated. Use ``transcript_state == 'scrubbed'`` instead.
+        content_state (Literal['scrubbed'] | Unset): Deprecated. Use ``transcript_state`` for transcript availability.
     """
 
     session_id: str
@@ -106,11 +107,12 @@ class ScrubbedSessionDetailResponse:
     ingest_kinds: list[ScrubbedSessionDetailResponseIngestKindsItem] | Unset = UNSET
     capture_sources: list[CaptureSource] | Unset = UNSET
     sources: list[str] | Unset = UNSET
-    content_state: Literal["scrubbed"] | Unset = "scrubbed"
-    is_content_scrubbed: bool | Unset = True
+    transcript_state: Literal["scrubbed"] | Unset = "scrubbed"
     latest_trajectory_id: None | Unset = UNSET
     trajectories: list[TrajectorySummary] | Unset = UNSET
     grades: list[GradeResult] | Unset = UNSET
+    is_content_scrubbed: bool | Unset = UNSET
+    content_state: Literal["scrubbed"] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -217,9 +219,7 @@ class ScrubbedSessionDetailResponse:
         if not isinstance(self.sources, Unset):
             sources = self.sources
 
-        content_state = self.content_state
-
-        is_content_scrubbed = self.is_content_scrubbed
+        transcript_state = self.transcript_state
 
         latest_trajectory_id = self.latest_trajectory_id
 
@@ -236,6 +236,10 @@ class ScrubbedSessionDetailResponse:
             for grades_item_data in self.grades:
                 grades_item = grades_item_data.to_dict()
                 grades.append(grades_item)
+
+        is_content_scrubbed = self.is_content_scrubbed
+
+        content_state = self.content_state
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -276,16 +280,18 @@ class ScrubbedSessionDetailResponse:
             field_dict["capture_sources"] = capture_sources
         if sources is not UNSET:
             field_dict["sources"] = sources
-        if content_state is not UNSET:
-            field_dict["content_state"] = content_state
-        if is_content_scrubbed is not UNSET:
-            field_dict["is_content_scrubbed"] = is_content_scrubbed
+        if transcript_state is not UNSET:
+            field_dict["transcript_state"] = transcript_state
         if latest_trajectory_id is not UNSET:
             field_dict["latest_trajectory_id"] = latest_trajectory_id
         if trajectories is not UNSET:
             field_dict["trajectories"] = trajectories
         if grades is not UNSET:
             field_dict["grades"] = grades
+        if is_content_scrubbed is not UNSET:
+            field_dict["is_content_scrubbed"] = is_content_scrubbed
+        if content_state is not UNSET:
+            field_dict["content_state"] = content_state
 
         return field_dict
 
@@ -459,13 +465,13 @@ class ScrubbedSessionDetailResponse:
 
         sources = cast(list[str], d.pop("sources", UNSET))
 
-        content_state = cast(Literal["scrubbed"] | Unset, d.pop("content_state", UNSET))
-        if content_state != "scrubbed" and not isinstance(content_state, Unset):
+        transcript_state = cast(
+            Literal["scrubbed"] | Unset, d.pop("transcript_state", UNSET)
+        )
+        if transcript_state != "scrubbed" and not isinstance(transcript_state, Unset):
             raise ValueError(
-                f"content_state must match const 'scrubbed', got '{content_state}'"
+                f"transcript_state must match const 'scrubbed', got '{transcript_state}'"
             )
-
-        is_content_scrubbed = d.pop("is_content_scrubbed", UNSET)
 
         latest_trajectory_id = d.pop("latest_trajectory_id", UNSET)
 
@@ -486,6 +492,14 @@ class ScrubbedSessionDetailResponse:
                 grades_item = GradeResult.from_dict(grades_item_data)
 
                 grades.append(grades_item)
+
+        is_content_scrubbed = d.pop("is_content_scrubbed", UNSET)
+
+        content_state = cast(Literal["scrubbed"] | Unset, d.pop("content_state", UNSET))
+        if content_state != "scrubbed" and not isinstance(content_state, Unset):
+            raise ValueError(
+                f"content_state must match const 'scrubbed', got '{content_state}'"
+            )
 
         scrubbed_session_detail_response = cls(
             session_id=session_id,
@@ -509,11 +523,12 @@ class ScrubbedSessionDetailResponse:
             ingest_kinds=ingest_kinds,
             capture_sources=capture_sources,
             sources=sources,
-            content_state=content_state,
-            is_content_scrubbed=is_content_scrubbed,
+            transcript_state=transcript_state,
             latest_trajectory_id=latest_trajectory_id,
             trajectories=trajectories,
             grades=grades,
+            is_content_scrubbed=is_content_scrubbed,
+            content_state=content_state,
         )
 
         scrubbed_session_detail_response.additional_properties = d

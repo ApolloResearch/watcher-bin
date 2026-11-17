@@ -358,14 +358,16 @@ command_rules:
   # more often than it names a file being written. Matching the bare string anywhere in the
   # payload sends all of that to a human, and an escalation nobody can act on teaches people to
   # wave the rule through. Edit and Write take a path, so they simply anchor to a whole final
-  # segment. The other two receive free text and need the breakdowns below.
+  # segment. Bash and apply_patch receive free text; other tools expose JSON path fields.
   #
   # bash-watcher-ignore-file, left to right:
   #
   #   (?<![\w-])                    don't fire mid-word: the `rm` inside `charm` or `pre-rm`
   #   (?:touch|rm|mv|cp|ln|tee      a command that can put a file at a path. No `>`/`>>`: redirect
   #     |install|truncate|unlink    destinations are extracted separately and re-matched against
-  #     |sed)                       the Write rule above, which is anchored and more precise.
+  #     |sed|dd|rsync|curl|wget      the Write rule above, which is anchored and more precise.
+  #     |git ... (?:checkout        Git can restore the marker from another revision.
+  #       |restore))               Both subcommands accept file operands.
   #   (?:[ \t]|\\\n)+               the argument separator: spaces, tabs, or a backslash-newline
   #                                 continuation, which the shell removes before running the
   #                                 command. A BARE `\n` is excluded on purpose — with `\s` here,
@@ -381,6 +383,9 @@ command_rules:
   #   (?=$|[\s"';|&()<>])           a shell delimiter must follow, so the marker is the whole name
   #                                 rather than a prefix of `.watcher-ignored`, `.watcher-ignore.md`
   #                                 or `.watcher-ignore/child`.
+  #   |dd ... of=MARKER             dd and curl/wget only where the marker is their output
+  #   |(?:curl|wget) ... -o MARKER  operand, so reading or downloading something else stays out.
+  #   |(?:export|...)?NAME=MARKER   assignments can hide the marker path behind a later variable use.
   #
   # apply-patch-watcher-ignore-file matches the *serialized* tool input, so the patch body is in
   # scope for the regex and only a header may fire the rule:
@@ -408,9 +413,8 @@ command_rules:
   # *missing* real creations like `touch "$repo"/.watcher-ignore` instead. Prompting about a
   # neighbouring file is the safe direction.
   #
-  # A determined evasion can still dodge the Bash pattern by splitting the literal, which no regex
-  # over command text can prevent; these rules are what stops the marker from appearing by
-  # accident or in the clear.
+  # Splitting a string inside an interpreter, or writing then running a script, goes to grading.
+  # Other tools match only JSON path fields; read tools stop at their terminal thresholds first.
   - id: edit-watcher-ignore-file
     tool_name: Edit
     name: Watcher ignore file
@@ -425,11 +429,41 @@ command_rules:
     regex: '(^|/)\.watcher-ignore$'
     decision: human
     priority: 105
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
+  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
+  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
+  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
   - id: bash-watcher-ignore-file
     tool_name: Bash
     name: Watcher ignore file
     category: security_system
-    regex: '(?<![\w-])(?:touch|rm|mv|cp|ln|tee|install|truncate|unlink|sed)(?:[ \t]|\\\n)+(?:\\\n|[^\n])*\.watcher-ignore(?=$|[\s"'';|&()<>])'
+    regex: '(?<![\w-])(?:(?:touch|rm|mv|cp|ln|tee|install|truncate|unlink|sed|rsync|git(?:[ \t]|\\\n)+(?:checkout|restore))(?:[ \t]|\\\n)+(?:\\\n|[^\n])*?\.watcher-ignore(?=$|[\s"'';|&()<>])|dd(?:[ \t]|\\\n)+(?:\\\n|[^\n])*?(?<![\w-])of=(?:"[^"\n]*/|''[^''\n]*/|[^\s"'';|&]*/)?\.watcher-ignore(?=$|[\s"'';|&()<>])|(?:curl|wget)(?:[ \t]|\\\n)+(?:\\\n|[^\n])*?(?<![\w-])(?:-[A-Za-z]*[oDca]|--output|--output-document|--dump-header|--trace|--trace-ascii|--stderr|--cookie-jar|--append-output|--output-file)(?:(?:[ \t]|\\\n)+|=)?(?:"[^"\n]*/|''[^''\n]*/|[^\s"'';|&]*/)?["'']?\.watcher-ignore(?=$|[\s"'';|&()<>])|wget(?:[ \t]|\\\n)+(?:\\\n|[^\n])*?/\.watcher-ignore(?=$|[\s"'';|&()<>])|curl(?=(?:\\\n|[^\n])*?(?<![\w-])(?:(?-i:-[A-Za-z]*O[A-Za-z]*)|--remote-name(?:-all)?)(?![\w-]))(?:[ \t]|\\\n)+(?:\\\n|[^\n])*?/\.watcher-ignore(?=$|[\s"'';|&()<>])|(?:(?:export|declare|local|readonly)(?:[ \t]|\\\n)+)?[A-Za-z_]\w*=["'']?(?:[^\s"'';|&]*/)?\.watcher-ignore(?=$|[\s"'';|&()<>])|(?:python[0-9.]*|node|nodejs|deno|bun|ruby|perl|php|osascript|pwsh|powershell|lua)(?:[ \t]|\\\n)+[\s\S]*?(?:\b(?:open|fopen|openSync|io\.open|File\.open|File\.new)\s*\(\s*["''](?:[^"''\n]*/)?\.watcher-ignore["'']\s*,\s*(?:mode\s*=\s*)?["'']b?[^"''\n]*[wax+]|\b(?:Set-Content|Add-Content|Out-File|New-Item)\b[^\n]*?["'']?(?:[^"''\s]*[/\\])?\.watcher-ignore(?=$|[\s"'';|&()<>])|\bio\.output\s*\(\s*["''](?:[^"''\n]*/)?\.watcher-ignore["'']|\bos\.open\s*\(\s*["''](?:[^"''\n]*/)?\.watcher-ignore["'']\s*,[^)\n]*O_(?:CREAT|WRONLY|RDWR|APPEND|TRUNC)|\b(?:writeFileSync|appendFileSync|writeFile|appendFile|writeTextFileSync|writeTextFile|Bun\.write|createWriteStream|copyFileSync|renameSync|symlinkSync|file_put_contents|touch|File\.write|FileUtils\.touch|mknod|copyfile|copy2?|copytree|move|rename|os\.replace|symlink|link)\s*\(\s*(?:[^()\n]*?,\s*)?["''](?:[^"''\n]*/)?\.watcher-ignore["'']|\bPath\(\s*["''](?:[^"''\n]*/)?\.watcher-ignore["'']\s*\)\s*\.\s*(?:touch|write_text|write_bytes|symlink_to|hardlink_to|open\s*\([^)\n]*["''][^"''\n]*[wax+])|\bopen\s*\(?\s*(?:my\s+)?[\w$]+\s*,\s*["'']\s*\+?>>?\s*(?:[^"''\n]*/)?\.watcher-ignore["'']|\bopen\s*\(?\s*(?:my\s+)?[\w$]+\s*,\s*["'']\+?>>?["'']\s*,\s*["''](?:[^"''\n]*/)?\.watcher-ignore["'']))'
     decision: human
     priority: 106
   - id: apply-patch-watcher-ignore-file
@@ -439,6 +473,14 @@ command_rules:
     regex: '\*\*\*\s*(?:Add File|Update File|Delete File|Move to):[^\\"]*\.watcher-ignore(?=[ \t]*(?:\\|"))'
     decision: human
     priority: 107
+  - id: tool-watcher-ignore-file
+    tool_name: '*'
+    name: Watcher ignore file
+    category: security_system
+    # Anchored on a serialized object, so shell command text that merely contains such JSON stays out.
+    regex: '\A\{[\s\S]*?"(?:[^"\\]*path|file|filename|destination|target)"\s*+:\s*+"(?:[^"\\]*?/)?\.watcher-ignore"'
+    decision: human
+    priority: 108
   # Watcher's own state (~/.apollo_monitor: thresholds, profiles, the admin file holding org locks)
   # and the agent settings that load its hooks decide whether later calls are reviewed at all, so
   # every agent write to them needs a person. These sit ahead of the extension allow rules, and the

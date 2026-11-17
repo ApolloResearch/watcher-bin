@@ -18,6 +18,9 @@ from attrs import field as _attrs_field
 from ..models.available_session_detail_response_ingest_kinds_item import (
     AvailableSessionDetailResponseIngestKindsItem,
 )
+from ..models.available_session_detail_response_transcript_state import (
+    AvailableSessionDetailResponseTranscriptState,
+)
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -38,7 +41,7 @@ T = TypeVar("T", bound="AvailableSessionDetailResponse")
 
 @_attrs_define
 class AvailableSessionDetailResponse:
-    """Session detail whose trajectory content remains available.
+    """Unscrubbed session detail, including sessions with no recorded transcript.
 
     Attributes:
         session_id (str):
@@ -53,6 +56,7 @@ class AvailableSessionDetailResponse:
         message_count (int): Messages in the session's longest trajectory; for a conversation the Watcher client and a
             gateway both recorded, its longest reconciled transcript.
         created_at (datetime.datetime):
+        transcript_state (AvailableSessionDetailResponseTranscriptState):
         trajectories (list[TrajectorySummary]):
         grades (list[GradeResult]):
         is_subagent (bool | Unset): Whether this session has a recorded parent relationship. Default: False.
@@ -79,8 +83,6 @@ class AvailableSessionDetailResponse:
             null name.
         sources (list[str] | Unset): Distinct canonical ingestion sources among retained session messages, sorted; same
             values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone.
-        content_state (Literal['available'] | Unset):  Default: 'available'.
-        is_content_scrubbed (bool | Unset):  Default: False.
         latest_trajectory_id (None | str | Unset): The newest stored trajectory, which report updates review. It can
             differ from default_trajectory_id when the Watcher client and a gateway both recorded the session.
         default_trajectory_id (None | str | Unset): The transcript the session opens by default, the one the trajectory
@@ -89,6 +91,8 @@ class AvailableSessionDetailResponse:
         latest_transcript_revision (None | str | Unset): Revision of the transcript holding latest_trajectory_id when it
             reconciles two recordings; null for a single recording. A report whose grades.input_revision differs read an
             earlier version of that transcript (one recorder caught up since) and is outdated.
+        is_content_scrubbed (bool | Unset): Deprecated. Use ``transcript_state == 'scrubbed'`` instead.
+        content_state (Literal['available'] | Unset): Deprecated. Use ``transcript_state`` for transcript availability.
     """
 
     session_id: str
@@ -99,6 +103,7 @@ class AvailableSessionDetailResponse:
     ended_at: datetime.datetime
     message_count: int
     created_at: datetime.datetime
+    transcript_state: AvailableSessionDetailResponseTranscriptState
     trajectories: list[TrajectorySummary]
     grades: list[GradeResult]
     is_subagent: bool | Unset = False
@@ -113,11 +118,11 @@ class AvailableSessionDetailResponse:
     ingest_kinds: list[AvailableSessionDetailResponseIngestKindsItem] | Unset = UNSET
     capture_sources: list[CaptureSource] | Unset = UNSET
     sources: list[str] | Unset = UNSET
-    content_state: Literal["available"] | Unset = "available"
-    is_content_scrubbed: bool | Unset = False
     latest_trajectory_id: None | str | Unset = UNSET
     default_trajectory_id: None | str | Unset = UNSET
     latest_transcript_revision: None | str | Unset = UNSET
+    is_content_scrubbed: bool | Unset = UNSET
+    content_state: Literal["available"] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -144,6 +149,8 @@ class AvailableSessionDetailResponse:
         message_count = self.message_count
 
         created_at = self.created_at.isoformat()
+
+        transcript_state = self.transcript_state.value
 
         trajectories = []
         for trajectories_item_data in self.trajectories:
@@ -229,10 +236,6 @@ class AvailableSessionDetailResponse:
         if not isinstance(self.sources, Unset):
             sources = self.sources
 
-        content_state = self.content_state
-
-        is_content_scrubbed = self.is_content_scrubbed
-
         latest_trajectory_id: None | str | Unset
         if isinstance(self.latest_trajectory_id, Unset):
             latest_trajectory_id = UNSET
@@ -251,6 +254,10 @@ class AvailableSessionDetailResponse:
         else:
             latest_transcript_revision = self.latest_transcript_revision
 
+        is_content_scrubbed = self.is_content_scrubbed
+
+        content_state = self.content_state
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -263,6 +270,7 @@ class AvailableSessionDetailResponse:
                 "ended_at": ended_at,
                 "message_count": message_count,
                 "created_at": created_at,
+                "transcript_state": transcript_state,
                 "trajectories": trajectories,
                 "grades": grades,
             }
@@ -291,16 +299,16 @@ class AvailableSessionDetailResponse:
             field_dict["capture_sources"] = capture_sources
         if sources is not UNSET:
             field_dict["sources"] = sources
-        if content_state is not UNSET:
-            field_dict["content_state"] = content_state
-        if is_content_scrubbed is not UNSET:
-            field_dict["is_content_scrubbed"] = is_content_scrubbed
         if latest_trajectory_id is not UNSET:
             field_dict["latest_trajectory_id"] = latest_trajectory_id
         if default_trajectory_id is not UNSET:
             field_dict["default_trajectory_id"] = default_trajectory_id
         if latest_transcript_revision is not UNSET:
             field_dict["latest_transcript_revision"] = latest_transcript_revision
+        if is_content_scrubbed is not UNSET:
+            field_dict["is_content_scrubbed"] = is_content_scrubbed
+        if content_state is not UNSET:
+            field_dict["content_state"] = content_state
 
         return field_dict
 
@@ -333,6 +341,10 @@ class AvailableSessionDetailResponse:
         message_count = d.pop("message_count")
 
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
+
+        transcript_state = AvailableSessionDetailResponseTranscriptState(
+            d.pop("transcript_state")
+        )
 
         trajectories = []
         _trajectories = d.pop("trajectories")
@@ -485,16 +497,6 @@ class AvailableSessionDetailResponse:
 
         sources = cast(list[str], d.pop("sources", UNSET))
 
-        content_state = cast(
-            Literal["available"] | Unset, d.pop("content_state", UNSET)
-        )
-        if content_state != "available" and not isinstance(content_state, Unset):
-            raise ValueError(
-                f"content_state must match const 'available', got '{content_state}'"
-            )
-
-        is_content_scrubbed = d.pop("is_content_scrubbed", UNSET)
-
         def _parse_latest_trajectory_id(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -528,6 +530,16 @@ class AvailableSessionDetailResponse:
             d.pop("latest_transcript_revision", UNSET)
         )
 
+        is_content_scrubbed = d.pop("is_content_scrubbed", UNSET)
+
+        content_state = cast(
+            Literal["available"] | Unset, d.pop("content_state", UNSET)
+        )
+        if content_state != "available" and not isinstance(content_state, Unset):
+            raise ValueError(
+                f"content_state must match const 'available', got '{content_state}'"
+            )
+
         available_session_detail_response = cls(
             session_id=session_id,
             can_read_findings=can_read_findings,
@@ -537,6 +549,7 @@ class AvailableSessionDetailResponse:
             ended_at=ended_at,
             message_count=message_count,
             created_at=created_at,
+            transcript_state=transcript_state,
             trajectories=trajectories,
             grades=grades,
             is_subagent=is_subagent,
@@ -551,11 +564,11 @@ class AvailableSessionDetailResponse:
             ingest_kinds=ingest_kinds,
             capture_sources=capture_sources,
             sources=sources,
-            content_state=content_state,
-            is_content_scrubbed=is_content_scrubbed,
             latest_trajectory_id=latest_trajectory_id,
             default_trajectory_id=default_trajectory_id,
             latest_transcript_revision=latest_transcript_revision,
+            is_content_scrubbed=is_content_scrubbed,
+            content_state=content_state,
         )
 
         available_session_detail_response.additional_properties = d

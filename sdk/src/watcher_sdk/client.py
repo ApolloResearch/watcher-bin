@@ -60,6 +60,7 @@ import watcher_sdk._generated.api.organization.get_org_managed_settings_schema_v
 import watcher_sdk._generated.api.organization.get_org_managed_settings_v1_organization_managed_settings_path_get as _get_org_managed_settings_api
 import watcher_sdk._generated.api.organization.resolve_org_managed_settings_v1_organization_managed_settings_path_resolved_get as _resolve_org_managed_settings_api
 import watcher_sdk._generated.api.organization.update_org_managed_settings_v1_organization_managed_settings_path_put as _update_org_managed_settings_api
+import watcher_sdk._generated.api.session_content_access_requests.count_pending_session_content_access_requests_v1_session_content_access_requests_pending_count_get as _count_pending_content_access_requests_api
 import watcher_sdk._generated.api.session_content_access_requests.list_session_content_access_requests_v1_session_content_access_requests_get as _list_content_access_requests_api
 import watcher_sdk._generated.api.session_content_access_requests.review_session_content_access_request_endpoint_v1_session_content_access_requests_request_id_patch as _review_content_access_request_api
 import watcher_sdk._generated.api.session_content_access_requests.revoke_session_content_access_request_endpoint_v1_session_content_access_requests_request_id_revoke_post as _revoke_content_access_request_api
@@ -140,6 +141,7 @@ from watcher_sdk._generated.models import (
     ScrubbedSessionDetailResponse,
     SessionAggregatesResponse,
     SessionContentAccessRequestListResponse,
+    SessionContentAccessRequestPendingCount,
     SessionContentAccessRequestStatus,
     SessionContentAccessRequestSummary,
     SessionContentAccessRequestView,
@@ -2747,8 +2749,9 @@ class AsyncWatcherClient:
             session_id: Unique identifier of the session to retrieve.
 
         Returns:
-            AvailableSessionDetailResponse when content exists, otherwise
-            ScrubbedSessionDetailResponse with retained session grades.
+            AvailableSessionDetailResponse for an unscrubbed session, including
+            one with no recorded transcript; inspect ``transcript_state``.
+            ScrubbedSessionDetailResponse retains session grades after scrubbing.
 
         Raises:
             WatcherNotFoundError: If no session exists with the given ID.
@@ -3005,6 +3008,17 @@ class AsyncWatcherClient:
         """
         return await _list_content_access_requests_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
             client=self._generated_client, status=status, view=view, limit=limit, offset=offset
+        )
+
+    @_sdk_method
+    async def count_pending_session_content_access_requests(self) -> SessionContentAccessRequestPendingCount:
+        """Count organization requests awaiting review, without requester identities.
+
+        Requires ``sessions:access-requests:review``, included in the admin role.
+        Matches ``pending_count`` on the list; unlike the list, it is not admin-audited.
+        """
+        return await _count_pending_content_access_requests_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            client=self._generated_client
         )
 
     @_sdk_method

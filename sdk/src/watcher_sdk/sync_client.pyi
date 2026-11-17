@@ -53,6 +53,9 @@ from watcher_sdk._generated.models.session_aggregates_response import SessionAgg
 from watcher_sdk._generated.models.session_content_access_request_list_response import (
     SessionContentAccessRequestListResponse,
 )
+from watcher_sdk._generated.models.session_content_access_request_pending_count import (
+    SessionContentAccessRequestPendingCount,
+)
 from watcher_sdk._generated.models.session_content_access_request_status import SessionContentAccessRequestStatus
 from watcher_sdk._generated.models.session_content_access_request_summary import SessionContentAccessRequestSummary
 from watcher_sdk._generated.models.session_content_access_request_view import SessionContentAccessRequestView
@@ -434,6 +437,7 @@ class WatcherClient:
         limit: int = 20,
         offset: int = 0,
     ) -> AdminSessionContentAccessRequestListResponse: ...
+    def count_pending_session_content_access_requests(self) -> SessionContentAccessRequestPendingCount: ...
     def get_user(self, user_id: str) -> UserSummary: ...
     def review_session_content_access_request(
         self, request_id: UUID, body: ReviewSessionContentAccessRequest

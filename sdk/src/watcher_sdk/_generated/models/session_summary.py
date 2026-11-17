@@ -10,6 +10,7 @@ from attrs import field as _attrs_field
 
 from ..models.session_summary_deep_review_status import SessionSummaryDeepReviewStatus
 from ..models.session_summary_ingest_kinds_item import SessionSummaryIngestKindsItem
+from ..models.transcript_state import TranscriptState
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -30,6 +31,8 @@ class SessionSummary:
     """Summary of a session for list responses.
 
     Attributes:
+        transcript_state (TranscriptState): Whether a session has no recorded transcript, stored content, or scrubbed
+            content.
         session_id (str):
         agent_platform (str): Reported coding agent. Retained SDK adapter identities can name the agent, including for
             historical sessions stored as 'other'. Reporting does not change the stored ingestion identity. Clients must
@@ -41,7 +44,6 @@ class SessionSummary:
         started_at (datetime.datetime):
         ended_at (datetime.datetime):
         is_subagent (bool | Unset): Whether this session has a recorded parent relationship. Default: False.
-        is_content_scrubbed (bool | Unset):  Default: False.
         latest_trajectory_id (None | str | Unset):
         user_id (None | Unset | UUID):
         user_first_name (None | str | Unset):
@@ -73,8 +75,10 @@ class SessionSummary:
             precedence over legacy transport and conversation-prefix classification. Duplicate messages retain their
             original source; scrubbed sessions return an empty list. Use capture_sources for complete recorded delivery
             history.
+        is_content_scrubbed (bool | Unset): Deprecated. Use ``transcript_state == 'scrubbed'`` instead.
     """
 
+    transcript_state: TranscriptState
     session_id: str
     agent_platform: str
     trajectory_count: int
@@ -82,7 +86,6 @@ class SessionSummary:
     started_at: datetime.datetime
     ended_at: datetime.datetime
     is_subagent: bool | Unset = False
-    is_content_scrubbed: bool | Unset = False
     latest_trajectory_id: None | str | Unset = UNSET
     user_id: None | Unset | UUID = UNSET
     user_first_name: None | str | Unset = UNSET
@@ -102,6 +105,7 @@ class SessionSummary:
     ingest_kinds: list[SessionSummaryIngestKindsItem] | Unset = UNSET
     capture_sources: list[CaptureSource] | Unset = UNSET
     sources: list[str] | Unset = UNSET
+    is_content_scrubbed: bool | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -110,6 +114,8 @@ class SessionSummary:
             SessionSummaryExternalIdsType0,
         )
         from ..models.session_summary_metadata_type_0 import SessionSummaryMetadataType0
+
+        transcript_state = self.transcript_state.value
 
         session_id = self.session_id
 
@@ -124,8 +130,6 @@ class SessionSummary:
         ended_at = self.ended_at.isoformat()
 
         is_subagent = self.is_subagent
-
-        is_content_scrubbed = self.is_content_scrubbed
 
         latest_trajectory_id: None | str | Unset
         if isinstance(self.latest_trajectory_id, Unset):
@@ -243,10 +247,13 @@ class SessionSummary:
         if not isinstance(self.sources, Unset):
             sources = self.sources
 
+        is_content_scrubbed = self.is_content_scrubbed
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
+                "transcript_state": transcript_state,
                 "session_id": session_id,
                 "agent_platform": agent_platform,
                 "trajectory_count": trajectory_count,
@@ -257,8 +264,6 @@ class SessionSummary:
         )
         if is_subagent is not UNSET:
             field_dict["is_subagent"] = is_subagent
-        if is_content_scrubbed is not UNSET:
-            field_dict["is_content_scrubbed"] = is_content_scrubbed
         if latest_trajectory_id is not UNSET:
             field_dict["latest_trajectory_id"] = latest_trajectory_id
         if user_id is not UNSET:
@@ -293,6 +298,8 @@ class SessionSummary:
             field_dict["capture_sources"] = capture_sources
         if sources is not UNSET:
             field_dict["sources"] = sources
+        if is_content_scrubbed is not UNSET:
+            field_dict["is_content_scrubbed"] = is_content_scrubbed
 
         return field_dict
 
@@ -307,6 +314,8 @@ class SessionSummary:
         from ..models.session_summary_metadata_type_0 import SessionSummaryMetadataType0
 
         d = dict(src_dict)
+        transcript_state = TranscriptState(d.pop("transcript_state"))
+
         session_id = d.pop("session_id")
 
         agent_platform = d.pop("agent_platform")
@@ -320,8 +329,6 @@ class SessionSummary:
         ended_at = datetime.datetime.fromisoformat(d.pop("ended_at"))
 
         is_subagent = d.pop("is_subagent", UNSET)
-
-        is_content_scrubbed = d.pop("is_content_scrubbed", UNSET)
 
         def _parse_latest_trajectory_id(data: object) -> None | str | Unset:
             if data is None:
@@ -538,7 +545,10 @@ class SessionSummary:
 
         sources = cast(list[str], d.pop("sources", UNSET))
 
+        is_content_scrubbed = d.pop("is_content_scrubbed", UNSET)
+
         session_summary = cls(
+            transcript_state=transcript_state,
             session_id=session_id,
             agent_platform=agent_platform,
             trajectory_count=trajectory_count,
@@ -546,7 +556,6 @@ class SessionSummary:
             started_at=started_at,
             ended_at=ended_at,
             is_subagent=is_subagent,
-            is_content_scrubbed=is_content_scrubbed,
             latest_trajectory_id=latest_trajectory_id,
             user_id=user_id,
             user_first_name=user_first_name,
@@ -564,6 +573,7 @@ class SessionSummary:
             ingest_kinds=ingest_kinds,
             capture_sources=capture_sources,
             sources=sources,
+            is_content_scrubbed=is_content_scrubbed,
         )
 
         session_summary.additional_properties = d

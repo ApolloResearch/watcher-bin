@@ -10,6 +10,7 @@ from attrs import field as _attrs_field
 from ..models.related_session_summary_deep_review_status_type_0 import (
     RelatedSessionSummaryDeepReviewStatusType0,
 )
+from ..models.transcript_state import TranscriptState
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="RelatedSessionSummary")
@@ -26,17 +27,19 @@ class RelatedSessionSummary:
     Scrubbing removes transcripts but retains permitted summaries and findings.
 
         Attributes:
+            transcript_state (TranscriptState): Whether a session has no recorded transcript, stored content, or scrubbed
+                content.
             session_id (UUID):
-            is_content_scrubbed (bool):
             can_read_findings (bool):
             can_read_content (bool):
             title (None | str | Unset):
             deep_review_severity (int | None | Unset):
             deep_review_status (None | RelatedSessionSummaryDeepReviewStatusType0 | Unset):
+            is_content_scrubbed (bool | Unset): Deprecated. Use ``transcript_state == 'scrubbed'`` instead.
     """
 
+    transcript_state: TranscriptState
     session_id: UUID
-    is_content_scrubbed: bool
     can_read_findings: bool
     can_read_content: bool
     title: None | str | Unset = UNSET
@@ -44,12 +47,13 @@ class RelatedSessionSummary:
     deep_review_status: None | RelatedSessionSummaryDeepReviewStatusType0 | Unset = (
         UNSET
     )
+    is_content_scrubbed: bool | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        session_id = str(self.session_id)
+        transcript_state = self.transcript_state.value
 
-        is_content_scrubbed = self.is_content_scrubbed
+        session_id = str(self.session_id)
 
         can_read_findings = self.can_read_findings
 
@@ -77,12 +81,14 @@ class RelatedSessionSummary:
         else:
             deep_review_status = self.deep_review_status
 
+        is_content_scrubbed = self.is_content_scrubbed
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
+                "transcript_state": transcript_state,
                 "session_id": session_id,
-                "is_content_scrubbed": is_content_scrubbed,
                 "can_read_findings": can_read_findings,
                 "can_read_content": can_read_content,
             }
@@ -93,15 +99,17 @@ class RelatedSessionSummary:
             field_dict["deep_review_severity"] = deep_review_severity
         if deep_review_status is not UNSET:
             field_dict["deep_review_status"] = deep_review_status
+        if is_content_scrubbed is not UNSET:
+            field_dict["is_content_scrubbed"] = is_content_scrubbed
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
-        session_id = UUID(d.pop("session_id"))
+        transcript_state = TranscriptState(d.pop("transcript_state"))
 
-        is_content_scrubbed = d.pop("is_content_scrubbed")
+        session_id = UUID(d.pop("session_id"))
 
         can_read_findings = d.pop("can_read_findings")
 
@@ -150,14 +158,17 @@ class RelatedSessionSummary:
             d.pop("deep_review_status", UNSET)
         )
 
+        is_content_scrubbed = d.pop("is_content_scrubbed", UNSET)
+
         related_session_summary = cls(
+            transcript_state=transcript_state,
             session_id=session_id,
-            is_content_scrubbed=is_content_scrubbed,
             can_read_findings=can_read_findings,
             can_read_content=can_read_content,
             title=title,
             deep_review_severity=deep_review_severity,
             deep_review_status=deep_review_status,
+            is_content_scrubbed=is_content_scrubbed,
         )
 
         related_session_summary.additional_properties = d

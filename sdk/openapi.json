@@ -2962,6 +2962,28 @@
         }
       }
     },
+    "/v1/session-content-access-requests/pending-count": {
+      "get": {
+        "tags": [
+          "session-content-access-requests"
+        ],
+        "summary": "Count Pending Session Content Access Requests",
+        "description": "Count requests in the current organization that await review.\n\nRequires ``sessions:access-requests:review``, included in the admin role.\nThe Analyzer polls this for its navigation badge. It returns no requester\nidentities or session ids, so unlike the list it is not admin-audited:\nauditing a background poll would record reviews that never happened.",
+        "operationId": "count_pending_session_content_access_requests_v1_session_content_access_requests_pending_count_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionContentAccessRequestPendingCount"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/session-content-access-requests/{request_id}": {
       "patch": {
         "tags": [
@@ -5409,17 +5431,13 @@
             "title": "Sources",
             "description": "Distinct canonical ingestion sources among retained session messages, sorted; same values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone."
           },
-          "content_state": {
+          "transcript_state": {
             "type": "string",
-            "const": "available",
-            "title": "Content State",
-            "default": "available"
-          },
-          "is_content_scrubbed": {
-            "type": "boolean",
-            "const": false,
-            "title": "Is Content Scrubbed",
-            "default": false
+            "enum": [
+              "not_recorded",
+              "recorded"
+            ],
+            "title": "Transcript State"
           },
           "latest_trajectory_id": {
             "anyOf": [
@@ -5470,6 +5488,22 @@
             },
             "type": "array",
             "title": "Grades"
+          },
+          "is_content_scrubbed": {
+            "type": "boolean",
+            "const": false,
+            "title": "Is Content Scrubbed",
+            "description": "Deprecated. Use ``transcript_state == 'scrubbed'`` instead.",
+            "deprecated": true,
+            "readOnly": true
+          },
+          "content_state": {
+            "type": "string",
+            "const": "available",
+            "title": "Content State",
+            "description": "Deprecated. Use ``transcript_state`` for transcript availability.",
+            "deprecated": true,
+            "readOnly": true
           }
         },
         "type": "object",
@@ -5482,11 +5516,12 @@
           "ended_at",
           "message_count",
           "created_at",
+          "transcript_state",
           "trajectories",
           "grades"
         ],
         "title": "AvailableSessionDetailResponse",
-        "description": "Session detail whose trajectory content remains available."
+        "description": "Unscrubbed session detail, including sessions with no recorded transcript."
       },
       "AvailableToolCallListItem": {
         "properties": {
@@ -11394,7 +11429,7 @@
                 "type": "integer",
                 "maximum": 365.0,
                 "minimum": 7.0,
-                "description": "Days of session inactivity before stored content is scrubbed."
+                "description": "Days of session inactivity before stored content is scrubbed. Tool-call grades whose decision never arrived are deleted once older than this."
               },
               {
                 "type": "null"
@@ -11502,7 +11537,7 @@
                 "type": "integer",
                 "maximum": 365.0,
                 "minimum": 7.0,
-                "description": "Days of session inactivity before stored content is scrubbed."
+                "description": "Days of session inactivity before stored content is scrubbed. Tool-call grades whose decision never arrived are deleted once older than this."
               },
               {
                 "type": "null"
@@ -12171,6 +12206,10 @@
       },
       "RelatedSessionSummary": {
         "properties": {
+          "transcript_state": {
+            "$ref": "#/components/schemas/TranscriptState",
+            "description": "not_recorded: no transcript recorded; recorded: stored transcript, possibly incomplete; scrubbed: content removed while session identity and retained information remain."
+          },
           "session_id": {
             "type": "string",
             "format": "uuid",
@@ -12186,10 +12225,6 @@
               }
             ],
             "title": "Title"
-          },
-          "is_content_scrubbed": {
-            "type": "boolean",
-            "title": "Is Content Scrubbed"
           },
           "can_read_findings": {
             "type": "boolean",
@@ -12227,12 +12262,19 @@
               }
             ],
             "title": "Deep Review Status"
+          },
+          "is_content_scrubbed": {
+            "type": "boolean",
+            "title": "Is Content Scrubbed",
+            "description": "Deprecated. Use ``transcript_state == 'scrubbed'`` instead.",
+            "deprecated": true,
+            "readOnly": true
           }
         },
         "type": "object",
         "required": [
+          "transcript_state",
           "session_id",
-          "is_content_scrubbed",
           "can_read_findings",
           "can_read_content"
         ],
@@ -12564,17 +12606,11 @@
             "title": "Sources",
             "description": "Distinct canonical ingestion sources among retained session messages, sorted; same values as ``SessionSummary.sources``. Empty for a scrubbed session, whose messages are gone."
           },
-          "content_state": {
+          "transcript_state": {
             "type": "string",
             "const": "scrubbed",
-            "title": "Content State",
+            "title": "Transcript State",
             "default": "scrubbed"
-          },
-          "is_content_scrubbed": {
-            "type": "boolean",
-            "const": true,
-            "title": "Is Content Scrubbed",
-            "default": true
           },
           "retained_grades": {
             "items": {
@@ -12600,6 +12636,22 @@
             },
             "type": "array",
             "title": "Grades"
+          },
+          "is_content_scrubbed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Is Content Scrubbed",
+            "description": "Deprecated. Use ``transcript_state == 'scrubbed'`` instead.",
+            "deprecated": true,
+            "readOnly": true
+          },
+          "content_state": {
+            "type": "string",
+            "const": "scrubbed",
+            "title": "Content State",
+            "description": "Deprecated. Use ``transcript_state`` for transcript availability.",
+            "deprecated": true,
+            "readOnly": true
           }
         },
         "type": "object",
@@ -12993,6 +13045,21 @@
         "title": "SessionContentAccessRequestListResponse",
         "description": "A page of the caller's requests, ordered newest first."
       },
+      "SessionContentAccessRequestPendingCount": {
+        "properties": {
+          "pending_count": {
+            "type": "integer",
+            "title": "Pending Count",
+            "description": "Pending requests in the organization."
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending_count"
+        ],
+        "title": "SessionContentAccessRequestPendingCount",
+        "description": "How many organization requests await review, without any identities."
+      },
       "SessionContentAccessRequestStatus": {
         "type": "string",
         "enum": [
@@ -13114,11 +13181,12 @@
           }
         ],
         "title": "SessionDetailResponse",
-        "description": "Discriminated available/scrubbed detail response with a stable schema name.",
+        "description": "Session detail discriminated by stored transcript availability.",
         "discriminator": {
-          "propertyName": "content_state",
+          "propertyName": "transcript_state",
           "mapping": {
-            "available": "#/components/schemas/AvailableSessionDetailResponse",
+            "not_recorded": "#/components/schemas/AvailableSessionDetailResponse",
+            "recorded": "#/components/schemas/AvailableSessionDetailResponse",
             "scrubbed": "#/components/schemas/ScrubbedSessionDetailResponse"
           }
         }
@@ -13533,6 +13601,10 @@
       },
       "SessionSummary": {
         "properties": {
+          "transcript_state": {
+            "$ref": "#/components/schemas/TranscriptState",
+            "description": "not_recorded: no transcript recorded; recorded: stored transcript, possibly incomplete; scrubbed: content removed while session identity and retained information remain."
+          },
           "session_id": {
             "type": "string",
             "title": "Session Id"
@@ -13541,11 +13613,6 @@
             "type": "boolean",
             "title": "Is Subagent",
             "description": "Whether this session has a recorded parent relationship.",
-            "default": false
-          },
-          "is_content_scrubbed": {
-            "type": "boolean",
-            "title": "Is Content Scrubbed",
             "default": false
           },
           "agent_platform": {
@@ -13766,10 +13833,18 @@
             "type": "array",
             "title": "Sources",
             "description": "Distinct source labels among retained session messages, sorted. Known labels: watcher, tailscale-aperture, watcher-gateway, watcher-sdk and watcher-hook. Explicit capture metadata takes precedence over legacy transport and conversation-prefix classification. Duplicate messages retain their original source; scrubbed sessions return an empty list. Use capture_sources for complete recorded delivery history."
+          },
+          "is_content_scrubbed": {
+            "type": "boolean",
+            "title": "Is Content Scrubbed",
+            "description": "Deprecated. Use ``transcript_state == 'scrubbed'`` instead.",
+            "deprecated": true,
+            "readOnly": true
           }
         },
         "type": "object",
         "required": [
+          "transcript_state",
           "session_id",
           "agent_platform",
           "trajectory_count",
@@ -15523,6 +15598,16 @@
         ],
         "title": "TrajectoryView",
         "description": "Content density of a trajectory response.\n\n``truncated`` elides heavy payloads for display: tool outputs and user pastes are\ncapped with ``content_truncated``/``content_original_chars`` marker fields and\n``data`` content blocks are replaced by size stubs. ``extended`` is\nstorage-faithful. ``truncated`` is the default, so a data consumer (research\nexport, offline analysis) must explicitly request ``extended`` \u2014 omitting the\nparameter never ships storage-faithful payloads by accident."
+      },
+      "TranscriptState": {
+        "type": "string",
+        "enum": [
+          "not_recorded",
+          "recorded",
+          "scrubbed"
+        ],
+        "title": "TranscriptState",
+        "description": "Whether a session has no recorded transcript, stored content, or scrubbed content."
       },
       "TriageAssessment": {
         "properties": {

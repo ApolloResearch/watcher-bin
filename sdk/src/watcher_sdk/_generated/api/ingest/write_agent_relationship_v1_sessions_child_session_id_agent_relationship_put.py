@@ -75,15 +75,11 @@ def sync_detailed(
 
      Create a child's original parent link or fill missing spawning-call details.
 
-    Both sessions must already exist and be writable under ingestion rules.
-    Ingest-only keys may link unowned sessions or native Claude/Codex conversations,
-    including after those conversations acquire an owner. Owning the parent does
-    not authorize claiming an unowned child; users limited to their own sessions
-    must first attribute the child through ingestion. New links apply known parent ownership to the
-    child
-    and its descendants; conflicting known owners return 409 owner_conflict with
-    no partial attribution. Retries and spawning-call enrichment do not propagate
-    ownership again. Other owned sessions require cross-user write permission.
+    Both sessions must already exist in the organization and be writable under
+    ingestion rules. Ingest-only keys may link only unowned sessions; callers
+    with sessions:write:any may link sessions with different owners. These checks
+    apply to creation, retries and updates.
+    Linking never changes ownership or grants transcript access.
     Missing or unauthorized sessions and missing explicit message hashes return
     404. Without a message hash, the server searches this parent
     for the native spawning-call ID; an absent call leaves the hash null in the
@@ -134,15 +130,11 @@ def sync(
 
      Create a child's original parent link or fill missing spawning-call details.
 
-    Both sessions must already exist and be writable under ingestion rules.
-    Ingest-only keys may link unowned sessions or native Claude/Codex conversations,
-    including after those conversations acquire an owner. Owning the parent does
-    not authorize claiming an unowned child; users limited to their own sessions
-    must first attribute the child through ingestion. New links apply known parent ownership to the
-    child
-    and its descendants; conflicting known owners return 409 owner_conflict with
-    no partial attribution. Retries and spawning-call enrichment do not propagate
-    ownership again. Other owned sessions require cross-user write permission.
+    Both sessions must already exist in the organization and be writable under
+    ingestion rules. Ingest-only keys may link only unowned sessions; callers
+    with sessions:write:any may link sessions with different owners. These checks
+    apply to creation, retries and updates.
+    Linking never changes ownership or grants transcript access.
     Missing or unauthorized sessions and missing explicit message hashes return
     404. Without a message hash, the server searches this parent
     for the native spawning-call ID; an absent call leaves the hash null in the
@@ -188,15 +180,11 @@ async def asyncio_detailed(
 
      Create a child's original parent link or fill missing spawning-call details.
 
-    Both sessions must already exist and be writable under ingestion rules.
-    Ingest-only keys may link unowned sessions or native Claude/Codex conversations,
-    including after those conversations acquire an owner. Owning the parent does
-    not authorize claiming an unowned child; users limited to their own sessions
-    must first attribute the child through ingestion. New links apply known parent ownership to the
-    child
-    and its descendants; conflicting known owners return 409 owner_conflict with
-    no partial attribution. Retries and spawning-call enrichment do not propagate
-    ownership again. Other owned sessions require cross-user write permission.
+    Both sessions must already exist in the organization and be writable under
+    ingestion rules. Ingest-only keys may link only unowned sessions; callers
+    with sessions:write:any may link sessions with different owners. These checks
+    apply to creation, retries and updates.
+    Linking never changes ownership or grants transcript access.
     Missing or unauthorized sessions and missing explicit message hashes return
     404. Without a message hash, the server searches this parent
     for the native spawning-call ID; an absent call leaves the hash null in the
@@ -245,15 +233,11 @@ async def asyncio(
 
      Create a child's original parent link or fill missing spawning-call details.
 
-    Both sessions must already exist and be writable under ingestion rules.
-    Ingest-only keys may link unowned sessions or native Claude/Codex conversations,
-    including after those conversations acquire an owner. Owning the parent does
-    not authorize claiming an unowned child; users limited to their own sessions
-    must first attribute the child through ingestion. New links apply known parent ownership to the
-    child
-    and its descendants; conflicting known owners return 409 owner_conflict with
-    no partial attribution. Retries and spawning-call enrichment do not propagate
-    ownership again. Other owned sessions require cross-user write permission.
+    Both sessions must already exist in the organization and be writable under
+    ingestion rules. Ingest-only keys may link only unowned sessions; callers
+    with sessions:write:any may link sessions with different owners. These checks
+    apply to creation, retries and updates.
+    Linking never changes ownership or grants transcript access.
     Missing or unauthorized sessions and missing explicit message hashes return
     404. Without a message hash, the server searches this parent
     for the native spawning-call ID; an absent call leaves the hash null in the

@@ -47,6 +47,10 @@ def _parse_response(
 
         return response_422
 
+    if response.status_code == 503:
+        response_503 = cast(Any, None)
+        return response_503
+
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -84,16 +88,16 @@ def sync_detailed(
     proxy-capture (Tailscale Aperture) attribution; keys carrying only
     ``sessions:ingest`` write unattributed sessions.
 
-    A Claude Code session id or Codex thread id names one session per
-    organization. An upload attributed to a user (a signed-in user's, or one
-    attributed through ``identity.login_name``) joins that session when it has
-    no owner and makes the user its owner, including its linked descendants.
-    A conflicting known owner in its ancestry or descendants also rejects the
-    attribution atomically. When another user owns it, the
-    request is rejected with 409 ``session_owner_conflict``: that trajectory
-    is not stored, earlier trajectories in the request stay stored, and later
-    ones are not processed. An upload attributed to no user joins the session
-    whoever owns it and leaves the owner unchanged.
+    Conversation IDs, aliases and transcript matching are scoped to the
+    organisation, owner and compatible agent platform. Personal and ingest-only
+    uploads using the same native ID record separate sessions. Attributed
+    gateways and clients can share a session when their owner and IDs agree.
+    Existing owners, including null owners, never change through uploads.
+    Explicit cross-user write authority remains supported.
+
+    A temporary recording conflict returns 503 with ``Retry-After``. Retry the
+    request with bounded backoff. Earlier inputs in the batch stay stored and
+    later ones are not processed.
 
     Args:
         body (IngestRequest): Request body for POST /v1/ingest.
@@ -137,16 +141,16 @@ def sync(
     proxy-capture (Tailscale Aperture) attribution; keys carrying only
     ``sessions:ingest`` write unattributed sessions.
 
-    A Claude Code session id or Codex thread id names one session per
-    organization. An upload attributed to a user (a signed-in user's, or one
-    attributed through ``identity.login_name``) joins that session when it has
-    no owner and makes the user its owner, including its linked descendants.
-    A conflicting known owner in its ancestry or descendants also rejects the
-    attribution atomically. When another user owns it, the
-    request is rejected with 409 ``session_owner_conflict``: that trajectory
-    is not stored, earlier trajectories in the request stay stored, and later
-    ones are not processed. An upload attributed to no user joins the session
-    whoever owns it and leaves the owner unchanged.
+    Conversation IDs, aliases and transcript matching are scoped to the
+    organisation, owner and compatible agent platform. Personal and ingest-only
+    uploads using the same native ID record separate sessions. Attributed
+    gateways and clients can share a session when their owner and IDs agree.
+    Existing owners, including null owners, never change through uploads.
+    Explicit cross-user write authority remains supported.
+
+    A temporary recording conflict returns 503 with ``Retry-After``. Retry the
+    request with bounded backoff. Earlier inputs in the batch stay stored and
+    later ones are not processed.
 
     Args:
         body (IngestRequest): Request body for POST /v1/ingest.
@@ -185,16 +189,16 @@ async def asyncio_detailed(
     proxy-capture (Tailscale Aperture) attribution; keys carrying only
     ``sessions:ingest`` write unattributed sessions.
 
-    A Claude Code session id or Codex thread id names one session per
-    organization. An upload attributed to a user (a signed-in user's, or one
-    attributed through ``identity.login_name``) joins that session when it has
-    no owner and makes the user its owner, including its linked descendants.
-    A conflicting known owner in its ancestry or descendants also rejects the
-    attribution atomically. When another user owns it, the
-    request is rejected with 409 ``session_owner_conflict``: that trajectory
-    is not stored, earlier trajectories in the request stay stored, and later
-    ones are not processed. An upload attributed to no user joins the session
-    whoever owns it and leaves the owner unchanged.
+    Conversation IDs, aliases and transcript matching are scoped to the
+    organisation, owner and compatible agent platform. Personal and ingest-only
+    uploads using the same native ID record separate sessions. Attributed
+    gateways and clients can share a session when their owner and IDs agree.
+    Existing owners, including null owners, never change through uploads.
+    Explicit cross-user write authority remains supported.
+
+    A temporary recording conflict returns 503 with ``Retry-After``. Retry the
+    request with bounded backoff. Earlier inputs in the batch stay stored and
+    later ones are not processed.
 
     Args:
         body (IngestRequest): Request body for POST /v1/ingest.
@@ -236,16 +240,16 @@ async def asyncio(
     proxy-capture (Tailscale Aperture) attribution; keys carrying only
     ``sessions:ingest`` write unattributed sessions.
 
-    A Claude Code session id or Codex thread id names one session per
-    organization. An upload attributed to a user (a signed-in user's, or one
-    attributed through ``identity.login_name``) joins that session when it has
-    no owner and makes the user its owner, including its linked descendants.
-    A conflicting known owner in its ancestry or descendants also rejects the
-    attribution atomically. When another user owns it, the
-    request is rejected with 409 ``session_owner_conflict``: that trajectory
-    is not stored, earlier trajectories in the request stay stored, and later
-    ones are not processed. An upload attributed to no user joins the session
-    whoever owns it and leaves the owner unchanged.
+    Conversation IDs, aliases and transcript matching are scoped to the
+    organisation, owner and compatible agent platform. Personal and ingest-only
+    uploads using the same native ID record separate sessions. Attributed
+    gateways and clients can share a session when their owner and IDs agree.
+    Existing owners, including null owners, never change through uploads.
+    Explicit cross-user write authority remains supported.
+
+    A temporary recording conflict returns 503 with ``Retry-After``. Retry the
+    request with bounded backoff. Earlier inputs in the batch stay stored and
+    later ones are not processed.
 
     Args:
         body (IngestRequest): Request body for POST /v1/ingest.

@@ -13,7 +13,7 @@ from ..models.session_content_access_request_status import (
 )
 
 if TYPE_CHECKING:
-    from ..models.user_list_item import UserListItem
+    from ..models.user_summary import UserSummary
 
 
 T = TypeVar("T", bound="AdminSessionContentAccessRequest")
@@ -32,13 +32,14 @@ class AdminSessionContentAccessRequest:
         reviewed_at (datetime.datetime | None):
         valid_until (datetime.datetime | None):
         revoked_at (datetime.datetime | None):
-        requesting_user (UserListItem): Per-user row exposed in ``GET /v1/users`` list responses.
+        requesting_user (UserSummary): User shape exposed by ``/v1/users/me`` and admin views.
 
-            Includes ``email``: listing requires the ``users:read:any`` permission,
-            which is also the permission that gates reading other users' emails, so
-            every caller who can list users may see them.
-        reviewed_by_user (None | UserListItem):
-        revoked_by_user (None | UserListItem):
+            Includes ``email`` since the caller is either looking at themselves
+            (``/me``) or has admin/cross-user-read permissions.
+            ``workos_user_id`` is not exposed — it's an internal identity-provider
+            key, not a user-facing identifier.
+        reviewed_by_user (None | UserSummary):
+        revoked_by_user (None | UserSummary):
     """
 
     id: UUID
@@ -48,13 +49,13 @@ class AdminSessionContentAccessRequest:
     reviewed_at: datetime.datetime | None
     valid_until: datetime.datetime | None
     revoked_at: datetime.datetime | None
-    requesting_user: UserListItem
-    reviewed_by_user: None | UserListItem
-    revoked_by_user: None | UserListItem
+    requesting_user: UserSummary
+    reviewed_by_user: None | UserSummary
+    revoked_by_user: None | UserSummary
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.user_list_item import UserListItem
+        from ..models.user_summary import UserSummary
 
         id = str(self.id)
 
@@ -85,13 +86,13 @@ class AdminSessionContentAccessRequest:
         requesting_user = self.requesting_user.to_dict()
 
         reviewed_by_user: dict[str, Any] | None
-        if isinstance(self.reviewed_by_user, UserListItem):
+        if isinstance(self.reviewed_by_user, UserSummary):
             reviewed_by_user = self.reviewed_by_user.to_dict()
         else:
             reviewed_by_user = self.reviewed_by_user
 
         revoked_by_user: dict[str, Any] | None
-        if isinstance(self.revoked_by_user, UserListItem):
+        if isinstance(self.revoked_by_user, UserSummary):
             revoked_by_user = self.revoked_by_user.to_dict()
         else:
             revoked_by_user = self.revoked_by_user
@@ -117,7 +118,7 @@ class AdminSessionContentAccessRequest:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.user_list_item import UserListItem
+        from ..models.user_summary import UserSummary
 
         d = dict(src_dict)
         id = UUID(d.pop("id"))
@@ -173,35 +174,35 @@ class AdminSessionContentAccessRequest:
 
         revoked_at = _parse_revoked_at(d.pop("revoked_at"))
 
-        requesting_user = UserListItem.from_dict(d.pop("requesting_user"))
+        requesting_user = UserSummary.from_dict(d.pop("requesting_user"))
 
-        def _parse_reviewed_by_user(data: object) -> None | UserListItem:
+        def _parse_reviewed_by_user(data: object) -> None | UserSummary:
             if data is None:
                 return data
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
-                reviewed_by_user_type_0 = UserListItem.from_dict(data)
+                reviewed_by_user_type_0 = UserSummary.from_dict(data)
 
                 return reviewed_by_user_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(None | UserListItem, data)
+            return cast(None | UserSummary, data)
 
         reviewed_by_user = _parse_reviewed_by_user(d.pop("reviewed_by_user"))
 
-        def _parse_revoked_by_user(data: object) -> None | UserListItem:
+        def _parse_revoked_by_user(data: object) -> None | UserSummary:
             if data is None:
                 return data
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
-                revoked_by_user_type_0 = UserListItem.from_dict(data)
+                revoked_by_user_type_0 = UserSummary.from_dict(data)
 
                 return revoked_by_user_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(None | UserListItem, data)
+            return cast(None | UserSummary, data)
 
         revoked_by_user = _parse_revoked_by_user(d.pop("revoked_by_user"))
 

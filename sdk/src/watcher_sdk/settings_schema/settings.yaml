@@ -432,33 +432,6 @@ command_rules:
   # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
   # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
   # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
-  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
-  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
-  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
-  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
-  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
-  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
-  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
-  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
-  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
-  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
-  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
-  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
-  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
-  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
-  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
-  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
-  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
-  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
-  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
-  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
-  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
-  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
-  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
-  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
-  # Interpreter code escalates only where it opens the marker path for writing: open with a write mode,
-  # a write, touch, copy or rename call, or a pathlib write ending in the literal marker. Code that only
-  # mentions it, such as a script editing Watcher's own source or tests, is graded instead.
   - id: bash-watcher-ignore-file
     tool_name: Bash
     name: Watcher ignore file
@@ -486,8 +459,13 @@ command_rules:
   # every agent write to them needs a person. These sit ahead of the extension allow rules, and the
   # hook also matches them against the file a path resolves to. The Bash variant sees only writes
   # made in the clear (sed, perl and yq only in place, sed through a `w` command, find with an action
-  # that writes or runs something, csvtool with -o); like the marker rule it reads to the end of the
-  # line, since quoted expressions hold `|` and `;`. A script the agent runs is out of reach.
+  # that writes or runs something, csvtool with -o, cp only into its last argument or -t directory).
+  # A script the agent runs is out of reach. The Bash regex, in match order: at each write word, a
+  # lookahead that a protected name follows on its line; then one command's span of plain words, simple
+  # quotes and redirects, so a later `; grep` of a protected file is not paired with an earlier `rm`;
+  # any other shell syntax (`$`, backticks, brackets, braces, escapes) falls back to the end of the line;
+  # the cp branch counts a protected path only as the destination or -t value, skipping a trailing
+  # comment or redirect. A line with many thousands of write words can time out, which asks a person.
   - id: edit-watcher-protected-files
     tool_name: Edit
     name: Watcher settings or agent hooks
@@ -506,7 +484,7 @@ command_rules:
     tool_name: Bash
     name: Watcher settings or agent hooks
     category: security_system
-    regex: '(?<![\w-])(?:touch|rm|mv|cp|ln|tee|install|truncate|unlink|chmod|(?:sed|perl|yq)(?=[ \t][^\n]*?(?:(?<![\w-])(?:-[a-z]*i|--in-?place)|[\d$/;{}''"\s][wW]))|find(?=[^\n]*?[ \t]-(?:delete|exec|execdir|ok|okdir|fls|fprint0?|fprintf)\b)|csvtool(?=[^\n]*?[ \t]-o\b))(?:[ \t]|\\\n)+(?:\\\n|[^\n])*(?:\.apollo_monitor(?=$|[/\s"'';|&()<>])|\.claude/settings(?:\.local)?\.json|\.codex/(?:hooks\.json|config\.toml)|\.copilot/(?:hooks/|settings\.json|config\.json))'
+    regex: '(?<![\w-])(?=(?:touch|rm|mv|ln|tee|install|truncate|unlink|chmod|sed|perl|yq|find|csvtool|cp)(?:[ \t]|\\\n)(?:[^\n]*\\\n)*[^\n]*(?:\.apollo_monitor(?=$|[/\s"'';|&()<>])|\.claude/settings(?:\.local)?\.json|\.codex/(?:hooks\.json|config\.toml)|\.copilot/(?:hooks/|settings\.json|config\.json)))(?:(?:touch|rm|mv|ln|tee|install|truncate|unlink|chmod|(?:sed|perl|yq)(?=[^\n]*?(?:(?<![\w-])(?:-[a-z]*i|--in-?place)|[\d$/;{}''"\s][wW]))(?=[ \t](?:[^\n;&|''"\\`$(){}<>]|\\\n|''[^''\n]*+''|"[^"\\\n`$]*+"|\d*+(?:>>?|<|&>)(?![(&])|>&\d|[<>]&-)*?(?:(?<![\w-])(?:-[a-z]*i|--in-?place)|(?:''[^''\n]*?|"[^"\n]*?)?[\d$/;{}''"\s][wW]|(?:[\\`$(){}<>]|"(?=[^"\n]*[$`\\])|''(?![^''\n]*'')|"(?![^"\n]*"))(?:\\\n|[^\n])*?(?:(?<![\w-])(?:-[a-z]*i|--in-?place)|[\d$/;{}''"\s][wW])))|find(?=[^\n]*[ \t]-(?:delete|exec|ok|fls|fprint))(?=(?:[^\n;&|''"\\`$(){}<>]|\\\n|''[^''\n]*+''|"[^"\\\n`$]*+"|\d*+(?:>>?|<|&>)(?![(&])|>&\d|[<>]&-)*?(?:[ \t]-(?:delete|exec|execdir|ok|okdir|fls|fprint0?|fprintf)\b|(?:[\\`$(){}<>]|"(?=[^"\n]*[$`\\])|''(?![^''\n]*'')|"(?![^"\n]*"))(?:\\\n|[^\n])*?[ \t]-(?:delete|exec|ok|fls|fprint)))|csvtool(?=[^\n]*[ \t]-o\b)(?=(?:[^\n;&|''"\\`$(){}<>]|\\\n|''[^''\n]*+''|"[^"\\\n`$]*+"|\d*+(?:>>?|<|&>)(?![(&])|>&\d|[<>]&-)*?(?:[ \t]-o\b|(?:[\\`$(){}<>]|"(?=[^"\n]*[$`\\])|''(?![^''\n]*'')|"(?![^"\n]*"))(?:\\\n|[^\n])*?[ \t]-o\b)))(?:[ \t]|\\\n)(?:[^\n;&|''"\\`$(){}<>]|\\\n|''[^''\n]*+''|"[^"\\\n`$]*+"|\d*+(?:>>?|<|&>)(?![(&])|>&\d|[<>]&-)*?(?:(?:[\\`$(){}<>]|"(?=[^"\n]*[$`\\])|''(?![^''\n]*'')|"(?![^"\n]*"))(?:\\\n|[^\n])*?|(?:''[^''\n]*?|"[^"\n]*?)?)(?:\.apollo_monitor(?=$|[/\s"'';|&()<>])|\.claude/settings(?:\.local)?\.json|\.codex/(?:hooks\.json|config\.toml)|\.copilot/(?:hooks/|settings\.json|config\.json))|cp(?:[ \t]|\\\n)(?:[^\n;&|''"\\`$(){}<>]|\\\n|''[^''\n]*+''|"[^"\\\n`$]*+"|\d*+(?:>>?|<|&>)(?![(&])|>&\d|[<>]&-)*?(?:(?:[\\`$(){}<>]|"(?=[^"\n]*[$`\\])|''(?![^''\n]*'')|"(?![^"\n]*"))(?:\\\n|[^\n])*?(?:\.apollo_monitor(?=$|[/\s"'';|&()<>])|\.claude/settings(?:\.local)?\.json|\.codex/(?:hooks\.json|config\.toml)|\.copilot/(?:hooks/|settings\.json|config\.json))|(?<![\w-])(?:-[a-z]*t|--t[a-z-]*+)(?:(?:[ \t]|\\\n)++|=)?(?:''[^''\n]*?|"[^"\n]*?|[^\s;&|<>()''"]*?)(?:\.apollo_monitor(?=$|[/\s"'';|&()<>])|\.claude/settings(?:\.local)?\.json|\.codex/(?:hooks\.json|config\.toml)|\.copilot/(?:hooks/|settings\.json|config\.json))|(?:''[^''\n]*?(?:\.apollo_monitor(?=$|[/\s"'';|&()<>])|\.claude/settings(?:\.local)?\.json|\.codex/(?:hooks\.json|config\.toml)|\.copilot/(?:hooks/|settings\.json|config\.json))[^''\n]*+''|"[^"\n]*?(?:\.apollo_monitor(?=$|[/\s"'';|&()<>])|\.claude/settings(?:\.local)?\.json|\.codex/(?:hooks\.json|config\.toml)|\.copilot/(?:hooks/|settings\.json|config\.json))[^"\n]*+"|(?:\.apollo_monitor(?=$|[/\s"'';|&()<>])|\.claude/settings(?:\.local)?\.json|\.codex/(?:hooks\.json|config\.toml)|\.copilot/(?:hooks/|settings\.json|config\.json)))(?![^\s''"\\;&|<>()]*+(?:[ \t]|\\\n)++(?!-|#|\}|\d*+[<>&]|\{\w++\}[<>])[^\s;&|<>()])))'
     decision: human
     priority: 97
   - id: apply-patch-watcher-protected-files

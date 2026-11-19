@@ -73,8 +73,10 @@ def sync_detailed(
 
      List members of the caller's organization.
 
-    Requires ``users:read:any``; rows include ``email`` since that same
-    permission gates reading other users' emails.
+    Requires ``users:read:any`` or ``sessions:findings:read:any``: a caller who
+    can browse other people's sessions can list the people to filter them by.
+    Other users' ``email`` is null unless the caller holds ``users:read:any``;
+    the caller's own row always carries it.
 
     Args:
         limit (int | Unset):  Default: 100.
@@ -110,8 +112,10 @@ def sync(
 
      List members of the caller's organization.
 
-    Requires ``users:read:any``; rows include ``email`` since that same
-    permission gates reading other users' emails.
+    Requires ``users:read:any`` or ``sessions:findings:read:any``: a caller who
+    can browse other people's sessions can list the people to filter them by.
+    Other users' ``email`` is null unless the caller holds ``users:read:any``;
+    the caller's own row always carries it.
 
     Args:
         limit (int | Unset):  Default: 100.
@@ -142,8 +146,10 @@ async def asyncio_detailed(
 
      List members of the caller's organization.
 
-    Requires ``users:read:any``; rows include ``email`` since that same
-    permission gates reading other users' emails.
+    Requires ``users:read:any`` or ``sessions:findings:read:any``: a caller who
+    can browse other people's sessions can list the people to filter them by.
+    Other users' ``email`` is null unless the caller holds ``users:read:any``;
+    the caller's own row always carries it.
 
     Args:
         limit (int | Unset):  Default: 100.
@@ -177,8 +183,10 @@ async def asyncio(
 
      List members of the caller's organization.
 
-    Requires ``users:read:any``; rows include ``email`` since that same
-    permission gates reading other users' emails.
+    Requires ``users:read:any`` or ``sessions:findings:read:any``: a caller who
+    can browse other people's sessions can list the people to filter them by.
+    Other users' ``email`` is null unless the caller holds ``users:read:any``;
+    the caller's own row always carries it.
 
     Args:
         limit (int | Unset):  Default: 100.

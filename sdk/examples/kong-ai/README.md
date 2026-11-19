@@ -77,6 +77,14 @@ Size response buffers for your deployment and keep Kong's request-size limit at
 least as large as the accepted request. Do not expose an alternative route that
 bypasses these plugins.
 
+The custom image uses HTTP/1.1 on its proxy and Admin API listeners, including
+TLS listeners. This disables the HTTP/2 prerequisite for
+[CVE-2026-123633 and CVE-2026-123007](https://www.wiz.io/blog/nginx-http2-rce-vulnerabilities).
+Kong's native `ai-proxy` already requires HTTP/1.1. If you override
+`KONG_PROXY_LISTEN` or `KONG_ADMIN_LISTEN`, omit the `http2` option until you use
+a Kong release confirmed to fix both vulnerabilities. This mitigation does not
+replace installing other applicable Kong or nginx security updates.
+
 ### Linux local demonstration
 
 Copy `gateway/kong.yaml` to `kong.local.yaml` and replace its placeholders. Keep

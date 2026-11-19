@@ -605,7 +605,7 @@
           "ingest"
         ],
         "summary": "Write Agent Relationship",
-        "description": "Create a child's original parent link or fill missing spawning-call details.\n\nBoth sessions must already exist and be writable under ingestion rules.\nIngest-only keys may link unowned sessions or native Claude/Codex conversations,\nincluding after those conversations acquire an owner. Owning the parent does\nnot authorize claiming an unowned child; users limited to their own sessions\nmust first attribute the child through ingestion. New links apply known parent ownership to the child\nand its descendants; conflicting known owners return 409 owner_conflict with\nno partial attribution. Retries and spawning-call enrichment do not propagate\nownership again. Other owned sessions require cross-user write permission.\nMissing or unauthorized sessions and missing explicit message hashes return\n404. Without a message hash, the server searches this parent\nfor the native spawning-call ID; an absent call leaves the hash null in the\nsuccessful response. Retry after ordinary ingestion to complete the link.\nDuplicate representations select the first inserted match. Invalid ancestry or\nconflicting established details return 409. Null details leave stored values\nunchanged; exact retries succeed even after transcript content is scrubbed.",
+        "description": "Create a child's original parent link or fill missing spawning-call details.\n\nBoth sessions must already exist in the organization and be writable under\ningestion rules. Ingest-only keys may link only unowned sessions; callers\nwith sessions:write:any may link sessions with different owners. These checks\napply to creation, retries and updates.\nLinking never changes ownership or grants transcript access.\nMissing or unauthorized sessions and missing explicit message hashes return\n404. Without a message hash, the server searches this parent\nfor the native spawning-call ID; an absent call leaves the hash null in the\nsuccessful response. Retry after ordinary ingestion to complete the link.\nDuplicate representations select the first inserted match. Invalid ancestry or\nconflicting established details return 409. Null details leave stored values\nunchanged; exact retries succeed even after transcript content is scrubbed.",
         "operationId": "write_agent_relationship_v1_sessions__child_session_id__agent_relationship_put",
         "parameters": [
           {
@@ -659,7 +659,7 @@
           "ingest"
         ],
         "summary": "Ingest",
-        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\n``results[i]`` describes ``trajectories[i]``, including empty and duplicate\ninputs. Each result has a chunk endpoint, live leaf, and storage status.\nSet ``append_after`` and ``fork`` on the trajectory to continue or branch;\neither option requires exactly one Claude Code, Codex, or Copilot input. Released\naggregate fields retain their batch semantics.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nproxy-capture (Tailscale Aperture) attribution; keys carrying only\n``sessions:ingest`` write unattributed sessions.\n\nA Claude Code session id or Codex thread id names one session per\norganization. An upload attributed to a user (a signed-in user's, or one\nattributed through ``identity.login_name``) joins that session when it has\nno owner and makes the user its owner, including its linked descendants.\nA conflicting known owner in its ancestry or descendants also rejects the\nattribution atomically. When another user owns it, the\nrequest is rejected with 409 ``session_owner_conflict``: that trajectory\nis not stored, earlier trajectories in the request stay stored, and later\nones are not processed. An upload attributed to no user joins the session\nwhoever owns it and leaves the owner unchanged.",
+        "description": "Ingest one or more trajectories. Returns leaf hashes and session ID.\n\n``results[i]`` describes ``trajectories[i]``, including empty and duplicate\ninputs. Each result has a chunk endpoint, live leaf, and storage status.\nSet ``append_after`` and ``fork`` on the trajectory to continue or branch;\neither option requires exactly one Claude Code, Codex, or Copilot input. Released\naggregate fields retain their batch semantics.\n\nUser attribution: signed-in users write their own sessions. Service keys\ncarrying ``sessions:write:any`` may honor ``identity.login_name`` for\nproxy-capture (Tailscale Aperture) attribution; keys carrying only\n``sessions:ingest`` write unattributed sessions.\n\nConversation IDs, aliases and transcript matching are scoped to the\norganisation, owner and compatible agent platform. Personal and ingest-only\nuploads using the same native ID record separate sessions. Attributed\ngateways and clients can share a session when their owner and IDs agree.\nExisting owners, including null owners, never change through uploads.\nExplicit cross-user write authority remains supported.\n\nA temporary recording conflict returns 503 with ``Retry-After``. Retry the\nrequest with bounded backoff. Earlier inputs in the batch stay stored and\nlater ones are not processed.",
         "operationId": "ingest_v1_ingest_post",
         "requestBody": {
           "content": {
@@ -683,7 +683,10 @@
             }
           },
           "409": {
-            "description": "The upload names a Claude Code or Codex conversation whose session another user owns (code session_owner_conflict)"
+            "description": "The supplied anchor cannot be continued (code anchor_conflict)"
+          },
+          "503": {
+            "description": "Recording is temporarily unavailable; retry the request after Retry-After"
           },
           "422": {
             "description": "Validation Error",
@@ -2776,7 +2779,7 @@
           "users"
         ],
         "summary": "List Users Endpoint",
-        "description": "List members of the caller's organization.\n\nRequires ``users:read:any``; rows include ``email`` since that same\npermission gates reading other users' emails.",
+        "description": "List members of the caller's organization.\n\nRequires ``users:read:any`` or ``sessions:findings:read:any``: a caller who\ncan browse other people's sessions can list the people to filter them by.\nOther users' ``email`` is null unless the caller holds ``users:read:any``;\nthe caller's own row always carries it.",
         "operationId": "list_users_endpoint_v1_users_get",
         "parameters": [
           {
@@ -3606,12 +3609,12 @@
             "title": "Revoked At"
           },
           "requesting_user": {
-            "$ref": "#/components/schemas/UserListItem"
+            "$ref": "#/components/schemas/UserSummary"
           },
           "reviewed_by_user": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/UserListItem"
+                "$ref": "#/components/schemas/UserSummary"
               },
               {
                 "type": "null"
@@ -3621,7 +3624,7 @@
           "revoked_by_user": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/UserListItem"
+                "$ref": "#/components/schemas/UserSummary"
               },
               {
                 "type": "null"
@@ -11429,7 +11432,7 @@
                 "type": "integer",
                 "maximum": 365.0,
                 "minimum": 7.0,
-                "description": "Days of session inactivity before stored content is scrubbed. Tool-call grades whose decision never arrived are deleted once older than this."
+                "description": "Days of session inactivity before stored content is scrubbed. Tool-call grades whose decision never arrived are deleted this many days after they were created. Null keeps both indefinitely."
               },
               {
                 "type": "null"
@@ -11537,7 +11540,7 @@
                 "type": "integer",
                 "maximum": 365.0,
                 "minimum": 7.0,
-                "description": "Days of session inactivity before stored content is scrubbed. Tool-call grades whose decision never arrived are deleted once older than this."
+                "description": "Days of session inactivity before stored content is scrubbed. Tool-call grades whose decision never arrived are deleted this many days after they were created. Null keeps both indefinitely."
               },
               {
                 "type": "null"
@@ -16002,7 +16005,14 @@
             "title": "User Id"
           },
           "email": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Email"
           },
           "first_name": {
@@ -16040,7 +16050,7 @@
           "created_at"
         ],
         "title": "UserListItem",
-        "description": "Per-user row exposed in ``GET /v1/users`` list responses.\n\nIncludes ``email``: listing requires the ``users:read:any`` permission,\nwhich is also the permission that gates reading other users' emails, so\nevery caller who can list users may see them."
+        "description": "Per-user row exposed in ``GET /v1/users`` list responses.\n\n``email`` is None when the caller may not read that person's address:\n``sessions:findings:read:any`` is enough to list users, but other users'\nemails need ``users:read:any``. A caller's own row always carries it."
       },
       "UserListResponse": {
         "properties": {

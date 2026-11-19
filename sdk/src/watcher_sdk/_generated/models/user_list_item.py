@@ -17,20 +17,20 @@ T = TypeVar("T", bound="UserListItem")
 class UserListItem:
     """Per-user row exposed in ``GET /v1/users`` list responses.
 
-    Includes ``email``: listing requires the ``users:read:any`` permission,
-    which is also the permission that gates reading other users' emails, so
-    every caller who can list users may see them.
+    ``email`` is None when the caller may not read that person's address:
+    ``sessions:findings:read:any`` is enough to list users, but other users'
+    emails need ``users:read:any``. A caller's own row always carries it.
 
         Attributes:
             user_id (UUID):
-            email (str):
+            email (None | str):
             created_at (datetime.datetime):
             first_name (None | str | Unset):
             last_name (None | str | Unset):
     """
 
     user_id: UUID
-    email: str
+    email: None | str
     created_at: datetime.datetime
     first_name: None | str | Unset = UNSET
     last_name: None | str | Unset = UNSET
@@ -39,6 +39,7 @@ class UserListItem:
     def to_dict(self) -> dict[str, Any]:
         user_id = str(self.user_id)
 
+        email: None | str
         email = self.email
 
         created_at = self.created_at.isoformat()
@@ -76,7 +77,12 @@ class UserListItem:
         d = dict(src_dict)
         user_id = UUID(d.pop("user_id"))
 
-        email = d.pop("email")
+        def _parse_email(data: object) -> None | str:
+            if data is None:
+                return data
+            return cast(None | str, data)
+
+        email = _parse_email(d.pop("email"))
 
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 

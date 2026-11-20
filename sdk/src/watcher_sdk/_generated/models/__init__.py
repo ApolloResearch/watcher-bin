@@ -10,9 +10,40 @@ from .admin_session_content_access_request import AdminSessionContentAccessReque
 from .admin_session_content_access_request_list_response import (
     AdminSessionContentAccessRequestListResponse,
 )
+from .agent_inventory_activity_event import AgentInventoryActivityEvent
+from .agent_inventory_activity_event_gap_cause_type_0 import (
+    AgentInventoryActivityEventGapCauseType0,
+)
+from .agent_inventory_activity_event_kind import AgentInventoryActivityEventKind
+from .agent_inventory_activity_event_signed_off_with_type_0 import (
+    AgentInventoryActivityEventSignedOffWithType0,
+)
+from .agent_inventory_activity_response import AgentInventoryActivityResponse
+from .agent_inventory_agent_health_state import AgentInventoryAgentHealthState
+from .agent_inventory_agent_health_state_state import (
+    AgentInventoryAgentHealthStateState,
+)
 from .agent_inventory_coverage_counts import AgentInventoryCoverageCounts
 from .agent_inventory_gateway_client import AgentInventoryGatewayClient
 from .agent_inventory_gateway_summary import AgentInventoryGatewaySummary
+from .agent_inventory_health import AgentInventoryHealth
+from .agent_inventory_health_agent import AgentInventoryHealthAgent
+from .agent_inventory_health_assessment import AgentInventoryHealthAssessment
+from .agent_inventory_health_assessment_group import AgentInventoryHealthAssessmentGroup
+from .agent_inventory_health_condition import AgentInventoryHealthCondition
+from .agent_inventory_health_condition_cause_type_0 import (
+    AgentInventoryHealthConditionCauseType0,
+)
+from .agent_inventory_health_condition_code import AgentInventoryHealthConditionCode
+from .agent_inventory_health_condition_reasons_item import (
+    AgentInventoryHealthConditionReasonsItem,
+)
+from .agent_inventory_health_condition_severity import (
+    AgentInventoryHealthConditionSeverity,
+)
+from .agent_inventory_health_delivery import AgentInventoryHealthDelivery
+from .agent_inventory_health_self_check_type_0 import AgentInventoryHealthSelfCheckType0
+from .agent_inventory_health_snooze import AgentInventoryHealthSnooze
 from .agent_inventory_installation import AgentInventoryInstallation
 from .agent_inventory_installation_agent import AgentInventoryInstallationAgent
 from .agent_inventory_installation_agent_coverage_type_0 import (
@@ -24,10 +55,26 @@ from .agent_inventory_installation_agent_coverage_via_type_0 import (
 from .agent_inventory_installation_list_response import (
     AgentInventoryInstallationListResponse,
 )
+from .agent_inventory_installation_owner_watcher_sessions import (
+    AgentInventoryInstallationOwnerWatcherSessions,
+)
+from .agent_inventory_missed_calls import AgentInventoryMissedCalls
+from .agent_inventory_missed_calls_by_reason import AgentInventoryMissedCallsByReason
+from .agent_inventory_presence import AgentInventoryPresence
+from .agent_inventory_presence_last_event_type_0 import (
+    AgentInventoryPresenceLastEventType0,
+)
+from .agent_inventory_presence_state import AgentInventoryPresenceState
 from .agent_inventory_report_agent import AgentInventoryReportAgent
+from .agent_inventory_self_check_finding import AgentInventorySelfCheckFinding
+from .agent_inventory_self_check_finding_result import (
+    AgentInventorySelfCheckFindingResult,
+)
 from .agent_inventory_status import AgentInventoryStatus
 from .agent_inventory_summary_agent import AgentInventorySummaryAgent
 from .agent_inventory_summary_response import AgentInventorySummaryResponse
+from .agent_inventory_unread_value import AgentInventoryUnreadValue
+from .agent_inventory_unread_value_value import AgentInventoryUnreadValueValue
 from .agent_inventory_user import AgentInventoryUser
 from .agent_inventory_user_agent import AgentInventoryUserAgent
 from .agent_inventory_user_agent_coverage_type_0 import (
@@ -133,6 +180,7 @@ from .claude_code_hook_request_settings_overrides_type_1 import (
 )
 from .claude_code_trajectory import ClaudeCodeTrajectory
 from .claude_code_trajectory_metadata_type_0 import ClaudeCodeTrajectoryMetadataType0
+from .client_heartbeat import ClientHeartbeat
 from .codex_content_item import CodexContentItem
 from .codex_content_item_type_type_0 import CodexContentItemTypeType0
 from .codex_entry import CodexEntry
@@ -199,6 +247,11 @@ from .document_citation import DocumentCitation
 from .document_citation_internal_type_0 import DocumentCitationInternalType0
 from .document_range import DocumentRange
 from .document_range_type import DocumentRangeType
+from .endpoint_health_agent import EndpointHealthAgent
+from .endpoint_health_delivery import EndpointHealthDelivery
+from .endpoint_health_snooze import EndpointHealthSnooze
+from .endpoint_health_status import EndpointHealthStatus
+from .endpoint_health_status_self_check_type_0 import EndpointHealthStatusSelfCheckType0
 from .enforcement_mode import EnforcementMode
 from .external_id_source import ExternalIdSource
 from .gateway_action import GatewayAction
@@ -283,6 +336,13 @@ from .managed_settings_source_error_kind_type_0 import (
 )
 from .message_detail_response import MessageDetailResponse
 from .message_detail_response_message import MessageDetailResponseMessage
+from .metadata_only_tool_call_list_item import MetadataOnlyToolCallListItem
+from .metadata_only_tool_call_list_item_coverage_state import (
+    MetadataOnlyToolCallListItemCoverageState,
+)
+from .metadata_only_tool_call_list_item_decision_category_type_0 import (
+    MetadataOnlyToolCallListItemDecisionCategoryType0,
+)
 from .model_token_budget import ModelTokenBudget
 from .models_config import ModelsConfig
 from .monitor_context_policy import MonitorContextPolicy
@@ -415,6 +475,7 @@ from .tool_call import ToolCall
 from .tool_call_arguments import ToolCallArguments
 from .tool_call_content import ToolCallContent
 from .tool_call_content_format import ToolCallContentFormat
+from .tool_call_content_state import ToolCallContentState
 from .tool_call_decision_batch_request import ToolCallDecisionBatchRequest
 from .tool_call_decision_batch_response import ToolCallDecisionBatchResponse
 from .tool_call_decision_detail import ToolCallDecisionDetail
@@ -444,6 +505,14 @@ from .tool_call_grade_detail_input_messages_item import (
 )
 from .tool_call_grade_kind import ToolCallGradeKind
 from .tool_call_list_response import ToolCallListResponse
+from .tool_call_record import ToolCallRecord
+from .tool_call_record_result import ToolCallRecordResult
+from .tool_call_record_result_status import ToolCallRecordResultStatus
+from .tool_call_records_request import ToolCallRecordsRequest
+from .tool_call_records_request_agent_platform import (
+    ToolCallRecordsRequestAgentPlatform,
+)
+from .tool_call_records_response import ToolCallRecordsResponse
 from .tool_call_result import ToolCallResult
 from .tool_call_result_content_type_1_item import ToolCallResultContentType1Item
 from .tool_call_search_filters import ToolCallSearchFilters
@@ -456,6 +525,7 @@ from .tool_call_search_filters_severities_type_0_item import (
 from .tool_call_search_params import ToolCallSearchParams
 from .tool_call_search_params_sort_by import ToolCallSearchParamsSortBy
 from .tool_call_search_params_sort_order import ToolCallSearchParamsSortOrder
+from .tool_call_skip_reason import ToolCallSkipReason
 from .tool_call_type import ToolCallType
 from .tool_status import ToolStatus
 from .tool_use_result import ToolUseResult
@@ -501,18 +571,47 @@ __all__ = (
     "ActivatedMonitorsResponseDistribution",
     "AdminSessionContentAccessRequest",
     "AdminSessionContentAccessRequestListResponse",
+    "AgentInventoryActivityEvent",
+    "AgentInventoryActivityEventGapCauseType0",
+    "AgentInventoryActivityEventKind",
+    "AgentInventoryActivityEventSignedOffWithType0",
+    "AgentInventoryActivityResponse",
+    "AgentInventoryAgentHealthState",
+    "AgentInventoryAgentHealthStateState",
     "AgentInventoryCoverageCounts",
     "AgentInventoryGatewayClient",
     "AgentInventoryGatewaySummary",
+    "AgentInventoryHealth",
+    "AgentInventoryHealthAgent",
+    "AgentInventoryHealthAssessment",
+    "AgentInventoryHealthAssessmentGroup",
+    "AgentInventoryHealthCondition",
+    "AgentInventoryHealthConditionCauseType0",
+    "AgentInventoryHealthConditionCode",
+    "AgentInventoryHealthConditionReasonsItem",
+    "AgentInventoryHealthConditionSeverity",
+    "AgentInventoryHealthDelivery",
+    "AgentInventoryHealthSelfCheckType0",
+    "AgentInventoryHealthSnooze",
     "AgentInventoryInstallation",
     "AgentInventoryInstallationAgent",
     "AgentInventoryInstallationAgentCoverageType0",
     "AgentInventoryInstallationAgentCoverageViaType0",
     "AgentInventoryInstallationListResponse",
+    "AgentInventoryInstallationOwnerWatcherSessions",
+    "AgentInventoryMissedCalls",
+    "AgentInventoryMissedCallsByReason",
+    "AgentInventoryPresence",
+    "AgentInventoryPresenceLastEventType0",
+    "AgentInventoryPresenceState",
     "AgentInventoryReportAgent",
+    "AgentInventorySelfCheckFinding",
+    "AgentInventorySelfCheckFindingResult",
     "AgentInventoryStatus",
     "AgentInventorySummaryAgent",
     "AgentInventorySummaryResponse",
+    "AgentInventoryUnreadValue",
+    "AgentInventoryUnreadValueValue",
     "AgentInventoryUser",
     "AgentInventoryUserAgent",
     "AgentInventoryUserAgentCoverageType0",
@@ -584,6 +683,7 @@ __all__ = (
     "ClaudeCodeHookRequestSettingsOverridesType1",
     "ClaudeCodeTrajectory",
     "ClaudeCodeTrajectoryMetadataType0",
+    "ClientHeartbeat",
     "CodexContentItem",
     "CodexContentItemTypeType0",
     "CodexEntry",
@@ -644,6 +744,11 @@ __all__ = (
     "DocumentCitationInternalType0",
     "DocumentRange",
     "DocumentRangeType",
+    "EndpointHealthAgent",
+    "EndpointHealthDelivery",
+    "EndpointHealthSnooze",
+    "EndpointHealthStatus",
+    "EndpointHealthStatusSelfCheckType0",
     "EnforcementMode",
     "ExternalIdSource",
     "GatewayAction",
@@ -706,6 +811,9 @@ __all__ = (
     "ManagedSettingsSourceErrorKindType0",
     "MessageDetailResponse",
     "MessageDetailResponseMessage",
+    "MetadataOnlyToolCallListItem",
+    "MetadataOnlyToolCallListItemCoverageState",
+    "MetadataOnlyToolCallListItemDecisionCategoryType0",
     "ModelTokenBudget",
     "ModelsConfig",
     "MonitorContextPolicy",
@@ -792,6 +900,7 @@ __all__ = (
     "ToolCallArguments",
     "ToolCallContent",
     "ToolCallContentFormat",
+    "ToolCallContentState",
     "ToolCallDecisionBatchRequest",
     "ToolCallDecisionBatchResponse",
     "ToolCallDecisionDetail",
@@ -811,6 +920,12 @@ __all__ = (
     "ToolCallGradeDetailInputMessagesItem",
     "ToolCallGradeKind",
     "ToolCallListResponse",
+    "ToolCallRecord",
+    "ToolCallRecordResult",
+    "ToolCallRecordResultStatus",
+    "ToolCallRecordsRequest",
+    "ToolCallRecordsRequestAgentPlatform",
+    "ToolCallRecordsResponse",
     "ToolCallResult",
     "ToolCallResultContentType1Item",
     "ToolCallSearchFilters",
@@ -819,6 +934,7 @@ __all__ = (
     "ToolCallSearchParams",
     "ToolCallSearchParamsSortBy",
     "ToolCallSearchParamsSortOrder",
+    "ToolCallSkipReason",
     "ToolCallType",
     "ToolStatus",
     "ToolUseResult",

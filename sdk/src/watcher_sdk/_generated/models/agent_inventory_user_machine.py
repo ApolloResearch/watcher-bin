@@ -2,33 +2,46 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import Any, Self, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+
+if TYPE_CHECKING:
+    from ..models.agent_inventory_presence import AgentInventoryPresence
+
 
 T = TypeVar("T", bound="AgentInventoryUserMachine")
 
 
 @_attrs_define
 class AgentInventoryUserMachine:
-    """One of a person's machines running the Watcher client.
+    """One of a person's machines running the Watcher client, with whether it is online.
 
-    Attributes:
-        installation_id (UUID):
-        hostname (None | str):
-        os (None | str):
-        last_report_at (datetime.datetime):
+    For its endpoint health, read the machine list (`GET /v1/agent-inventory/installations`), whose entry carries
+    the same online status.
+
+        Attributes:
+            installation_id (UUID):
+            hostname (None | str): From the newest inventory scan; null when none was collected.
+            os (None | str): From the newest inventory scan; null when none was collected.
+            last_report_at (datetime.datetime): When the newest report of any kind from this machine arrived.
+            presence (AgentInventoryPresence | None): Whether the machine's Watcher client is online; null while agent
+                inventory is off and the client sends no heartbeat, because no new report from it is stored and whether it is
+                online cannot be judged.
     """
 
     installation_id: UUID
     hostname: None | str
     os: None | str
     last_report_at: datetime.datetime
+    presence: AgentInventoryPresence | None
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.agent_inventory_presence import AgentInventoryPresence
+
         installation_id = str(self.installation_id)
 
         hostname: None | str
@@ -39,6 +52,12 @@ class AgentInventoryUserMachine:
 
         last_report_at = self.last_report_at.isoformat()
 
+        presence: dict[str, Any] | None
+        if isinstance(self.presence, AgentInventoryPresence):
+            presence = self.presence.to_dict()
+        else:
+            presence = self.presence
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -47,6 +66,7 @@ class AgentInventoryUserMachine:
                 "hostname": hostname,
                 "os": os,
                 "last_report_at": last_report_at,
+                "presence": presence,
             }
         )
 
@@ -54,6 +74,8 @@ class AgentInventoryUserMachine:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.agent_inventory_presence import AgentInventoryPresence
+
         d = dict(src_dict)
         installation_id = UUID(d.pop("installation_id"))
 
@@ -73,11 +95,27 @@ class AgentInventoryUserMachine:
 
         last_report_at = datetime.datetime.fromisoformat(d.pop("last_report_at"))
 
+        def _parse_presence(data: object) -> AgentInventoryPresence | None:
+            if data is None:
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                presence_type_0 = AgentInventoryPresence.from_dict(data)
+
+                return presence_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(AgentInventoryPresence | None, data)
+
+        presence = _parse_presence(d.pop("presence"))
+
         agent_inventory_user_machine = cls(
             installation_id=installation_id,
             hostname=hostname,
             os=os,
             last_report_at=last_report_at,
+            presence=presence,
         )
 
         agent_inventory_user_machine.additional_properties = d

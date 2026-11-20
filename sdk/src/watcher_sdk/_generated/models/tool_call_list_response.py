@@ -8,6 +8,7 @@ from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
     from ..models.available_tool_call_list_item import AvailableToolCallListItem
+    from ..models.metadata_only_tool_call_list_item import MetadataOnlyToolCallListItem
     from ..models.scrubbed_tool_call_list_item import ScrubbedToolCallListItem
 
 
@@ -19,13 +20,17 @@ class ToolCallListResponse:
     """Paginated response from POST /v1/tool-calls/search.
 
     Attributes:
-        tool_calls (list[AvailableToolCallListItem | ScrubbedToolCallListItem]):
+        tool_calls (list[AvailableToolCallListItem | MetadataOnlyToolCallListItem | ScrubbedToolCallListItem]):
         total (int):
         limit (int):
         offset (int):
     """
 
-    tool_calls: list[AvailableToolCallListItem | ScrubbedToolCallListItem]
+    tool_calls: list[
+        AvailableToolCallListItem
+        | MetadataOnlyToolCallListItem
+        | ScrubbedToolCallListItem
+    ]
     total: int
     limit: int
     offset: int
@@ -33,11 +38,14 @@ class ToolCallListResponse:
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.available_tool_call_list_item import AvailableToolCallListItem
+        from ..models.scrubbed_tool_call_list_item import ScrubbedToolCallListItem
 
         tool_calls = []
         for tool_calls_item_data in self.tool_calls:
             tool_calls_item: dict[str, Any]
-            if isinstance(tool_calls_item_data, AvailableToolCallListItem):
+            if isinstance(
+                tool_calls_item_data, AvailableToolCallListItem
+            ) or isinstance(tool_calls_item_data, ScrubbedToolCallListItem):
                 tool_calls_item = tool_calls_item_data.to_dict()
             else:
                 tool_calls_item = tool_calls_item_data.to_dict()
@@ -66,6 +74,9 @@ class ToolCallListResponse:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.available_tool_call_list_item import AvailableToolCallListItem
+        from ..models.metadata_only_tool_call_list_item import (
+            MetadataOnlyToolCallListItem,
+        )
         from ..models.scrubbed_tool_call_list_item import ScrubbedToolCallListItem
 
         d = dict(src_dict)
@@ -75,7 +86,11 @@ class ToolCallListResponse:
 
             def _parse_tool_calls_item(
                 data: object,
-            ) -> AvailableToolCallListItem | ScrubbedToolCallListItem:
+            ) -> (
+                AvailableToolCallListItem
+                | MetadataOnlyToolCallListItem
+                | ScrubbedToolCallListItem
+            ):
                 try:
                     if not isinstance(data, dict):
                         raise TypeError()
@@ -84,11 +99,19 @@ class ToolCallListResponse:
                     return tool_calls_item_type_0
                 except (TypeError, ValueError, AttributeError, KeyError):
                     pass
+                try:
+                    if not isinstance(data, dict):
+                        raise TypeError()
+                    tool_calls_item_type_1 = ScrubbedToolCallListItem.from_dict(data)
+
+                    return tool_calls_item_type_1
+                except (TypeError, ValueError, AttributeError, KeyError):
+                    pass
                 if not isinstance(data, dict):
                     raise TypeError()
-                tool_calls_item_type_1 = ScrubbedToolCallListItem.from_dict(data)
+                tool_calls_item_type_2 = MetadataOnlyToolCallListItem.from_dict(data)
 
-                return tool_calls_item_type_1
+                return tool_calls_item_type_2
 
             tool_calls_item = _parse_tool_calls_item(tool_calls_item_data)
 

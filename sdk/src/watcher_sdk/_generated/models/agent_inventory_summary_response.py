@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.agent_inventory_gateway_summary import AgentInventoryGatewaySummary
     from ..models.agent_inventory_summary_agent import AgentInventorySummaryAgent
@@ -24,20 +26,27 @@ class AgentInventorySummaryResponse:
 
         Attributes:
             enabled (bool):
-            machines (int): Machines that reported in the last 90 days.
+            machines (int): Machines with an inventory scan in the last 90 days. The machine list also shows machines that
+                only send the heartbeat, which this does not count.
             people (int): People who own those machines.
-            people_seen (int): People seen in the last 7 days, as the owner of a reporting machine or through a gateway: the
-                base for every share of people.
-            people_reporting (int): People who own a machine that reported in the last 7 days.
+            people_seen (int): People seen in the last 7 days: the owner of a machine that sent a report of any kind, the
+                heartbeat included, or a person in gateway traffic. The people list's unfiltered total, and the base for every
+                share of people.
+            people_reporting (int): People who own a machine that sent an inventory scan in the last 7 days: the people list
+                filtered by `reporting=true`.
             gap_people (int): People with a coverage gap for at least one agent. The machine list filtered by `coverage=gap`
                 shows their machines.
             unsanctioned_people (int | None): People who used any agent named in the `unsanctioned` query parameter in the
-                last 7 days, on a reporting machine or through a gateway; null when the parameter is absent.
+                last 7 days: on a machine's inventory, in sessions Watcher received, or through a gateway; null when the
+                parameter is absent.
             newest_report_at (datetime.datetime | None):
             recent_days (int): How many days count as recent.
             agents (list[AgentInventorySummaryAgent]):
             gateway (AgentInventoryGatewaySummary): Clients seen in traffic through gateways connected to Watcher in the
                 last 7 days.
+            organization_paused (bool | Unset): Whether the organization's managed settings pause grading on every machine.
+                True only while Watcher distributes those settings; under MDM distribution each machine's own mode applies.
+                Default: False.
     """
 
     enabled: bool
@@ -51,6 +60,7 @@ class AgentInventorySummaryResponse:
     recent_days: int
     agents: list[AgentInventorySummaryAgent]
     gateway: AgentInventoryGatewaySummary
+    organization_paused: bool | Unset = False
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -84,6 +94,8 @@ class AgentInventorySummaryResponse:
 
         gateway = self.gateway.to_dict()
 
+        organization_paused = self.organization_paused
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -101,6 +113,8 @@ class AgentInventorySummaryResponse:
                 "gateway": gateway,
             }
         )
+        if organization_paused is not UNSET:
+            field_dict["organization_paused"] = organization_paused
 
         return field_dict
 
@@ -157,6 +171,8 @@ class AgentInventorySummaryResponse:
 
         gateway = AgentInventoryGatewaySummary.from_dict(d.pop("gateway"))
 
+        organization_paused = d.pop("organization_paused", UNSET)
+
         agent_inventory_summary_response = cls(
             enabled=enabled,
             machines=machines,
@@ -169,6 +185,7 @@ class AgentInventorySummaryResponse:
             recent_days=recent_days,
             agents=agents,
             gateway=gateway,
+            organization_paused=organization_paused,
         )
 
         agent_inventory_summary_response.additional_properties = d

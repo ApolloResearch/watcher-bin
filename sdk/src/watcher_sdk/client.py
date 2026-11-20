@@ -76,6 +76,7 @@ import watcher_sdk._generated.api.sessions.get_session_trajectory_detail_v1_sess
 import watcher_sdk._generated.api.sessions.list_session_subagents_endpoint_v1_sessions_session_id_subagents_get as _list_subagents_api
 import watcher_sdk._generated.api.sessions.list_session_trajectories_v1_sessions_session_id_trajectories_get as _list_trajectories_api
 import watcher_sdk._generated.api.sessions.list_sessions_endpoint_v1_sessions_get as _list_sessions_api
+import watcher_sdk._generated.api.sessions.record_tool_call_metadata_v1_sessions_tool_call_records_post as _tool_call_records_api
 import watcher_sdk._generated.api.sessions.request_session_deep_review_v1_sessions_session_id_deep_review_post as _request_deep_review_api
 import watcher_sdk._generated.api.sessions.scrub_session_content_v1_sessions_session_id_content_delete as _scrub_session_content_api
 import watcher_sdk._generated.api.sessions.search_sessions_endpoint_v1_sessions_search_post as _search_sessions_api
@@ -155,6 +156,8 @@ from watcher_sdk._generated.models import (
     ToolCallDetailResponse,
     ToolCallFindingsResponse,
     ToolCallListResponse,
+    ToolCallRecordsRequest,
+    ToolCallRecordsResponse,
     ToolCallSearchFilters,
     ToolCallSearchFiltersDecisionCategoriesType0Item,
     ToolCallSearchFiltersSeveritiesType0Item,
@@ -1031,6 +1034,31 @@ class AsyncWatcherClient:
             child_session_id=UUID(child_session_id),
             client=self._generated_client,
             body=relationship,
+        )
+
+    @_sdk_method
+    async def record_tool_calls(self, *, request: ToolCallRecordsRequest) -> ToolCallRecordsResponse:
+        """Record tool calls Watcher observed but did not grade, holding no content.
+
+        Each record names the call by the agent's own ``tool_use_id`` with its
+        tool name, observation time and the reason Watcher did not grade it
+        (``watcher_ignore`` for a ``.watcher-ignore``'d session). The session
+        is found or created from ``agent_session_id`` as ``ingest`` would find
+        it, and a recorded call links to its message whenever Watcher holds
+        it. ``request.installation_id``, when it names an installation the
+        caller owns, is stored with the records so agent inventory can count
+        them per machine. Repeating a request changes nothing.
+
+        Raises:
+            WatcherAPIError: 503 ``session_resolution_conflict`` when the
+                session's owner changed during matching (retry after
+                ``Retry-After``); 422 for an invalid request (final for that
+                request); 400 when the conversation's stored session cannot be
+                matched safely (retry later).
+        """
+        return await _tool_call_records_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            client=self._generated_client,
+            body=request,
         )
 
     @_sdk_method
@@ -2505,6 +2533,7 @@ class AsyncWatcherClient:
         *,
         is_flagged: bool | None = None,
         trajectory_id: str | None = None,
+        include_records: bool = False,
     ) -> ToolCallListResponse:
         """Search tool calls with filtering, pagination, and sorting.
 
@@ -2512,7 +2541,8 @@ class AsyncWatcherClient:
         population the dashboard's tool-call counts are computed over. Retained
         verdict-only rows remain after session content is scrubbed; their
         ``content_state`` is ``"scrubbed"`` and they omit live tool details.
-        Calls that never reached Watcher's decision path are not returned.
+        With ``include_records``, calls known only from the Watcher client's
+        tool-call records are listed too, as ``"metadata_only"`` rows.
 
         Args:
             start_date: Include only calls whose message was recorded at or after this
@@ -2535,6 +2565,9 @@ class AsyncWatcherClient:
             is_flagged: Filter by recorded risk, including observe-mode judgments.
             trajectory_id: Restrict to this trajectory and its ancestors, or ``latest``.
                 Requires ``session_id``. Missing or scrubbed trajectories match no calls.
+            include_records: Also list calls the Watcher client observed but did not
+                grade (``metadata_only`` rows, with ``skip_reason``), and report
+                ``coverage_state`` ``skipped`` for recorded calls.
             limit: Maximum number of calls to return per page.
             offset: Number of calls to skip (for pagination).
             sort_by: Field to sort by: 'severity', 'decision' (interventions first),
@@ -2569,6 +2602,7 @@ class AsyncWatcherClient:
             sort_by=ToolCallSearchParamsSortBy(sort_by),
             sort_order=ToolCallSearchParamsSortOrder(sort_order),
             filters=filters,
+            include_records=include_records,
         )
         return await _search_tool_calls_api.asyncio_detailed(client=self._generated_client, body=body)  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
 
@@ -2688,8 +2722,8 @@ class AsyncWatcherClient:
         The installation is registered to the signed-in user; organization API keys cannot report.
 
         Raises:
-            WatcherAPIError: With status 409 and code ``inventory_disabled`` while agent inventory is off in
-                the organization's managed settings, or ``installation_conflict`` when another user owns the
+            WatcherAPIError: With status 409 and code ``inventory_disabled`` when agent inventory is off and
+                the report has no ``client`` section, or ``installation_conflict`` when another user owns the
                 installation ID.
             WatcherValidationError: When the server rejects the report or the credential has no user.
         """

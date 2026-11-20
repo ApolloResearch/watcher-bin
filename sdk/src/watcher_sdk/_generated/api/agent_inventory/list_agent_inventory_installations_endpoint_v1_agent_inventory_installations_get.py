@@ -128,7 +128,11 @@ def sync_detailed(
 
      List machines running the Watcher client, with their owner and agents, most recently reported first.
 
-    Other people's email addresses are hidden unless you may read user emails. Dates are UTC dates.
+    Each machine carries its `assessment`: its group (needs attention, healthy or offline) and the
+    conditions
+    behind it, judged at the time of the request. Other people's email addresses are hidden unless you
+    may read
+    user emails. Dates are UTC dates.
 
     Args:
         agent (None | str | Unset): Machines with this agent.
@@ -180,7 +184,11 @@ def sync(
 
      List machines running the Watcher client, with their owner and agents, most recently reported first.
 
-    Other people's email addresses are hidden unless you may read user emails. Dates are UTC dates.
+    Each machine carries its `assessment`: its group (needs attention, healthy or offline) and the
+    conditions
+    behind it, judged at the time of the request. Other people's email addresses are hidden unless you
+    may read
+    user emails. Dates are UTC dates.
 
     Args:
         agent (None | str | Unset): Machines with this agent.
@@ -227,7 +235,11 @@ async def asyncio_detailed(
 
      List machines running the Watcher client, with their owner and agents, most recently reported first.
 
-    Other people's email addresses are hidden unless you may read user emails. Dates are UTC dates.
+    Each machine carries its `assessment`: its group (needs attention, healthy or offline) and the
+    conditions
+    behind it, judged at the time of the request. Other people's email addresses are hidden unless you
+    may read
+    user emails. Dates are UTC dates.
 
     Args:
         agent (None | str | Unset): Machines with this agent.
@@ -277,7 +289,11 @@ async def asyncio(
 
      List machines running the Watcher client, with their owner and agents, most recently reported first.
 
-    Other people's email addresses are hidden unless you may read user emails. Dates are UTC dates.
+    Each machine carries its `assessment`: its group (needs attention, healthy or offline) and the
+    conditions
+    behind it, judged at the time of the request. Other people's email addresses are hidden unless you
+    may read
+    user emails. Dates are UTC dates.
 
     Args:
         agent (None | str | Unset): Machines with this agent.

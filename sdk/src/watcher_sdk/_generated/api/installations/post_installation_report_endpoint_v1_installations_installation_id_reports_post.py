@@ -93,6 +93,9 @@ def sync_detailed(
     is
     registered to the signed-in user on its first report, never to anything in the body. Agent IDs and
     values this server does not recognize are ignored. Organization API keys cannot report.
+    The client's 15-minute heartbeat (the `client` section) is stored even when inventory is off; a
+    report
+    holding only an inventory section is then refused.
 
     Args:
         installation_id (UUID):
@@ -133,6 +136,9 @@ def sync(
     is
     registered to the signed-in user on its first report, never to anything in the body. Agent IDs and
     values this server does not recognize are ignored. Organization API keys cannot report.
+    The client's 15-minute heartbeat (the `client` section) is stored even when inventory is off; a
+    report
+    holding only an inventory section is then refused.
 
     Args:
         installation_id (UUID):
@@ -168,6 +174,9 @@ async def asyncio_detailed(
     is
     registered to the signed-in user on its first report, never to anything in the body. Agent IDs and
     values this server does not recognize are ignored. Organization API keys cannot report.
+    The client's 15-minute heartbeat (the `client` section) is stored even when inventory is off; a
+    report
+    holding only an inventory section is then refused.
 
     Args:
         installation_id (UUID):
@@ -206,6 +215,9 @@ async def asyncio(
     is
     registered to the signed-in user on its first report, never to anything in the body. Agent IDs and
     values this server does not recognize are ignored. Organization API keys cannot report.
+    The client's 15-minute heartbeat (the `client` section) is stored even when inventory is off; a
+    report
+    holding only an inventory section is then refused.
 
     Args:
         installation_id (UUID):

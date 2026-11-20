@@ -68,6 +68,8 @@ from watcher_sdk._generated.models.tool_call_decision_batch_response import Tool
 from watcher_sdk._generated.models.tool_call_detail_response import ToolCallDetailResponse
 from watcher_sdk._generated.models.tool_call_findings_response import ToolCallFindingsResponse
 from watcher_sdk._generated.models.tool_call_list_response import ToolCallListResponse
+from watcher_sdk._generated.models.tool_call_records_request import ToolCallRecordsRequest
+from watcher_sdk._generated.models.tool_call_records_response import ToolCallRecordsResponse
 from watcher_sdk._generated.models.trajectory_detail_response import TrajectoryDetailResponse
 from watcher_sdk._generated.models.trajectory_list_in_session_response import TrajectoryListInSessionResponse
 from watcher_sdk._generated.models.trajectory_view import TrajectoryView
@@ -140,6 +142,7 @@ class WatcherClient:
         source: str,
         trajectory: ClaudeCodeTrajectory | CodexTrajectory | CopilotTrajectory,
     ) -> IngestResponse: ...
+    def record_tool_calls(self, *, request: ToolCallRecordsRequest) -> ToolCallRecordsResponse: ...
     def upload_tool_call_decisions_batch(
         self, *, session_id: str, decisions: list[dict[str, Any]]
     ) -> ToolCallDecisionBatchResponse: ...
@@ -370,6 +373,7 @@ class WatcherClient:
         *,
         is_flagged: bool | None = None,
         trajectory_id: str | None = None,
+        include_records: bool = False,
     ) -> ToolCallListResponse: ...
     def get_session_aggregates(
         self,

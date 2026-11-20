@@ -133,8 +133,9 @@ def sync_detailed(
             and `unrecognized` for any unrecognized gateway client; repeat the parameter for each.
         coverage (ListAgentInventoryUsersEndpointV1AgentInventoryUsersGetCoverageType0 | None |
             Unset): People with this coverage for one of the `agent` values, or for any agent.
-        reporting (bool | None | Unset): True: people with a machine that reported in the last 7
-            days; false: others.
+        reporting (bool | None | Unset): True: people with a machine that sent an inventory scan
+            in the last 7 days, the people the summary's `people_reporting` counts; false: the others,
+            including owners whose machines only sent the heartbeat.
         key (None | str | Unset): One person, by the `key` from this list.
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
@@ -189,8 +190,9 @@ def sync(
             and `unrecognized` for any unrecognized gateway client; repeat the parameter for each.
         coverage (ListAgentInventoryUsersEndpointV1AgentInventoryUsersGetCoverageType0 | None |
             Unset): People with this coverage for one of the `agent` values, or for any agent.
-        reporting (bool | None | Unset): True: people with a machine that reported in the last 7
-            days; false: others.
+        reporting (bool | None | Unset): True: people with a machine that sent an inventory scan
+            in the last 7 days, the people the summary's `people_reporting` counts; false: the others,
+            including owners whose machines only sent the heartbeat.
         key (None | str | Unset): One person, by the `key` from this list.
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
@@ -240,8 +242,9 @@ async def asyncio_detailed(
             and `unrecognized` for any unrecognized gateway client; repeat the parameter for each.
         coverage (ListAgentInventoryUsersEndpointV1AgentInventoryUsersGetCoverageType0 | None |
             Unset): People with this coverage for one of the `agent` values, or for any agent.
-        reporting (bool | None | Unset): True: people with a machine that reported in the last 7
-            days; false: others.
+        reporting (bool | None | Unset): True: people with a machine that sent an inventory scan
+            in the last 7 days, the people the summary's `people_reporting` counts; false: the others,
+            including owners whose machines only sent the heartbeat.
         key (None | str | Unset): One person, by the `key` from this list.
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.
@@ -294,8 +297,9 @@ async def asyncio(
             and `unrecognized` for any unrecognized gateway client; repeat the parameter for each.
         coverage (ListAgentInventoryUsersEndpointV1AgentInventoryUsersGetCoverageType0 | None |
             Unset): People with this coverage for one of the `agent` values, or for any agent.
-        reporting (bool | None | Unset): True: people with a machine that reported in the last 7
-            days; false: others.
+        reporting (bool | None | Unset): True: people with a machine that sent an inventory scan
+            in the last 7 days, the people the summary's `people_reporting` counts; false: the others,
+            including owners whose machines only sent the heartbeat.
         key (None | str | Unset): One person, by the `key` from this list.
         limit (int | Unset):  Default: 50.
         offset (int | Unset):  Default: 0.

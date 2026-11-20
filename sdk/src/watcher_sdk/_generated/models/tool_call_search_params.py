@@ -29,6 +29,8 @@ class ToolCallSearchParams:
             ToolCallSearchParamsSortOrder.DESC.
         filters (ToolCallSearchFilters | Unset): Filter options for the tool-call list. Every field is optional and
             ANDed.
+        include_records (bool | Unset): Also list calls for which Watcher holds only a tool-call record, as
+            metadata_only rows with their skip_reason, and report coverage_state skipped for recorded calls. Default: False.
     """
 
     limit: int | Unset = 50
@@ -38,6 +40,7 @@ class ToolCallSearchParams:
         ToolCallSearchParamsSortOrder.DESC
     )
     filters: ToolCallSearchFilters | Unset = UNSET
+    include_records: bool | Unset = False
 
     def to_dict(self) -> dict[str, Any]:
         limit = self.limit
@@ -56,6 +59,8 @@ class ToolCallSearchParams:
         if not isinstance(self.filters, Unset):
             filters = self.filters.to_dict()
 
+        include_records = self.include_records
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
@@ -69,6 +74,8 @@ class ToolCallSearchParams:
             field_dict["sort_order"] = sort_order
         if filters is not UNSET:
             field_dict["filters"] = filters
+        if include_records is not UNSET:
+            field_dict["include_records"] = include_records
 
         return field_dict
 
@@ -102,12 +109,15 @@ class ToolCallSearchParams:
         else:
             filters = ToolCallSearchFilters.from_dict(_filters)
 
+        include_records = d.pop("include_records", UNSET)
+
         tool_call_search_params = cls(
             limit=limit,
             offset=offset,
             sort_by=sort_by,
             sort_order=sort_order,
             filters=filters,
+            include_records=include_records,
         )
 
         return tool_call_search_params

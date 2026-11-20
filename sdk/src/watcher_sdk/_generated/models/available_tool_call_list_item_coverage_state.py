@@ -6,6 +6,7 @@ class AvailableToolCallListItemCoverageState(StrEnum):
     DECIDED = "decided"
     GRADING_ERROR = "grading_error"
     NOT_EVALUATED = "not_evaluated"
+    SKIPPED = "skipped"
 
     def __str__(self) -> str:
         return str(self.value)

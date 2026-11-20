@@ -15,7 +15,7 @@ T = TypeVar("T", bound="AgentInventoryInstallationListResponse")
 
 @_attrs_define
 class AgentInventoryInstallationListResponse:
-    """A page of machines, most recently reported first.
+    """A page of machines, the one whose newest report of any kind arrived most recently first.
 
     Attributes:
         installations (list[AgentInventoryInstallation]):

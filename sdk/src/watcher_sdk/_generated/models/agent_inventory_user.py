@@ -20,15 +20,18 @@ T = TypeVar("T", bound="AgentInventoryUser")
 class AgentInventoryUser:
     """One person seen in the last 7 days, with their machines and the agents they used.
 
-    Attributes:
-        key (str): Identifies the person in this list: `user:<user ID>` for a Watcher user, including people a gateway
-            named, or `gateway:no-identity` for gateway traffic that named nobody.
-        user_id (None | UUID):
-        user_name (None | str):
-        user_email (None | str): Hidden unless you may read other people's email addresses.
-        last_report_at (datetime.datetime | None): The newest report from any of their machines.
-        machines (list[AgentInventoryUserMachine]): All their machines, most recently reported first.
-        agents (list[AgentInventoryUserAgent]): The agents they used in the last 7 days.
+    A person is seen when one of their machines sent any report, the heartbeat included, or a gateway named them.
+
+        Attributes:
+            key (str): Identifies the person in this list: `user:<user ID>` for a Watcher user, including people a gateway
+                named, or `gateway:no-identity` for gateway traffic that named nobody.
+            user_id (None | UUID):
+            user_name (None | str):
+            user_email (None | str): Hidden unless you may read other people's email addresses.
+            last_report_at (datetime.datetime | None): The newest report of any kind, the heartbeat included, from any of
+                their machines.
+            machines (list[AgentInventoryUserMachine]): All their machines, most recently reported first.
+            agents (list[AgentInventoryUserAgent]): The agents they used in the last 7 days.
     """
 
     key: str

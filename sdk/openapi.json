@@ -807,6 +807,54 @@
         }
       }
     },
+    "/v1/sessions/tool-call-records": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Record Tool Call Metadata",
+        "description": "Record tool calls Watcher observed but did not grade, without their content.\n\nEach record holds only the call's ID, tool name, observation time and the\nreason Watcher did not grade it (``watcher_ignore`` for a call in a\nsession a ``.watcher-ignore`` marker covered). Requests with any other\nfield are rejected with 422, so no tool input, output, working directory\nor message text can be sent.\n\nThe session is found or created from ``agent_session_id`` as\n``POST /v1/ingest`` finds it, matching only sessions within the caller's\nwrite scope and never changing an owner. A session created here has no\nmessages and stays out of session lists until its transcript arrives. A\ntemporary recording conflict returns 503 with ``Retry-After``; retry the\nrequest with bounded backoff.\n\nA recorded call becomes an ordinary tool call, linked to its message, as\nsoon as Watcher holds that message, whichever arrives first. Records are\nidempotent per call; a record never downgrades a call Watcher already\nevaluated, and a record for a call whose verdict was kept when retention\nremoved the session's content is acknowledged without being stored. Each result\nsays what the record did and what Watcher now holds for the call.",
+        "operationId": "record_tool_call_metadata_v1_sessions_tool_call_records_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolCallRecordsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCallRecordsResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Recording is temporarily unavailable; retry the request after Retry-After"
+          },
+          "400": {
+            "description": "The conversation's stored session cannot be matched safely, for example after a server rollback. Not final: retry later."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/grade": {
       "post": {
         "tags": [
@@ -3091,7 +3139,7 @@
           "installations"
         ],
         "summary": "Post Installation Report Endpoint",
-        "description": "Store one report from a Watcher client installation.\n\nSend a report after every scan, with a new `report_id`; retry a failed request with the same one. A\nreport whose ID is already stored changes nothing and returns 200 with `duplicate`. The installation is\nregistered to the signed-in user on its first report, never to anything in the body. Agent IDs and\nvalues this server does not recognize are ignored. Organization API keys cannot report.",
+        "description": "Store one report from a Watcher client installation.\n\nSend a report after every scan, with a new `report_id`; retry a failed request with the same one. A\nreport whose ID is already stored changes nothing and returns 200 with `duplicate`. The installation is\nregistered to the signed-in user on its first report, never to anything in the body. Agent IDs and\nvalues this server does not recognize are ignored. Organization API keys cannot report.\nThe client's 15-minute heartbeat (the `client` section) is stored even when inventory is off; a report\nholding only an inventory section is then refused.",
         "operationId": "post_installation_report_endpoint_v1_installations__installation_id__reports_post",
         "parameters": [
           {
@@ -3137,7 +3185,7 @@
             }
           },
           "409": {
-            "description": "Agent inventory is off in your organization's managed settings (code `inventory_disabled`): report again at the next scan. Or this installation ID belongs to another user (code `installation_conflict`): generate a new installation ID and report again.",
+            "description": "Agent inventory is off and the report has no `client` section (code `inventory_disabled`): report again at the next scan. Or this installation ID belongs to another user (code `installation_conflict`): generate a new installation ID and report again.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3217,7 +3265,7 @@
           "agent-inventory"
         ],
         "summary": "List Agent Inventory Installations Endpoint",
-        "description": "List machines running the Watcher client, with their owner and agents, most recently reported first.\n\nOther people's email addresses are hidden unless you may read user emails. Dates are UTC dates.",
+        "description": "List machines running the Watcher client, with their owner and agents, most recently reported first.\n\nEach machine carries its `assessment`: its group (needs attention, healthy or offline) and the conditions\nbehind it, judged at the time of the request. Other people's email addresses are hidden unless you may read\nuser emails. Dates are UTC dates.",
         "operationId": "list_agent_inventory_installations_endpoint_v1_agent_inventory_installations_get",
         "parameters": [
           {
@@ -3414,10 +3462,10 @@
                   "type": "null"
                 }
               ],
-              "description": "True: people with a machine that reported in the last 7 days; false: others.",
+              "description": "True: people with a machine that sent an inventory scan in the last 7 days, the people the summary's `people_reporting` counts; false: the others, including owners whose machines only sent the heartbeat.",
               "title": "Reporting"
             },
-            "description": "True: people with a machine that reported in the last 7 days; false: others."
+            "description": "True: people with a machine that sent an inventory scan in the last 7 days, the people the summary's `people_reporting` counts; false: the others, including owners whose machines only sent the heartbeat."
           },
           {
             "name": "key",
@@ -3469,6 +3517,59 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentInventoryUserListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agent-inventory/activity": {
+      "get": {
+        "tags": [
+          "agent-inventory"
+        ],
+        "summary": "List Agent Inventory Activity Endpoint",
+        "description": "List what changed on machines running the Watcher client in the last 7 days, newest first.\n\nChanges are found by comparing the reports each machine's client sent one after another: check-ins stopping,\nclient updates, agents turned off or on, Watcher's hooks going missing or coming back, snoozes, enforcement\nmode changes and upload backlogs. For one machine (`installation_id`), every change in the 7 days. For the whole\norganization, the changes in the last 24 hours (`recent_since`) except check-ins stopping (the machine list's\ncheck-in state shows those), plus earlier changes that still hold when the machine's reports say when they\nbegan: an agent turned off, a turned-on agent's hooks missing, an active snooze, uploads backing up and grading\npaused. While the organization's own mode is paused (known only when Watcher distributes its settings),\nmachines pausing are left out of both parts; under MDM distribution every machine's pause is listed.\nWhen the response is truncated, changes that still hold are kept first, a machine's own before changes the\norganization made to every machine (a mode change other than a pause, an agent locked off). An unknown\n`installation_id` lists nothing. Other people's email addresses are hidden unless you may read user\nemails. The organization-wide feed is reused for up to 5 minutes, so it can be that old (`generated_at` says\nwhen it was computed); one machine's feed is computed for each request.",
+        "operationId": "list_agent_inventory_activity_endpoint_v1_agent_inventory_activity_get",
+        "parameters": [
+          {
+            "name": "installation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One machine, whose full 7 days are listed; omit for the organization-wide feed.",
+              "title": "Installation Id"
+            },
+            "description": "One machine, whose full 7 days are listed; omit for the organization-wide feed."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInventoryActivityResponse"
                 }
               }
             }
@@ -3692,6 +3793,320 @@
         "title": "AdminSessionContentAccessRequestListResponse",
         "description": "A page of organization requests, ordered newest first."
       },
+      "AgentInventoryActivityEvent": {
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Installation Id"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname",
+            "description": "The machine's hostname from its newest agent inventory scan in the last 90 days; null when there is none, as with inventory off."
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id",
+            "description": "The machine's owner. Always set today; typed nullable for later kinds."
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name",
+            "description": "The owner's name, when Watcher knows it."
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email",
+            "description": "Hidden unless you may read other people's email addresses."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "went_offline",
+              "client_updated",
+              "agent_turned_off",
+              "agent_turned_on",
+              "hooks_missing",
+              "hooks_not_running",
+              "hooks_restored",
+              "snooze_started",
+              "snooze_ended",
+              "mode_changed",
+              "uploads_backing_up",
+              "uploads_caught_up",
+              "setup_outdated",
+              "setup_updated",
+              "self_check_flagged",
+              "self_check_cleared",
+              "inventory_stopped",
+              "inventory_resumed",
+              "health_incomplete",
+              "health_complete",
+              "health_missing",
+              "health_resumed"
+            ],
+            "title": "Kind",
+            "description": "What changed: `went_offline`, in a single machine's feed only, when the client stopped checking in: an ongoing silence once its newest report is older than its on-time window (35 minutes for a client sending the heartbeat, else 75), and a past silence when it lasted longer than 12 hours. A past silence of a client that sends no heartbeat can be a time when agent inventory was off. `client_updated` when the Watcher client's version changed, an event that never holds; `agent_turned_off` and `agent_turned_on` when an agent was turned off or on in Watcher's settings on the machine (an agent turned off that is not on the machine is not listed); `hooks_missing` when a turned-on agent's Watcher hooks became missing, whether they were installed before, the agent was installed since, or it was turned on without them; `hooks_not_running` when a turned-on agent's Watcher hooks were in place but the agent would not run them, with the reason in `to_value`; `hooks_restored` when the hooks were back in place and running after either; `snooze_started` and `snooze_ended` for a snooze of grading; `mode_changed` when the enforcement mode changed; `uploads_backing_up` when the oldest decision waiting to upload became older than 30 minutes, a decision gave up, or more than 100 records of ungraded calls were waiting, and `uploads_caught_up` when none of those held any more; `setup_outdated` when a turned-on agent's Watcher setup (hooks installed) became older than the client's, and `setup_updated` when it was current again; `self_check_flagged` when the client's background self-check's worst result became a warning or an error, and `self_check_cleared` when every section was ok again; `inventory_stopped` when inventory scans stopped for more than 24 hours while heartbeats kept arriving (an ongoing stop is listed only while collection is on), and `inventory_resumed` when scans came back; `health_incomplete` when a health reading had a value the client couldn't read (mode, snooze, upload counts, agents, or a turned-on agent's hooks or setup) and `health_complete` when one was complete again; `health_missing` when heartbeats arrived without endpoint health, two or more in a row, and `health_resumed` when health arrived again."
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At",
+            "description": "When it happened. For `went_offline`, the last report before it went offline; for `inventory_stopped`, the last scan before it; for `inventory_resumed`, the first scan after it; for `client_updated`, when the first report with the new version arrived; for an agent or its hooks, when the machine first saw the new state if it said so, else when the machine read it; for `snooze_started`, when the snooze began; for `snooze_ended`, when the snooze reached its planned end if that fell between the two reports, else when the machine read it ended; for `mode_changed`, `uploads_caught_up`, setup and self-check changes, when the machine read the new state (a held pause in the organization-wide feed: the first paused reading after the newest reading with another mode); for `uploads_backing_up`, when the oldest decision waiting crossed 30 minutes, which in the organization-wide feed is the oldest one still waiting. In a single machine's feed an ongoing silence keeps its true start, however old, so `at` can be earlier than `since`. Any other state that began before the 7 days is not listed; the machine's `health` has it."
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent",
+            "description": "The agent's ID for agent and hook changes; null for every other kind."
+          },
+          "from_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Value",
+            "description": "The previous client version for `client_updated`, the previous mode for `mode_changed`, the previous worst self-check result (`ok`, `warning` or `error`) for the self-check kinds; else null."
+          },
+          "to_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Value",
+            "description": "The new client version for `client_updated`, the new mode for `mode_changed`, the new worst self-check result for the self-check kinds, and for `hooks_not_running` why the agent skips the hooks: `untrusted` or `turned_off_in_agent`, as the machine's `health` reports them; else null."
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At",
+            "description": "For `went_offline`, when reports resumed; null while the client is still offline, and for every other kind."
+          },
+          "snooze_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snooze Until",
+            "description": "For `snooze_started`, when the snooze was set to end, which can be in the future; null when it had no end, and for every other kind. A snooze cancelled early has its own `snooze_ended`."
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked",
+            "description": "For `agent_turned_off`, whether the organization's settings lock the agent off, as the machine's newest report says while the agent is still off (else as the report beside the change said). It is the lock state, not who turned the agent off. Null when the machine could not tell, and for every other kind."
+          },
+          "signed_off_with": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "going_to_sleep",
+                  "woke",
+                  "stopping",
+                  "stopped_by_user",
+                  "signing_out"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed Off With",
+            "description": "For `went_offline`, the event the client sent with its last report before it went offline (see the machine's `presence.last_event`); null when it sent a scheduled report, and for every other kind."
+          },
+          "gap_cause": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "asleep",
+                  "machine_restarted",
+                  "watcher_not_running",
+                  "not_delivered"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap Cause",
+            "description": "For a past `went_offline`, what the first report after it came back says about it: `asleep` (the machine slept during the gap), `machine_restarted` (it booted during the gap, so it was off or restarting), `watcher_not_running` (the machine stayed up but Watcher's process started during the gap) or `not_delivered` (Watcher ran and the machine stayed awake, so its reports were sent but did not arrive: a network or server problem). Null while the silence lasts, when the client does not report these times, and for every other kind."
+          },
+          "still_current": {
+            "type": "boolean",
+            "title": "Still Current",
+            "description": "Whether the state this change began still holds in the machine's newest report: the agent is still off, the snooze still active and not past its planned end, the client still silent, and so on. False when a later change undid it, the newest report does not say, and always for `client_updated`."
+          }
+        },
+        "type": "object",
+        "required": [
+          "installation_id",
+          "hostname",
+          "user_id",
+          "user_name",
+          "user_email",
+          "kind",
+          "at",
+          "agent",
+          "from_value",
+          "to_value",
+          "ended_at",
+          "snooze_until",
+          "locked",
+          "still_current"
+        ],
+        "title": "AgentInventoryActivityEvent",
+        "description": "One change on one machine, found by comparing the reports its Watcher client sent one after another.\n\nThe reports say what changed on the machine, never who changed it."
+      },
+      "AgentInventoryActivityResponse": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At",
+            "description": "When the server computed this feed. The organization-wide feed is reused for up to 5 minutes, so it can be that old and miss changes reported since; one machine's feed is computed for each request."
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Since",
+            "description": "The start of the window: 7 days before `generated_at`. An ongoing silence in one machine's feed can have an earlier `at`."
+          },
+          "recent_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recent Since",
+            "description": "For the organization-wide feed, the start of the window in which every change except a silence is listed: 24 hours before `generated_at` (not the summary's 7-day recent window). Earlier changes in the 7 days are listed only while their state still holds, only when the machine's reports say when they began (not a state the client found already in place, nor a pause with no other mode read in the 7 days), and only for the problem kinds that can hold (everything but silences, updates and the kinds that end a problem). While the organization's own mode is paused, which the server knows only when Watcher distributes its settings, machines pausing are left out of both parts; under MDM distribution every machine's pause is listed. Null for a single machine, whose feed lists every change since `since`, silences included."
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryActivityEvent"
+            },
+            "type": "array",
+            "title": "Events",
+            "description": "The changes, newest `at` first."
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "description": "True when there were more than 2,000 changes, the most one response holds; there is no paging. Changes that still hold are kept first, a machine's own states before changes the organization made to every machine at once (a mode change other than a pause, an agent locked off by its settings), then the newest."
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "since",
+          "recent_since",
+          "events",
+          "truncated"
+        ],
+        "title": "AgentInventoryActivityResponse",
+        "description": "Changes on machines running the Watcher client over the last 7 days, newest first.\n\nOne machine's feed lists every change in the 7 days. The organization-wide feed lists no silences (the machine\nlist's `presence` shows each machine that is offline); it lists the other changes since\n`recent_since` and, from earlier in the 7 days, only the changes whose state still holds. The\norganization-wide feed can be up to 5 minutes old (`generated_at`)."
+      },
+      "AgentInventoryAgentHealthState": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "description": "The agent's ID, as in `health.agents`."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "turned_off",
+              "turned_off_by_organization",
+              "turned_off_not_found",
+              "on",
+              "setup_out_of_date",
+              "setup_unknown",
+              "hooks_missing",
+              "hooks_untrusted",
+              "hooks_turned_off_in_agent",
+              "agent_not_found",
+              "unknown"
+            ],
+            "title": "State",
+            "description": "`turned_off` (in Watcher's settings; an agent off whose lock was not read counts here), `turned_off_by_organization`, `turned_off_not_found` (off, and not installed), `on` (hooks installed and setup current), `setup_out_of_date`, `setup_unknown`, `hooks_missing`, `hooks_untrusted`, `hooks_turned_off_in_agent`, `agent_not_found` or `unknown` (hooks not read). Values may be added."
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent",
+          "state"
+        ],
+        "title": "AgentInventoryAgentHealthState",
+        "description": "One agent's state on the machine, from the health reading."
+      },
       "AgentInventoryCoverageCounts": {
         "properties": {
           "monitored": {
@@ -3782,6 +4197,537 @@
         "title": "AgentInventoryGatewaySummary",
         "description": "Clients seen in traffic through gateways connected to Watcher in the last 7 days."
       },
+      "AgentInventoryHealth": {
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At",
+            "description": "When the machine read these values, by its own clock; a time after the report arrived, or before 2020, is replaced by the arrival time."
+          },
+          "enforcement_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforcement Mode",
+            "description": "`enforce` when risky calls can be blocked; `observe` when calls are graded but never blocked; `paused` when nothing is evaluated, not even rules. Values may be added. Null when the machine could not read it or sent a value this server does not know."
+          },
+          "snooze": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentInventoryHealthSnooze"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether grading was snoozed; null when the machine could not read it."
+          },
+          "agents": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AgentInventoryHealthAgent"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agents",
+            "description": "Every coding agent Watcher has hooks for on the machine; null when the machine could not read them."
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentInventoryHealthDelivery"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The upload backlog; null when the machine could not read it."
+          },
+          "self_check": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self Check",
+            "description": "The machine's background self-check: each `watcher doctor` section it ran (`database`, `target`, `hooks`, `enforcement`, `settings`, `decisions`) to its worst result (`ok`, `warning` or `error`). Sections and results may be added. A section is missing when its check failed to run; the whole value is null when the machine could not run the self-check."
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received At",
+            "description": "When the report carrying these values arrived."
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed_at",
+          "enforcement_mode",
+          "snooze",
+          "agents",
+          "delivery",
+          "self_check",
+          "received_at"
+        ],
+        "title": "AgentInventoryHealth",
+        "description": "Whether Watcher was fully on for the machine, from its newest report that carried endpoint health."
+      },
+      "AgentInventoryHealthAgent": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "description": "The agent's ID, as in the machine's agent list."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether the agent is turned on in Watcher's settings on the machine."
+          },
+          "hooks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hooks",
+            "description": "Whether Watcher's hooks are in the agent's configuration and the agent runs them: `installed`, `missing`, or `agent_not_found` when they are missing and the agent itself was not found on the machine; `untrusted` when they are in place but the agent will not run at least one until the person trusts it (Codex asks for this after Watcher's setup installs or changes its hooks), and `turned_off_in_agent` when they are in place but the person turned at least one off in the agent's own hook list. Values may be added. Watcher's other setup assets (status line, profile command, skill) do not count. Null when the machine could not read it or sent a value this server does not know. The machine's hourly agent list carries the same facts as `watcher_hooks` (`on` for installed, and also for `untrusted` and `turned_off_in_agent`, which the agent list does not tell apart; `off` for missing on an agent turned on; `disabled` for an agent turned off). The two are read at different times (compare `received_at` with the agent list's report time), so they can disagree. For Claude Code they can also disagree for good: this value counts the agent as found only from files Claude itself writes or its command on the path, while the agent list also counts the settings folder, which Watcher's own setup creates."
+          },
+          "setup_current": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Current",
+            "description": "Whether Watcher's setup would change nothing for this agent: hooks up to date and other assets in place, or for an agent turned off, fully removed. Null when the machine did not report it."
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked",
+            "description": "Whether the organization's settings stop a developer from flipping the agent's current on/off choice: `permission: locked` on the agent's setting, set there or inherited, or `additions_allowed` for an agent the organization's baseline turns on. An agent turned off and locked was turned off by those settings. An agent off under `additions_allowed` is not locked, because a developer may turn it on. The machine reports this from its own copy of the organization's settings. Null when the machine did not report it; an agent turned off with `locked` null is treated like one a developer turned off."
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since",
+            "description": "When the machine first saw the agent's current state: for an agent turned off, when it was first seen off; otherwise when the current `enabled` and `hooks` values were first seen together. Null when the machine did not report it."
+          },
+          "since_first_check": {
+            "type": "boolean",
+            "title": "Since First Check",
+            "description": "The state may be older than `since`: it was already in place when the machine first checked, when it checked after a stretch without checks, or when it next read the agent's hooks after failing to."
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent",
+          "enabled",
+          "hooks",
+          "setup_current",
+          "locked",
+          "since",
+          "since_first_check"
+        ],
+        "title": "AgentInventoryHealthAgent",
+        "description": "One coding agent Watcher has hooks for, as the machine reported it."
+      },
+      "AgentInventoryHealthAssessment": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "enum": [
+              "needs_attention",
+              "healthy",
+              "offline"
+            ],
+            "title": "Group",
+            "description": "`needs_attention` when any condition in `issues` applies to a machine that is not merely offline; `offline` when it is offline for less than 7 days (asleep, shut down or no reason given), which is expected for laptops; `healthy` otherwise, notes allowed."
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryHealthCondition"
+            },
+            "type": "array",
+            "title": "Issues",
+            "description": "The conditions to show, worst severity first; a check-in condition always comes first. For an offline machine they include its last known health, which never moves it out of `offline`."
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryHealthCondition"
+            },
+            "type": "array",
+            "title": "Notes",
+            "description": "Conditions worth knowing that need no action, all with severity `note`."
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryAgentHealthState"
+            },
+            "type": "array",
+            "title": "Agents",
+            "description": "Each agent in the health reading with its state; empty without a health reading."
+          },
+          "health_current_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Current Until",
+            "description": "While the health reading is current, when it stops being current: its arrival plus one heartbeat window (35 minutes). Null when it was not current at the read (no reading, or the machine is not online)."
+          },
+          "inventory_current_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventory Current Until",
+            "description": "When the newest inventory scan stops being current: its arrival plus a day. Null without a scan."
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At",
+            "description": "The earliest time at which time alone could change this assessment: a reading turning stale, an online machine going quiet, an offline one reaching 7 days, a snooze ending. Null when only a new report or session can change it."
+          }
+        },
+        "type": "object",
+        "required": [
+          "group",
+          "issues",
+          "notes",
+          "agents",
+          "health_current_until",
+          "inventory_current_until",
+          "expires_at"
+        ],
+        "title": "AgentInventoryHealthAssessment",
+        "description": "What Watcher makes of the machine's check-in, health and inventory, judged when the list was read.\n\nThe rules behind it live on the server only. Judged at one instant, it can go out of date while it is shown:\nonce `expires_at` passes, show it as last known rather than working out a new one."
+      },
+      "AgentInventoryHealthCondition": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "reports_missing",
+              "watcher_stopped",
+              "signed_out",
+              "offline_long",
+              "asleep",
+              "shut_down",
+              "offline",
+              "not_reporting",
+              "no_health",
+              "health_stale",
+              "agent_off",
+              "agent_locked_off",
+              "hooks_missing",
+              "hooks_untrusted",
+              "hooks_turned_off_in_agent",
+              "setup_outdated",
+              "paused",
+              "observe",
+              "snoozed",
+              "uploads",
+              "self_check",
+              "health_incomplete",
+              "sessions_missing",
+              "unmonitored_agents",
+              "no_inventory",
+              "inventory_stale"
+            ],
+            "title": "Code",
+            "description": "What the condition is. Check-in: `reports_missing` (sessions kept arriving after reports stopped), `watcher_stopped`, `signed_out`, `offline_long` (offline 7 days or more), `asleep`, `shut_down`, `offline` (no reason given), `not_reporting` (agent inventory is off and the client sends no status report, so whether it is online cannot be judged). Health: `no_health`, `health_stale` (the newest reading of an online machine is older than one heartbeat window), `agent_off`, `agent_locked_off` (the organization's settings disable the agent), `hooks_missing`, `hooks_untrusted`, `hooks_turned_off_in_agent`, `setup_outdated`, `paused`, `observe`, `snoozed`, `uploads` (uploads backing up), `self_check`, `health_incomplete`. Inventory: `sessions_missing` (an agent with Watcher's hooks was used on the machine but none of its sessions arrived), `unmonitored_agents` (an agent without hooks was used and Watcher received none of its owner's sessions for it), `no_inventory`, `inventory_stale`. Values may be added."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "problem",
+              "warning",
+              "note"
+            ],
+            "title": "Severity",
+            "description": "`problem` or `warning` for something to act on; `note` for something worth knowing that needs no action: an expected offline state, observe mode, an agent the organization disables, a snooze that has ended or agents only a gateway could monitor."
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent",
+            "description": "The agent ID, for a condition about one agent's health (`agent_off`, `agent_locked_off`, the `hooks_*` codes and `setup_outdated`); its entry in `health.agents` holds the detail. Null otherwise."
+          },
+          "agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Agents",
+            "description": "For `sessions_missing` and `unmonitored_agents`, the agent IDs concerned; empty otherwise."
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since",
+            "description": "When the condition began, when the evidence shows it: the last check-in for a check-in condition, an agent's `since`, a snooze's start, the oldest decision waiting, the health reading's arrival for `health_stale`, the scan for `inventory_stale`. Null when unknown."
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At",
+            "description": "When time alone ends or changes this condition: the end of a snooze, the 7 days after which an offline machine needs attention, the day after a scan that sessions are matched against. Null when only a new report or session can change it."
+          },
+          "last_known": {
+            "type": "boolean",
+            "title": "Last Known",
+            "description": "Read from a health reading that is no longer current (the machine is not online, or the reading is older than one heartbeat window), so it may have changed since.",
+            "default": false
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "client_too_old",
+                  "health_read_failing",
+                  "watcher_running",
+                  "watcher_may_have_stopped"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause",
+            "description": "Why, for a code with more than one cause. `no_health`: `client_too_old` (it sends only hourly scans) or `health_read_failing` (it sends heartbeats without health). `reports_missing`: `watcher_running` (sessions from an agent whose hooks upload only while the Watcher app runs and is signed in, so the reports are not reaching the server) or `watcher_may_have_stopped`. Null otherwise."
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventorySelfCheckFinding"
+            },
+            "type": "array",
+            "title": "Sections",
+            "description": "For `self_check`, the flagged sections in `watcher doctor` order, leaving out those another condition already explains (`hooks` beside an agent's hooks condition, `decisions` beside `uploads`, `enforcement` beside `paused`); empty otherwise."
+          },
+          "unread": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInventoryUnreadValue"
+            },
+            "type": "array",
+            "title": "Unread",
+            "description": "For `health_incomplete`, each value the machine could not read."
+          },
+          "reasons": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "waiting",
+                "gave_up",
+                "call_records"
+              ]
+            },
+            "type": "array",
+            "title": "Reasons",
+            "description": "For `uploads`, why: `waiting` (decisions waiting that the machine's decisions self-check flagged), `gave_up` (decisions it stopped retrying) or `call_records` (more than 100 records of ungraded calls waiting). Empty otherwise."
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "severity"
+        ],
+        "title": "AgentInventoryHealthCondition",
+        "description": "One thing worth knowing about a machine's health, judged when the machine list was read.\n\nIt names the condition and the evidence behind it, never the words to show: a reader words it from `code` and\nthe machine's own fields."
+      },
+      "AgentInventoryHealthDelivery": {
+        "properties": {
+          "decisions_waiting": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decisions Waiting",
+            "description": "Tool-call decisions waiting to upload."
+          },
+          "oldest_decision_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Decision At",
+            "description": "When the oldest decision still waiting was made; null when none is waiting."
+          },
+          "decisions_gave_up": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decisions Gave Up",
+            "description": "Decisions from the last 7 days the machine stopped retrying."
+          },
+          "transcripts_waiting": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcripts Waiting",
+            "description": "Session transcripts waiting to upload that still have retries left."
+          },
+          "call_records_waiting": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Records Waiting",
+            "description": "Records of tool calls Watcher observed but did not grade, captured on the machine and not yet sent; null when the machine could not read them or its client does not report them."
+          }
+        },
+        "type": "object",
+        "required": [
+          "decisions_waiting",
+          "oldest_decision_at",
+          "decisions_gave_up",
+          "transcripts_waiting"
+        ],
+        "title": "AgentInventoryHealthDelivery",
+        "description": "What the machine was still waiting to upload. A null count means the machine could not read it."
+      },
+      "AgentInventoryHealthSnooze": {
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "description": "Whether a snooze was in effect."
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "When the active snooze began; null when none was active or the machine could not read it."
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until",
+            "description": "When the active snooze was set to end; null when none was active, the machine could not read it, or the machine reported an end more than a day after the report arrived."
+          }
+        },
+        "type": "object",
+        "required": [
+          "active",
+          "started_at",
+          "until"
+        ],
+        "title": "AgentInventoryHealthSnooze",
+        "description": "Whether grading was snoozed on the machine, and the active snooze's window."
+      },
       "AgentInventoryInstallation": {
         "properties": {
           "installation_id": {
@@ -3833,7 +4779,8 @@
                 "type": "null"
               }
             ],
-            "title": "Hostname"
+            "title": "Hostname",
+            "description": "From the newest inventory scan; null when none was collected."
           },
           "os": {
             "anyOf": [
@@ -3844,7 +4791,8 @@
                 "type": "null"
               }
             ],
-            "title": "Os"
+            "title": "Os",
+            "description": "From the newest inventory scan; null when none was collected."
           },
           "arch": {
             "anyOf": [
@@ -3855,7 +4803,8 @@
                 "type": "null"
               }
             ],
-            "title": "Arch"
+            "title": "Arch",
+            "description": "From the newest inventory scan; null when none was collected."
           },
           "client_version": {
             "anyOf": [
@@ -3866,17 +4815,59 @@
                 "type": "null"
               }
             ],
-            "title": "Client Version"
+            "title": "Client Version",
+            "description": "The Watcher client's version from the newest report, a heartbeat or an inventory scan; when that report has none, from the newest inventory scan."
           },
           "first_report_at": {
             "type": "string",
             "format": "date-time",
-            "title": "First Report At"
+            "title": "First Report At",
+            "description": "When the machine first sent any report, usually a heartbeat, so it can predate its first inventory report."
           },
           "last_report_at": {
             "type": "string",
             "format": "date-time",
-            "title": "Last Report At"
+            "title": "Last Report At",
+            "description": "When the newest report of any kind from this machine arrived. When `presence` is present, its `last_seen_at` is this time."
+          },
+          "inventory_reported_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventory Reported At",
+            "description": "When the newest report with this machine's agents (an inventory scan) arrived; null when none arrived in the last 90 days."
+          },
+          "presence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentInventoryPresence"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the machine's Watcher client is online; null while agent inventory is off and the client sends no heartbeat, because no new report from it is stored and whether it is online cannot be judged."
+          },
+          "health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentInventoryHealth"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Snooze, agents turned off, enforcement mode, upload backlog and self-check: the newest values among the machine's 10 most recent reports of any kind. Null when none of those 10 carried them (a client too old to send them, or one whose health read kept failing) or the stored value could not be read."
+          },
+          "missed_calls": {
+            "$ref": "#/components/schemas/AgentInventoryMissedCalls",
+            "description": "Tool calls the machine's client observed but did not grade in the last 7 days, by reason, from the records it sent naming this installation. Zero for a client that names no installation (older clients) as well as for one that missed nothing."
           },
           "agents": {
             "items": {
@@ -3884,6 +4875,18 @@
             },
             "type": "array",
             "title": "Agents"
+          },
+          "owner_watcher_sessions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Owner Watcher Sessions",
+            "description": "The owner's Watcher sessions active in the last 7 days, per agent Watcher can receive sessions from, from any of their machines or a gateway; an agent with none is left out. It stands in for the agents' own counts on a machine with no inventory scan, whose sessions cannot be matched to it by hostname."
+          },
+          "assessment": {
+            "$ref": "#/components/schemas/AgentInventoryHealthAssessment",
+            "description": "The machine's group (needs attention, healthy or offline) and the conditions behind it, judged at the read from the fields above and the organization's settings (whether they pause every machine and whether agent inventory is on)."
           }
         },
         "type": "object",
@@ -3898,10 +4901,15 @@
           "client_version",
           "first_report_at",
           "last_report_at",
-          "agents"
+          "inventory_reported_at",
+          "presence",
+          "health",
+          "missed_calls",
+          "agents",
+          "assessment"
         ],
         "title": "AgentInventoryInstallation",
-        "description": "One machine running the Watcher client, with its owner and agents."
+        "description": "One machine running the Watcher client, with its owner and agents.\n\nA machine is listed while its newest report of any kind, its 15-minute heartbeat included, is from the last 90\ndays, so machines show with agent inventory off too. A machine with no inventory scan in the last 90 days has\nnull `hostname`, `os`, `arch` and `inventory_reported_at`, and no agents: inventory was not collected from it."
       },
       "AgentInventoryInstallationAgent": {
         "properties": {
@@ -4090,7 +5098,141 @@
           "offset"
         ],
         "title": "AgentInventoryInstallationListResponse",
-        "description": "A page of machines, most recently reported first."
+        "description": "A page of machines, the one whose newest report of any kind arrived most recently first."
+      },
+      "AgentInventoryMissedCalls": {
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Since",
+            "description": "The start of the window: 7 days before the read."
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Calls recorded in the window; 0 when there were none."
+          },
+          "by_reason": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ToolCallSkipReason"
+            },
+            "type": "object",
+            "title": "By Reason",
+            "description": "Calls in the window by why Watcher did not grade them: `signed_out`, `auth_rejected`, `credential_helper_unavailable`, `watcher_offline`, `grading_breaker_hold` (review paused after repeated timeouts), `transcript_unavailable`, `empty_transcript`, `hook_error`, `watcher_ignore` (a `.watcher-ignore` file covered the session) or `unknown`. Reasons with no calls are absent."
+          }
+        },
+        "type": "object",
+        "required": [
+          "since",
+          "total",
+          "by_reason"
+        ],
+        "title": "AgentInventoryMissedCalls",
+        "description": "Tool calls the machine's Watcher client observed but did not grade in the last 7 days, by reason.\n\nCounted from the metadata-only tool-call records the client sent naming this installation: counts only, never\ntool names, IDs or content. A call graded after all (its record was replaced by an evaluation) is not counted."
+      },
+      "AgentInventoryPresence": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "online",
+              "offline",
+              "reports_missing"
+            ],
+            "title": "State",
+            "description": "`online` when the last report is on time; `reports_missing` when reports stopped but sessions recorded from this machine show activity after the next report was due, so the machine is in use; `offline` otherwise: the machine may be asleep, off or without a network (see `last_event` for what the client said before going quiet)."
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Seen At",
+            "description": "When the newest report of any kind from this machine arrived."
+          },
+          "active_agents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Agents",
+            "description": "For `reports_missing`, the coding agents (inventory agent IDs, such as `claude_code`) whose sessions recorded from this machine were active after `last_seen_at`, sorted; empty for every other state. It tells which agents are uploading sessions while the client's reports are missing."
+          },
+          "reports_every_minutes": {
+            "type": "integer",
+            "title": "Reports Every Minutes",
+            "description": "The reporting interval, in minutes, this machine is currently judged against. It follows the reports that arrive, so it can change when the client starts or stops sending heartbeats."
+          },
+          "last_machine_session_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Machine Session At",
+            "description": "The latest activity in the last 7 days in the owner's sessions recorded with this machine's hostname; null when there is none. Very recent activity does not count toward `state` until the client has had time to report, so an `offline` machine can show a session from a few minutes ago."
+          },
+          "last_event": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "going_to_sleep",
+                  "woke",
+                  "stopping",
+                  "stopped_by_user",
+                  "signing_out"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event",
+            "description": "What the client said it was doing in its last report, when it sent that report outside its schedule: `going_to_sleep`, `woke`, `stopping` (shutting down, restarting, logging out of the OS or updating), `stopped_by_user` or `signing_out`. Null for a scheduled report or a client that does not send events. Going offline after `going_to_sleep` or `stopping` is expected; after `stopped_by_user` or `signing_out` Watcher is off on the machine until someone starts it or signs in."
+          },
+          "online_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Online Until",
+            "description": "For `online`, when the machine stops counting as online unless another report arrives: `last_seen_at` plus the on-time window for `reports_every_minutes` (35 minutes for a 15-minute client, 75 for an hourly one). Null for every other state. A view kept open past it should show `online` as last known."
+          },
+          "may_change_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "May Change At",
+            "description": "The first time at which time alone could change `state`, never later than the change itself: `online_until` for `online`; for `offline` with sessions from this machine after its last report, when those sessions start to count; for `reports_missing`, when its newest session leaves the 7-day session window. Null when only a new report or session can change it."
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "last_seen_at",
+          "reports_every_minutes",
+          "last_machine_session_at"
+        ],
+        "title": "AgentInventoryPresence",
+        "description": "Whether the machine's Watcher client is online, judged against how often it reports.\n\nEvery report the client sends counts: an hourly agent inventory scan, or the 15-minute status report (the\nheartbeat) from clients that send one."
       },
       "AgentInventoryReportAgent": {
         "properties": {
@@ -4170,6 +5312,30 @@
         ],
         "title": "AgentInventoryReportAgent",
         "description": "One agent found on the machine."
+      },
+      "AgentInventorySelfCheckFinding": {
+        "properties": {
+          "section": {
+            "type": "string",
+            "title": "Section",
+            "description": "The `watcher doctor` section, as in the health reading's `self_check`."
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "title": "Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "section",
+          "result"
+        ],
+        "title": "AgentInventorySelfCheckFinding",
+        "description": "One background self-check section that flagged a warning or an error."
       },
       "AgentInventoryStatus": {
         "properties": {
@@ -4311,10 +5477,16 @@
             "type": "boolean",
             "title": "Enabled"
           },
+          "organization_paused": {
+            "type": "boolean",
+            "title": "Organization Paused",
+            "description": "Whether the organization's managed settings pause grading on every machine. True only while Watcher distributes those settings; under MDM distribution each machine's own mode applies.",
+            "default": false
+          },
           "machines": {
             "type": "integer",
             "title": "Machines",
-            "description": "Machines that reported in the last 90 days."
+            "description": "Machines with an inventory scan in the last 90 days. The machine list also shows machines that only send the heartbeat, which this does not count."
           },
           "people": {
             "type": "integer",
@@ -4324,12 +5496,12 @@
           "people_seen": {
             "type": "integer",
             "title": "People Seen",
-            "description": "People seen in the last 7 days, as the owner of a reporting machine or through a gateway: the base for every share of people."
+            "description": "People seen in the last 7 days: the owner of a machine that sent a report of any kind, the heartbeat included, or a person in gateway traffic. The people list's unfiltered total, and the base for every share of people."
           },
           "people_reporting": {
             "type": "integer",
             "title": "People Reporting",
-            "description": "People who own a machine that reported in the last 7 days."
+            "description": "People who own a machine that sent an inventory scan in the last 7 days: the people list filtered by `reporting=true`."
           },
           "gap_people": {
             "type": "integer",
@@ -4346,7 +5518,7 @@
               }
             ],
             "title": "Unsanctioned People",
-            "description": "People who used any agent named in the `unsanctioned` query parameter in the last 7 days, on a reporting machine or through a gateway; null when the parameter is absent."
+            "description": "People who used any agent named in the `unsanctioned` query parameter in the last 7 days: on a machine's inventory, in sessions Watcher received, or through a gateway; null when the parameter is absent."
           },
           "newest_report_at": {
             "anyOf": [
@@ -4392,6 +5564,42 @@
         ],
         "title": "AgentInventorySummaryResponse",
         "description": "Organization-wide agent inventory counts.\n\nAgents with `people_using` of 0 are installed but unused; agents with `machines` of 0 are used by people whose\nmachines do not report them, seen through a gateway or in sessions Watcher received."
+      },
+      "AgentInventoryUnreadValue": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": [
+              "enforcement_mode",
+              "snooze",
+              "agents",
+              "hooks",
+              "setup",
+              "uploads",
+              "self_check"
+            ],
+            "title": "Value",
+            "description": "`enforcement_mode`, `snooze`, `agents` (missing or empty), an agent's `hooks` or `setup`, `uploads` (a count, or the decisions self-check result while decisions wait) or `self_check` (the whole result, or a section with none)."
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent",
+            "description": "The agent, for `hooks` and `setup`; null otherwise."
+          }
+        },
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "AgentInventoryUnreadValue",
+        "description": "One value a complete health reading needs that the machine could not read."
       },
       "AgentInventoryUser": {
         "properties": {
@@ -4446,7 +5654,7 @@
               }
             ],
             "title": "Last Report At",
-            "description": "The newest report from any of their machines."
+            "description": "The newest report of any kind, the heartbeat included, from any of their machines."
           },
           "machines": {
             "items": {
@@ -4476,7 +5684,7 @@
           "agents"
         ],
         "title": "AgentInventoryUser",
-        "description": "One person seen in the last 7 days, with their machines and the agents they used."
+        "description": "One person seen in the last 7 days, with their machines and the agents they used.\n\nA person is seen when one of their machines sent any report, the heartbeat included, or a gateway named them."
       },
       "AgentInventoryUserAgent": {
         "properties": {
@@ -4678,7 +5886,8 @@
                 "type": "null"
               }
             ],
-            "title": "Hostname"
+            "title": "Hostname",
+            "description": "From the newest inventory scan; null when none was collected."
           },
           "os": {
             "anyOf": [
@@ -4689,12 +5898,25 @@
                 "type": "null"
               }
             ],
-            "title": "Os"
+            "title": "Os",
+            "description": "From the newest inventory scan; null when none was collected."
           },
           "last_report_at": {
             "type": "string",
             "format": "date-time",
-            "title": "Last Report At"
+            "title": "Last Report At",
+            "description": "When the newest report of any kind from this machine arrived."
+          },
+          "presence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentInventoryPresence"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the machine's Watcher client is online; null while agent inventory is off and the client sends no heartbeat, because no new report from it is stored and whether it is online cannot be judged."
           }
         },
         "type": "object",
@@ -4702,10 +5924,11 @@
           "installation_id",
           "hostname",
           "os",
-          "last_report_at"
+          "last_report_at",
+          "presence"
         ],
         "title": "AgentInventoryUserMachine",
-        "description": "One of a person's machines running the Watcher client."
+        "description": "One of a person's machines running the Watcher client, with whether it is online.\n\nFor its endpoint health, read the machine list (`GET /v1/agent-inventory/installations`), whose entry carries\nthe same online status."
       },
       "AgentRelationshipRequest": {
         "properties": {
@@ -5565,7 +6788,8 @@
               "decided",
               "not_evaluated",
               "grading_error",
-              "bypassed"
+              "bypassed",
+              "skipped"
             ],
             "title": "Coverage State",
             "default": "decided"
@@ -5621,6 +6845,17 @@
               }
             ],
             "description": "Mode in which the original permission action was recorded."
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolCallSkipReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the Watcher client observed the call but did not grade it, when it reported it as skipped."
           },
           "user_id": {
             "anyOf": [
@@ -6910,6 +8145,81 @@
         ],
         "title": "ClaudeCodeTrajectory",
         "description": "A Claude Code JSONL file or delta, with a stable conversation identity.\n\n``session_id`` is the current Claude Code conversation ID, not a Watcher\nsession UUID. Send the same value on full uploads and deltas: it takes\nprecedence over historical ``sessionId`` values in copied entries. When\nomitted or empty, each parsed branch uses its first entry's ``sessionId``.\nOwnership checks still apply to the selected conversation, and hook\nappends must name the same conversation as their stored anchor.\n\nSupply ``agent`` on every child upload, including appends. Entry-level root\nsession and agent IDs must match it when present. Custom imports may omit\n``agentId`` on records containing a ``message`` or ``attachment`` only with\n``isSidechain: true``; metadata without either payload may omit both markers.\n``resolve_tool_calls`` requests message hashes for selected native calls,\nincluding duplicate uploads."
+      },
+      "ClientHeartbeat": {
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At",
+            "description": "When the client built this heartbeat, by its own clock."
+          },
+          "client_version": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Client Version",
+            "description": "The Watcher client's version."
+          },
+          "event": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event",
+            "description": "Why this heartbeat was sent outside the schedule: `going_to_sleep`, `woke`, `stopping`, `stopped_by_user` or `signing_out` (see `ClientEventValue`); null for a scheduled heartbeat. An open string: a server ignores an event it does not know."
+          },
+          "asleep_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asleep Since",
+            "description": "With `woke`: when the machine went to sleep, by the client's clock (the last time the client saw itself running before the sleep). Null otherwise."
+          },
+          "process_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Started At",
+            "description": "When the client's background process started, by its clock. Null when unknown."
+          },
+          "system_booted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Booted At",
+            "description": "When the machine last booted, by its clock. Null when the client could not read it."
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed_at",
+          "client_version"
+        ],
+        "title": "ClientHeartbeat",
+        "description": "The client's heartbeat, sent every 15 minutes whatever the organization's agent inventory setting.\n\nThe client also sends one at once when something changes whether it can report: the machine going to sleep\nor waking, the client stopping, or someone signing it out (``event``). Unknown fields are ignored."
       },
       "CodexContentItem": {
         "properties": {
@@ -8964,6 +10274,284 @@
         "title": "DocumentRange",
         "description": "A range specifying a section of a document."
       },
+      "EndpointHealthAgent": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Agent",
+            "description": "The agent's inventory ID, such as `claude_code`."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether the agent is turned on in Watcher's settings on the machine."
+          },
+          "hooks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hooks",
+            "description": "`installed`, `missing`, `agent_not_found`, `untrusted` (in place, but the agent will not run them until the person trusts them) or `turned_off_in_agent` (in place, but turned off in the agent's own hook list); null when the check failed."
+          },
+          "setup_current": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Current",
+            "description": "Whether running Watcher's setup would change nothing for this agent: its hooks are up to date and its other setup assets are in place (or, for an agent turned off, fully removed); null when the client could not tell."
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked",
+            "description": "Whether the organization's settings stop a developer from flipping the agent's current on/off choice: `permission: locked` on `agents.enabled.<name>`, set there or inherited from `agents.enabled`, `agents` or the document root; or `additions_allowed` with the agent on because the organization's baseline turns it on. An agent off under `additions_allowed` is not locked, because a developer may turn it on. This is the rule `watcher agents enable` and `disable` refuse by. Null when the client could not read it."
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since",
+            "description": "When the client first saw the agent's current state: for an agent turned off, when it was first seen off, whatever its hooks did since; otherwise when the current `enabled` and `hooks` values were first seen together. Null when the client could not keep track."
+          },
+          "since_first_check": {
+            "type": "boolean",
+            "title": "Since First Check",
+            "description": "The state may be older than `since`: it was already in place when the client first checked, when it checked after a stretch without checks, or when it next read the agent's hooks after failing to.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent",
+          "enabled"
+        ],
+        "title": "EndpointHealthAgent",
+        "description": "One coding agent Watcher has hooks for: whether it is turned on in Watcher and how its hooks stand."
+      },
+      "EndpointHealthDelivery": {
+        "properties": {
+          "decisions_waiting": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decisions Waiting",
+            "description": "Tool-call decisions waiting to upload."
+          },
+          "oldest_decision_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Decision At",
+            "description": "When the oldest decision still waiting was made; null when none is waiting."
+          },
+          "decisions_gave_up": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decisions Gave Up",
+            "description": "Decisions from the last 7 days the client stopped retrying."
+          },
+          "transcripts_waiting": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcripts Waiting",
+            "description": "Session transcripts waiting to upload that have retries left."
+          },
+          "call_records_waiting": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Records Waiting",
+            "description": "Records of tool calls Watcher observed but did not grade, captured and not yet sent."
+          }
+        },
+        "type": "object",
+        "title": "EndpointHealthDelivery",
+        "description": "What the machine is still waiting to upload. A null count means the client could not read it."
+      },
+      "EndpointHealthSnooze": {
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "description": "Whether a snooze is in effect now."
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "When the active snooze began; null when none is active or it could not be read."
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until",
+            "description": "When the active snooze is set to end; null when none is active or it could not be read."
+          }
+        },
+        "type": "object",
+        "required": [
+          "active"
+        ],
+        "title": "EndpointHealthSnooze",
+        "description": "Whether the user has snoozed grading on the machine, and the active snooze's window."
+      },
+      "EndpointHealthStatus": {
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At",
+            "description": "When the client read these values, by the machine's clock."
+          },
+          "enforcement_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforcement Mode",
+            "description": "`enforce` (risky calls can be blocked), `observe` (graded, never blocked) or `paused` (nothing is evaluated, not even rules); null when the client could not read it."
+          },
+          "snooze": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EndpointHealthSnooze"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether grading is snoozed; null when the client could not read it."
+          },
+          "agents": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EndpointHealthAgent"
+                },
+                "type": "array",
+                "maxItems": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agents",
+            "description": "Every coding agent Watcher has hooks for; null when the client could not read them."
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EndpointHealthDelivery"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The upload backlog; null when the client could not read it."
+          },
+          "self_check": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object",
+                "maxProperties": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self Check",
+            "description": "`watcher doctor` section name to `ok`, `warning` or `error`, for the sections the client checks in the background. A section is missing when its check failed to run; null when the client could not run the self-check at all."
+          }
+        },
+        "type": "object",
+        "required": [
+          "observed_at"
+        ],
+        "title": "EndpointHealthStatus",
+        "description": "Whether Watcher is fully on for the machine, as the client saw it at ``observed_at``.\n\nOnly states, times and counts: never paths, folder or project names, snooze reasons, session IDs, settings\ncontents or the self-check's text. A missing field means the client could not read it."
+      },
       "EnforcementMode": {
         "type": "string",
         "enum": [
@@ -10787,6 +12375,28 @@
               }
             ],
             "description": "The coding agents found on the machine, when agent inventory is on."
+          },
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientHeartbeat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The client's heartbeat, sent every 15 minutes: when it was sent and its version."
+          },
+          "health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EndpointHealthStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Snooze, per-agent hooks, enforcement mode, upload backlog and self-check."
           }
         },
         "type": "object",
@@ -10865,6 +12475,188 @@
         ],
         "title": "MessageDetailResponse",
         "description": "One full-content message from GET /sessions/{sid}/messages/{message_ref}.\n\nBacks per-elision expansion in the Analyzer: the truncated trajectory view marks\nwhat it elided, and this response carries the single message's stored content so\nthe client never refetches the whole trajectory to expand one item. The message\nuses the same wire shape as trajectory-response messages."
+      },
+      "MetadataOnlyToolCallListItem": {
+        "properties": {
+          "tool_call_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tool Call Id"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "is_flagged": {
+            "type": "boolean",
+            "title": "Is Flagged",
+            "description": "Whether Watcher recorded a policy block or escalation, excluding grading failures."
+          },
+          "severity_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity Score"
+          },
+          "coverage_state": {
+            "type": "string",
+            "enum": [
+              "decided",
+              "not_evaluated",
+              "grading_error",
+              "bypassed",
+              "skipped"
+            ],
+            "title": "Coverage State",
+            "default": "decided"
+          },
+          "decision_category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "human_denied",
+                  "auto_denied",
+                  "human_allowed",
+                  "would_denied",
+                  "would_escalated",
+                  "cleared"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Category"
+          },
+          "applied_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppliedDecision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Original permission action, independent of grading success."
+          },
+          "judged_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JudgedDecision"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Original policy judgment, including a failure-policy fallback."
+          },
+          "enforcement_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnforcementMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mode in which the original permission action was recorded."
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolCallSkipReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the Watcher client observed the call but did not grade it, when it reported it as skipped."
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "user_first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User First Name"
+          },
+          "user_last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Last Name"
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
+          },
+          "content_state": {
+            "type": "string",
+            "const": "metadata_only",
+            "title": "Content State",
+            "default": "metadata_only"
+          },
+          "tool_use_id": {
+            "type": "string",
+            "title": "Tool Use Id",
+            "description": "Transcript-local identifier of the tool call."
+          },
+          "tool_name": {
+            "type": "string",
+            "title": "Tool Name",
+            "description": "The tool's name as the agent reported it."
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_call_id",
+          "session_id",
+          "occurred_at",
+          "is_flagged",
+          "tool_use_id",
+          "tool_name"
+        ],
+        "title": "MetadataOnlyToolCallListItem",
+        "description": "A call the Watcher client reported without content, whose transcript has not arrived.\n\nIt has no message to link to. Once Watcher stores the message holding the\ncall, the same call is listed as available."
       },
       "ModelTokenBudget": {
         "properties": {
@@ -12711,7 +14503,8 @@
               "decided",
               "not_evaluated",
               "grading_error",
-              "bypassed"
+              "bypassed",
+              "skipped"
             ],
             "title": "Coverage State",
             "default": "decided"
@@ -12767,6 +14560,17 @@
               }
             ],
             "description": "Mode in which the original permission action was recorded."
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolCallSkipReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the Watcher client observed the call but did not grade it, when it reported it as skipped."
           },
           "user_id": {
             "anyOf": [
@@ -14059,6 +15863,15 @@
         "title": "ToolCallContent",
         "description": "Content to include in tool call view."
       },
+      "ToolCallContentState": {
+        "type": "string",
+        "enum": [
+          "linked",
+          "metadata_only"
+        ],
+        "title": "ToolCallContentState",
+        "description": "How much of a tool call Watcher holds.\n\n``linked``: the call with the message that contains it. ``metadata_only``:\nonly the call's ID, tool name and observation time, until its message\narrives."
+      },
       "ToolCallDecisionBatchRequest": {
         "properties": {
           "session_id": {
@@ -15139,12 +16952,16 @@
                 },
                 {
                   "$ref": "#/components/schemas/ScrubbedToolCallListItem"
+                },
+                {
+                  "$ref": "#/components/schemas/MetadataOnlyToolCallListItem"
                 }
               ],
               "discriminator": {
                 "propertyName": "content_state",
                 "mapping": {
                   "available": "#/components/schemas/AvailableToolCallListItem",
+                  "metadata_only": "#/components/schemas/MetadataOnlyToolCallListItem",
                   "scrubbed": "#/components/schemas/ScrubbedToolCallListItem"
                 }
               }
@@ -15174,6 +16991,155 @@
         ],
         "title": "ToolCallListResponse",
         "description": "Paginated response from POST /v1/tool-calls/search."
+      },
+      "ToolCallRecord": {
+        "properties": {
+          "tool_use_id": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Tool Use Id",
+            "description": "The agent's own ID for the call, as its transcript records it."
+          },
+          "tool_name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Tool Name",
+            "description": "The tool's name as the agent reported it."
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At",
+            "description": "When the client observed the call. A time in the future or before 2024 is replaced by the time Watcher received the record."
+          },
+          "skip_reason": {
+            "$ref": "#/components/schemas/ToolCallSkipReason",
+            "description": "Why Watcher did not grade the observed call; watcher_ignore for a call in a session a .watcher-ignore marker covered."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tool_use_id",
+          "tool_name",
+          "observed_at",
+          "skip_reason"
+        ],
+        "title": "ToolCallRecord",
+        "description": "One tool call the client observed without grading it."
+      },
+      "ToolCallRecordResult": {
+        "properties": {
+          "tool_use_id": {
+            "type": "string",
+            "title": "Tool Use Id",
+            "description": "The record's tool_use_id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "linked",
+              "ignored_existing"
+            ],
+            "title": "Status",
+            "description": "stored: Watcher now holds the call without content. linked: Watcher held the call's message, so the record became, or explained, an ordinary tool call linked to it. ignored_existing: nothing changed, because Watcher already held the call in a state the record cannot change, or retention removed the session's content and kept the call's outcome."
+          },
+          "content_state": {
+            "$ref": "#/components/schemas/ToolCallContentState",
+            "description": "What Watcher holds for the call after this request: linked (with its message) or metadata_only. A record acknowledged without storage on a session whose content was removed reports metadata_only."
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_use_id",
+          "status",
+          "content_state"
+        ],
+        "title": "ToolCallRecordResult",
+        "description": "The outcome of one record, in request order after duplicates are merged."
+      },
+      "ToolCallRecordsRequest": {
+        "properties": {
+          "agent_platform": {
+            "type": "string",
+            "enum": [
+              "claude_code",
+              "codex"
+            ],
+            "title": "Agent Platform",
+            "description": "The agent that made the calls: claude_code or codex. Other agents are rejected."
+          },
+          "agent_session_id": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00]*$",
+            "title": "Agent Session Id",
+            "description": "The agent's own conversation ID, the same one its transcript upload carries."
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallRecord"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Records",
+            "description": "The session's records, 1 to 500 per request. Repeated tool_use_ids count once."
+          },
+          "installation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installation Id",
+            "description": "The reporting Watcher client's installation ID (the one its installation reports carry). Stored with each new record when it names an installation the caller owns, so agent inventory can count a machine's records; otherwise ignored, never refused."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agent_platform",
+          "agent_session_id",
+          "records"
+        ],
+        "title": "ToolCallRecordsRequest",
+        "description": "Records of one agent session's ungraded tool calls."
+      },
+      "ToolCallRecordsResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id",
+            "description": "Watcher's ID for the session the records belong to."
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallRecordResult"
+            },
+            "type": "array",
+            "title": "Records",
+            "description": "One result per distinct tool_use_id, in request order."
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "records"
+        ],
+        "title": "ToolCallRecordsResponse",
+        "description": "The session the records were filed under and each record's outcome."
       },
       "ToolCallResult": {
         "properties": {
@@ -15400,12 +17366,35 @@
           },
           "filters": {
             "$ref": "#/components/schemas/ToolCallSearchFilters"
+          },
+          "include_records": {
+            "type": "boolean",
+            "title": "Include Records",
+            "description": "Also list calls for which Watcher holds only a tool-call record, as metadata_only rows with their skip_reason, and report coverage_state skipped for recorded calls.",
+            "default": false
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "ToolCallSearchParams",
         "description": "Request body for POST /tool-calls/search."
+      },
+      "ToolCallSkipReason": {
+        "type": "string",
+        "enum": [
+          "grading_breaker_hold",
+          "watcher_offline",
+          "credential_helper_unavailable",
+          "signed_out",
+          "auth_rejected",
+          "transcript_unavailable",
+          "empty_transcript",
+          "hook_error",
+          "watcher_ignore",
+          "unknown"
+        ],
+        "title": "ToolCallSkipReason",
+        "description": "Why the Watcher client observed a tool call but did not grade it.\n\nReported on a metadata-only tool-call record. ``unknown`` covers a client\nthat could not name the cause."
       },
       "ToolStatus": {
         "type": "string",

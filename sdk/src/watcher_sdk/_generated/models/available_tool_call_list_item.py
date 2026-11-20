@@ -26,6 +26,7 @@ from ..models.available_tool_call_list_item_ingest_kind_type_0 import (
 )
 from ..models.enforcement_mode import EnforcementMode
 from ..models.judged_decision import JudgedDecision
+from ..models.tool_call_skip_reason import ToolCallSkipReason
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="AvailableToolCallListItem")
@@ -50,6 +51,8 @@ class AvailableToolCallListItem:
         applied_decision (AppliedDecision | None | Unset): Original permission action, independent of grading success.
         judged_decision (JudgedDecision | None | Unset): Original policy judgment, including a failure-policy fallback.
         enforcement_mode (EnforcementMode | None | Unset): Mode in which the original permission action was recorded.
+        skip_reason (None | ToolCallSkipReason | Unset): Why the Watcher client observed the call but did not grade it,
+            when it reported it as skipped.
         user_id (None | Unset | UUID):
         user_first_name (None | str | Unset):
         user_last_name (None | str | Unset):
@@ -81,6 +84,7 @@ class AvailableToolCallListItem:
     applied_decision: AppliedDecision | None | Unset = UNSET
     judged_decision: JudgedDecision | None | Unset = UNSET
     enforcement_mode: EnforcementMode | None | Unset = UNSET
+    skip_reason: None | ToolCallSkipReason | Unset = UNSET
     user_id: None | Unset | UUID = UNSET
     user_first_name: None | str | Unset = UNSET
     user_last_name: None | str | Unset = UNSET
@@ -150,6 +154,14 @@ class AvailableToolCallListItem:
             enforcement_mode = self.enforcement_mode.value
         else:
             enforcement_mode = self.enforcement_mode
+
+        skip_reason: None | str | Unset
+        if isinstance(self.skip_reason, Unset):
+            skip_reason = UNSET
+        elif isinstance(self.skip_reason, ToolCallSkipReason):
+            skip_reason = self.skip_reason.value
+        else:
+            skip_reason = self.skip_reason
 
         user_id: None | str | Unset
         if isinstance(self.user_id, Unset):
@@ -230,6 +242,8 @@ class AvailableToolCallListItem:
             field_dict["judged_decision"] = judged_decision
         if enforcement_mode is not UNSET:
             field_dict["enforcement_mode"] = enforcement_mode
+        if skip_reason is not UNSET:
+            field_dict["skip_reason"] = skip_reason
         if user_id is not UNSET:
             field_dict["user_id"] = user_id
         if user_first_name is not UNSET:
@@ -358,6 +372,23 @@ class AvailableToolCallListItem:
 
         enforcement_mode = _parse_enforcement_mode(d.pop("enforcement_mode", UNSET))
 
+        def _parse_skip_reason(data: object) -> None | ToolCallSkipReason | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                skip_reason_type_0 = ToolCallSkipReason(data)
+
+                return skip_reason_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | ToolCallSkipReason | Unset, data)
+
+        skip_reason = _parse_skip_reason(d.pop("skip_reason", UNSET))
+
         def _parse_user_id(data: object) -> None | Unset | UUID:
             if data is None:
                 return data
@@ -472,6 +503,7 @@ class AvailableToolCallListItem:
             applied_decision=applied_decision,
             judged_decision=judged_decision,
             enforcement_mode=enforcement_mode,
+            skip_reason=skip_reason,
             user_id=user_id,
             user_first_name=user_first_name,
             user_last_name=user_last_name,

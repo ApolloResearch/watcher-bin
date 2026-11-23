@@ -27,16 +27,21 @@ severe matching action wins (deny > escalate_human > escalate_triage > allow).
 from __future__ import annotations
 
 import fnmatch
+import hashlib
+import importlib
 import json
+import logging
 import posixpath
 import re
 import shlex
+import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from enum import StrEnum
-from typing import Any, Literal, Protocol
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, Literal, Protocol, get_args
 
-import regex as regex_module
 from pydantic import BaseModel, ConfigDict, JsonValue, SkipValidation, TypeAdapter, ValidationError
 
 from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
@@ -46,6 +51,9 @@ from watcher_sdk.settings_schema.watcher_settings_yaml_helpers import (
     unwrap,
 )
 from watcher_sdk.settings_schema.watcher_settings_yaml_schema import DECISION_TO_ACTION
+
+if TYPE_CHECKING:
+    import watcher_regex
 
 # The schema's lax-int coercion, reused so threshold resolution accepts exactly
 # what validation accepted (see _threshold_int).
@@ -58,6 +66,12 @@ THRESHOLD_DISABLED = 11
 
 RULE_MATCH_TIMEOUT_SECONDS = 0.25
 RULE_EVALUATION_BUDGET_SECONDS = 2.0
+# The native engine's own limit, in thread CPU time, for compiling one pattern.
+_NATIVE_COMPILE_TIMEOUT_SECONDS = 0.5
+# The native engine's shortest limit, for validation: the parser, which no limit cuts short, finds every syntax error,
+# and the build, which validation does not need, stops. Only the parser raises ``error``: a build that fails after it
+# raises ``PatternTooLarge`` (``resource_limit``), so a pattern that validates here is never invalid at evaluation.
+_VALIDATION_COMPILE_SECONDS = 0.001
 MAX_RULE_PATTERN_LENGTH = 16_384
 MAX_COMMAND_LENGTH = 131_072
 
@@ -132,6 +146,56 @@ class _CompiledPattern(Protocol):
     def pattern(self) -> str: ...
     def search(self, string: str, *, timeout: float | None = None) -> object | None: ...
     def match(self, string: str, *, timeout: float | None = None) -> object | None: ...
+
+
+# ``mrab`` is the ``regex`` package (named for its author's handle), ``rust`` the native ``watcher_regex`` engine.
+# Only a server chooses: clients evaluate with every entry point's default, ``mrab``.
+RegexEngineName = Literal["mrab", "rust"]
+
+
+# Unannotated so pyright infers the module, whose stub then types every use.
+def _native_engine():
+    import watcher_regex  # on first use, so mrab mode never loads it
+
+    return watcher_regex
+
+
+# Imported on first use, so rust mode never loads regex.
+def _regex() -> ModuleType:
+    return importlib.import_module("regex")
+
+
+def _check_regex_engine(engine: RegexEngineName) -> None:
+    """Load ``engine`` now, at startup, where a process that cannot run with it can still refuse to start.
+
+    Raises ``ImportError`` for ``rust`` when ``watcher_regex`` cannot be imported; ``mrab`` imports nothing.
+    """
+    if engine == "rust":
+        _native_engine()
+
+
+def _unchecked_rules_escalate(engine: RegexEngineName) -> bool:
+    """Whether a deny or human-review rule that could not be checked asks a person (mrab) or leaves the call graded."""
+    return engine == "mrab"
+
+
+def _contained_search_errors(engine: RegexEngineName) -> tuple[type[Exception], ...]:
+    """What a search can raise that leaves only its rule unchecked: the native engine also runs out of memory or fails.
+
+    ``MemoryError`` is a failed allocation, ``RuntimeError`` a panic or a pattern quarantined after panics.
+    """
+    return (TimeoutError, MemoryError, RuntimeError) if engine == "rust" else (TimeoutError,)
+
+
+def _engine_time_limit(engine: RegexEngineName, limit: float, remaining: float) -> float:
+    """``limit`` capped so an operation started now stops by the deadline ``remaining`` seconds away.
+
+    The native engine's limit is this thread's CPU time, and it stops on the wall clock only at
+    ``TIMEOUT_BACKSTOP`` times that, so a thread kept off the processor would otherwise run past the deadline.
+    """
+    if engine == "rust":
+        remaining /= _native_engine().TIMEOUT_BACKSTOP
+    return min(limit, remaining)
 
 
 class CommandRuleMatch(BaseModel):
@@ -519,18 +583,20 @@ def _pattern_matches(pattern: _CompiledPattern, segment: str, match_timeout: flo
 
     ``pattern`` is org-authored and matched against a command string that, at
     the hook endpoint, is influenced by the watched agent — so on that shared
-    path a catastrophic-backtracking pattern could peg a worker. Every search
-    runs under the ``regex`` module (a re-compatible superset with far better
-    backtracking behaviour and a per-search timeout) whether or not a timeout
-    is requested: one engine and one flag set mean enabling the timeout, or
-    moving evaluation between client and server, can never change whether a
-    rule matches — the exact disagreement this shared evaluator exists to
-    prevent (stdlib ``re`` and ``regex`` case-fold some Unicode differently
-    under IGNORECASE). With ``match_timeout`` set the search raises
-    ``TimeoutError`` past the deadline; the caller treats that as "could not
-    evaluate" and grades. Patterns arrive compiled by `_valid_rules`, once per
-    evaluation; a malformed active rule suppresses all automatic approvals for
-    this call.
+    path a catastrophic-backtracking pattern could peg a worker. In ``mrab``
+    mode every search runs under the ``regex`` module (a re-compatible superset
+    with far better backtracking behaviour and a per-search timeout) whether or
+    not a timeout is requested, so enabling the timeout never changes whether a
+    rule matches (stdlib ``re`` and ``regex`` case-fold some Unicode differently
+    under IGNORECASE). Clients always evaluate in ``mrab`` mode, so moving a call
+    between client and server changes the answer only on a ``rust`` mode
+    server, where the native engine answers instead (see
+    :func:`_compile_rule_pattern`); the two engines are held to the same
+    answers by the differential tests. With ``match_timeout`` set the search
+    raises ``TimeoutError`` past the deadline; the caller treats that as "could
+    not evaluate" and grades. Patterns arrive compiled by `_valid_rules`, once
+    per evaluation; a malformed active rule suppresses all automatic approvals
+    for this call.
 
     ``match_from_start`` keeps normalized echo/printf output from introducing a
     command match inside its literal arguments. Raw candidates always use search.
@@ -561,50 +627,348 @@ class _CompiledRule(BaseModel):
     compiled: SkipValidation[_CompiledPattern]
 
 
-def _compile_rule_pattern(pattern: str) -> _CompiledPattern | str:
-    """A rule pattern compiled with the evaluator's engine and flags, or why it cannot be.
+# Why the native engine will never build a rule's pattern in this process: the pattern uses an unported feature, is
+# too large to build, or ran out of a compile limit near the most an evaluation or a save gives, on its own work.
+RefusalReason = Literal["unported", "too_large", "compile_timeout"]
+# Why a rule was left unchecked: a refusal; a search that ran out of time; a search over its memory budget, or a
+# compile or search out of memory; an engine failure (a panic, or a pattern quarantined after panics); or an
+# evaluation whose time ran out before the rule, or while its pattern compiled.
+UncheckedReason = RefusalReason | Literal["search_timeout", "memory", "engine_failure", "budget"]
 
-    Returns the error text instead of raising so evaluation and settings diagnostics
-    (:func:`rule_pattern_error`) take the same decision from one place.
+
+class UncheckedRule(BaseModel):
+    """A rule an evaluation left unchecked, and why.
+
+    ``rule_id`` is the rule's id where it has one (a :class:`TreeCommandRule`); the pattern tells rules sharing a
+    label apart.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    rule_id: str | None
+    label: str
+    pattern: str
+    reason: UncheckedReason
+
+    @property
+    def is_refused(self) -> bool:
+        """Whether this process will never build the pattern, so every call the rule applies to leaves it unchecked."""
+        return self.reason in get_args(RefusalReason)
+
+
+class RulesLeftUnchecked(TimeoutError):
+    """An evaluation that left rules unchecked and decided nothing, so the caller grades.
+
+    A ``TimeoutError``, so a caller that grades on a timeout grades on this too. ``unchecked`` holds each such
+    rule once, for the caller's log; a rule reported twice keeps its first reason.
+    """
+
+    def __init__(self, unchecked: Iterable[UncheckedRule]) -> None:
+        super().__init__("command-rule evaluation left rules unchecked")
+        once: dict[tuple[str | None, str, str], UncheckedRule] = {}
+        for rule in unchecked:
+            once.setdefault((rule.rule_id, rule.label, rule.pattern), rule)
+        self.unchecked = tuple(once.values())
+
+
+class _UncheckedRules(list[EvaluableCommandRule]):
+    """The rules an evaluation left unchecked, each with the reason it was first left unchecked."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reasons: dict[int, UncheckedReason] = {}
+
+    def add(self, rules: Iterable[EvaluableCommandRule], reason: UncheckedReason) -> None:
+        for rule in rules:
+            self.reasons.setdefault(id(rule), reason)
+            self.append(rule)
+
+    def drop_unreachable_write_rules(self, tool_name: str, command: str, is_shell: bool) -> None:
+        """Drop the ``Write`` rules a shell command without a redirect target cannot meet."""
+        if self and is_shell and not extract_redirect_destinations(command):
+            self[:] = [rule for rule in self if fnmatch.fnmatchcase(tool_name, rule.tool_name)]
+
+    def report(self) -> RulesLeftUnchecked:
+        return RulesLeftUnchecked(
+            UncheckedRule(
+                rule_id=rule.id if isinstance(rule, TreeCommandRule) else None,
+                label=rule.label,
+                pattern=rule.pattern,
+                reason=self.reasons[id(rule)],
+            )
+            for rule in self
+        )
+
+
+class _Invalid(BaseModel):
+    """A pattern the engine rejects: its rule is invalid, and withholds the allow rules of the tools it applies to."""
+
+    model_config = ConfigDict(frozen=True)
+
+    error: str
+
+
+class _Unchecked(BaseModel):
+    """A pattern ``rust`` mode could not build this time, which may be valid: its rule is unchecked, not invalid."""
+
+    model_config = ConfigDict(frozen=True)
+
+    reason: UncheckedReason
+
+
+class _Refused(BaseModel):
+    """A pattern the native engine will not build in this process: its rule is unchecked on every call."""
+
+    model_config = ConfigDict(frozen=True)
+
+    reason: RefusalReason
+    # The refused feature's id and its description, words that follow "uses" (the engine's refusals only).
+    feature: str | None = None
+    feature_description: str | None = None
+
+
+_NotBuilt = _Invalid | _Unchecked | _Refused
+
+
+class _CachedTimeout(BaseModel):
+    """What a compile that ran out of time on the pattern's own work made of its rule, and the limit it had."""
+
+    model_config = ConfigDict(frozen=True)
+
+    limit: float
+    outcome: _Unchecked | _Refused
+
+
+_logger = logging.getLogger(__name__)
+# Compiles that ran out of time on the pattern's own work, which the engine does not cache, keyed by the pattern's
+# SHA-256 so the cap bounds their memory: a compile given no more time would stop too, so it is answered from here,
+# and one given more tries again.
+_compile_timeouts: dict[bytes, _CachedTimeout] = {}
+# Held while a timeout decides what to cache, so a compile given less time never replaces a refusal another cached.
+_compile_timeouts_lock = threading.Lock()
+_MAX_COMPILE_TIMEOUTS = 1024
+# Evaluations' limits differ by microseconds, so a limit under 5% over a cached one counts as no more time.
+_NO_MORE_TIME = 1.05
+# The time an evaluation spends before its first compile, which the refusing limit leaves below the most that compile
+# can get.
+_FIRST_COMPILE_SLACK_SECONDS = 0.001
+
+
+def _compile_rule_pattern(pattern: str, engine: RegexEngineName, timeout: float) -> _CompiledPattern | _NotBuilt:
+    """A rule pattern compiled with ``engine`` and the evaluator's flags, or why it is not.
+
+    Evaluation and settings diagnostics (:func:`rule_pattern_error`) take the same decision from here. A pattern
+    the engine rejects is :class:`_Invalid`. In ``rust`` mode the native engine alone decides, within ``timeout``:
+    a pattern it will not build in this process (an unported feature, a conditional group among them, too large
+    to build, or a compile that ran out of the most time an evaluation gives it) is :class:`_Refused`, and one it
+    could not build this time (a compile cut short, or an engine failure) is :class:`_Unchecked`. The engine
+    caches every outcome but a timeout; a timeout the pattern's own work ran out of is cached here, with its limit.
     """
     if len(pattern) > MAX_RULE_PATTERN_LENGTH:
-        return f"regex is longer than {MAX_RULE_PATTERN_LENGTH} characters"
+        return _Invalid(error=f"regex is longer than {MAX_RULE_PATTERN_LENGTH} characters")
+    if engine == "rust":
+        return _compile_natively(pattern, timeout)
     # Conditional groups can corrupt the regex engine's group table in native code. Every conditional starts
     # with the contiguous text "(?(", even under VERBOSE, so a substring test refuses them before parsing.
     if "(?(" in pattern:
-        return "regex uses a conditional group, which rule patterns do not support"
+        return _Invalid(error="regex uses a conditional group, which rule patterns do not support")
+    regex = _regex()
     try:
-        compiled: _CompiledPattern = regex_module.compile(pattern, regex_module.IGNORECASE)
+        compiled: _CompiledPattern = regex.compile(pattern, regex.IGNORECASE)
     except Exception as error:  # a third-party parser on user input raises more than regex.error
-        return f"regex does not compile: {error}"
+        return _Invalid(error=f"regex does not compile: {error}")
     return compiled
 
 
-def rule_pattern_error(pattern: str) -> str | None:
+def _pattern_key(pattern: str) -> bytes:
+    """A fixed-size key for ``pattern``, so a cache of patterns is bounded by its entry count."""
+    return hashlib.sha256(pattern.encode("utf-8", "surrogatepass")).digest()
+
+
+def _compile_natively(pattern: str, timeout: float) -> watcher_regex.Pattern | _NotBuilt:
+    """``pattern`` built by the native engine within ``timeout``, or why it is not (:func:`_compile_rule_pattern`)."""
+    key = _pattern_key(pattern)
+    cached = _compile_timeouts.get(key)
+    # A compile given enough time to refuse the rule always gets its try, unless a refusal is already cached.
+    if (
+        cached is not None
+        and timeout <= cached.limit * _NO_MORE_TIME
+        and (isinstance(cached.outcome, _Refused) or timeout < _refusing_limit())
+    ):
+        return cached.outcome
+    native = _native_engine()
+    outcome: watcher_regex.Pattern | _Refused | _Invalid
+    try:
+        # Always case-insensitive, as mrab mode's regex.IGNORECASE: the native engine has no other flag set.
+        outcome = native.compile(pattern, timeout=timeout)
+    except native.UnsupportedFeature as refusal:
+        outcome = _Refused(
+            reason="too_large" if isinstance(refusal, native.PatternTooLarge) else "unported",
+            feature=refusal.feature,
+            feature_description=refusal.description,
+        )
+    except native.error as error:
+        outcome = _Invalid(error=f"regex does not compile: {error}")
+    except native.CompileTimeout as error:
+        timed_out = _compile_timed_out(key, pattern, timeout, error.cause)
+        if not isinstance(timed_out, _Refused):
+            return timed_out
+        # A cached refusal stops every later compile, so it must not outlast a build another thread's compile made
+        # while this one ran. The engine's cache is read after the refusal is cached: a build that finished first is
+        # found here, and one that finishes later clears the refusal itself.
+        built = _built_meanwhile(pattern)
+        if built is None:
+            return timed_out
+        _compile_timeouts.pop(key, None)
+        return built
+    except (MemoryError, RuntimeError) as error:  # out of memory, or a panic or quarantined pattern
+        _logger.warning("The native engine failed compiling a command-rule pattern: %s", type(error).__name__)
+        return _Unchecked(reason="memory" if isinstance(error, MemoryError) else "engine_failure")
+    # The engine caches this answer, so a timeout cached for the pattern before or meanwhile (another thread's shorter
+    # compile) no longer holds. A timeout cached after this line is dropped by the next compile given more time.
+    _compile_timeouts.pop(key, None)
+    return outcome
+
+
+def _built_meanwhile(pattern: str) -> watcher_regex.Pattern | None:
+    """``pattern``'s build if the engine has cached one, which it answers within validation's limit, else ``None``."""
+    native = _native_engine()
+    try:
+        return native.compile(pattern, timeout=_VALIDATION_COMPILE_SECONDS)
+    except (native.error, native.CompileTimeout, MemoryError, RuntimeError):
+        return None
+
+
+def _refusing_limit() -> float:
+    """The least compile limit whose own-work timeout refuses a rule: what an evaluation's first compile gets."""
+    whole = _engine_time_limit("rust", _NATIVE_COMPILE_TIMEOUT_SECONDS, RULE_EVALUATION_BUDGET_SECONDS)
+    return whole - _FIRST_COMPILE_SLACK_SECONDS
+
+
+def _compile_timed_out(
+    key: bytes, pattern: str, timeout: float, cause: Literal["limit", "estimate", "backstop"]
+) -> _Unchecked | _Refused:
+    """What a compile that ran out of ``timeout`` makes of its rule.
+
+    The wall-clock backstop (other threads' time) and validation's limit say nothing of the pattern. A stop on the
+    pattern's own work (``limit``, its CPU time, or ``estimate``, a step declined as too long for the time left) is
+    cached: given about the most an evaluation's first compile gets, the rule is refused for the rest of the process;
+    given less, by an evaluation's spent budget, it is unchecked as ``budget`` until a compile is given more time. A
+    timeout cached with a longer limit than ``timeout`` stays.
+    """
+    if timeout <= _VALIDATION_COMPILE_SECONDS or cause == "backstop":
+        return _Unchecked(reason="budget")
+    is_refused = timeout >= _refusing_limit()
+    outcome = _Refused(reason="compile_timeout") if is_refused else _Unchecked(reason="budget")
+    with _compile_timeouts_lock:
+        previous = _compile_timeouts.get(key)
+        if previous is None or timeout > previous.limit:
+            if len(_compile_timeouts) >= _MAX_COMPILE_TIMEOUTS:
+                _compile_timeouts.clear()
+            _compile_timeouts[key] = _CachedTimeout(limit=timeout, outcome=outcome)
+    _logger.warning(
+        "A %d-character command-rule pattern ran out of its %.3f s native compile limit; its rule stays unchecked %s",
+        len(pattern),
+        timeout,
+        "for the rest of this process" if is_refused else "until a compile is given more time",
+    )
+    return outcome
+
+
+def rule_pattern_error(pattern: str, *, engine: RegexEngineName = "mrab") -> str | None:
     """Why an active rule's ``pattern`` would suppress allow rules at evaluation, or ``None``.
 
-    An over-long pattern, one with a conditional group, or one the ``regex`` engine
+    An over-long pattern, one with a conditional group (``mrab`` mode), or one the ``regex`` engine
     cannot compile under the evaluator's flags, makes :func:`evaluate_command_rules` drop every allow rule
     for the calls that rule applies to. Settings diagnostics call this to name the
-    rule responsible; it is the same check evaluation runs.
+    rule responsible; it is the same check evaluation runs. In ``rust`` mode the native engine
+    decides, and a pattern it only refuses (an unported feature or its size) or does not finish within the
+    validation limit is not invalid: its rule is unchecked at evaluation, and the call is graded.
     """
-    compiled = _compile_rule_pattern(pattern)
-    return compiled if isinstance(compiled, str) else None
+    compiled = _compile_rule_pattern(pattern, engine, _VALIDATION_COMPILE_SECONDS)
+    return compiled.error if isinstance(compiled, _Invalid) else None
 
 
-def _valid_rules(rules: Sequence[EvaluableCommandRule], tool_names: set[str], deadline: float) -> list[_CompiledRule]:
-    """Keep applicable restrictions, suppressing allows if any active rule is invalid."""
+class _PatternCheck(BaseModel):
+    """What a settings save learns of an active rule's pattern from one compile."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Why the rule is invalid, as :func:`rule_pattern_error` says.
+    error: str | None = None
+    # Why this server's engine will never check the rule, for a pattern it refuses (``rust`` mode only).
+    refused: _Refused | None = None
+    is_built: bool = False
+
+
+def _check_rule_pattern(
+    pattern: str, *, engine: RegexEngineName, timeout: float = _NATIVE_COMPILE_TIMEOUT_SECONDS
+) -> _PatternCheck:
+    """Validate ``pattern`` and learn whether ``engine`` builds it, in one compile within ``timeout``.
+
+    Any limit finds a syntax error and the parser's refusals (an unported feature, ``large_expansion``), since
+    nothing cuts the parser short. Only the evaluator's whole limit, the default, finds a size refusal the build
+    makes (``resource_limit``) or a compile that runs out of time, and caches what it builds for evaluation.
+    ``mrab`` mode compiles with ``regex`` alone, which refuses nothing.
+    """
+    compiled = _compile_rule_pattern(pattern, engine, timeout)
+    if isinstance(compiled, _Invalid):
+        return _PatternCheck(error=compiled.error)
+    if isinstance(compiled, _Refused):
+        return _PatternCheck(refused=compiled)
+    if isinstance(compiled, _Unchecked):
+        return _PatternCheck()
+    return _PatternCheck(is_built=True)
+
+
+def _prepare_rule_patterns(patterns: list[str]) -> int:
+    """Compile ``patterns`` natively and build what their first searches need; how many were built.
+
+    For a ``rust`` mode server's startup, so the first evaluations of a process do not spend their budget
+    building engines. A pattern whose preparation fails is built by the first search that needs it.
+    """
+    prepared = 0
+    for pattern in patterns:
+        if len(pattern) > MAX_RULE_PATTERN_LENGTH:
+            continue
+        compiled = _compile_natively(pattern, _NATIVE_COMPILE_TIMEOUT_SECONDS)
+        if isinstance(compiled, _NotBuilt):
+            continue
+        try:
+            compiled.prepare(timeout=_NATIVE_COMPILE_TIMEOUT_SECONDS)
+        except (TimeoutError, MemoryError, RuntimeError):  # the first search builds what is missing
+            continue
+        prepared += 1
+    return prepared
+
+
+def _valid_rules(
+    rules: Sequence[EvaluableCommandRule],
+    tool_names: set[str],
+    deadline: float,
+    engine: RegexEngineName,
+    unchecked: _UncheckedRules,
+) -> list[_CompiledRule]:
+    """Keep applicable restrictions, suppressing allows if any active rule is invalid.
+
+    A rule ``rust`` mode cannot check (:class:`_Unchecked`, :class:`_Refused`) is appended to ``unchecked``.
+    """
     valid: list[_CompiledRule] = []
     has_invalid_rule = False
     for rule in rules:
-        _remaining_time(deadline)
+        remaining = _remaining_time(deadline)
         if rule.action == RuleAction.OFF or not any(fnmatch.fnmatchcase(name, rule.tool_name) for name in tool_names):
             continue
         if rule.action not in ACTION_SEVERITY:
             has_invalid_rule = True
             continue
-        compiled = _compile_rule_pattern(rule.pattern)
-        if isinstance(compiled, str):
+        compiled = _compile_rule_pattern(
+            rule.pattern, engine, _engine_time_limit(engine, _NATIVE_COMPILE_TIMEOUT_SECONDS, remaining)
+        )
+        if isinstance(compiled, _Unchecked | _Refused):
+            unchecked.add([rule], compiled.reason)
+            continue
+        if isinstance(compiled, _Invalid):
             has_invalid_rule = True
             continue
         valid.append(_CompiledRule(rule=rule, compiled=compiled))
@@ -653,8 +1017,16 @@ def match_segment(
         if deadline is not None
         else (time.monotonic() + RULE_EVALUATION_BUDGET_SECONDS)
     )
-    compiled_rules = _valid_rules(rules, {tool_name}, deadline)
-    return _match_segment(segment, tool_name, compiled_rules, match_timeout, deadline, normalize_shell=True)
+    # mrab mode leaves no pattern unchecked, so the list stays empty.
+    compiled_rules = _valid_rules(rules, {tool_name}, deadline, "mrab", _UncheckedRules())
+    return _match_segment(
+        segment, tool_name, compiled_rules, match_timeout, deadline, normalize_shell=True, engine="mrab"
+    )
+
+
+def _subject_scope(engine: RegexEngineName) -> AbstractContextManager[object]:
+    """The native engine's cache of one subject's encoding across rules, in ``rust`` mode."""
+    return _native_engine().subject_scope() if engine == "rust" else nullcontext()
 
 
 def _match_segment(
@@ -665,11 +1037,13 @@ def _match_segment(
     deadline: float,
     *,
     normalize_shell: bool,
-    unchecked: list[EvaluableCommandRule] | None = None,
+    engine: RegexEngineName,
+    unchecked: _UncheckedRules | None = None,
 ) -> EvaluableCommandRule | None:
     """The first rule matching ``segment``, as :func:`match_segment` describes.
 
-    Without ``unchecked``, a search over its timeout or past ``deadline`` raises ``TimeoutError``.
+    Without ``unchecked``, which only ``mrab`` mode searches without, a search over its timeout or past ``deadline``
+    raises ``TimeoutError``.
     With it, the rule whose search did not finish is appended to ``unchecked`` and matching goes on
     in priority order, so a later rule can still be the segment's first match. An unchecked rule ahead
     of it could have matched first: a human-review match still decides, a deny match behind an
@@ -678,8 +1052,10 @@ def _match_segment(
     unchecked. When ``deadline`` has passed, every remaining
     applicable rule is appended and the segment returns. A rule already in ``unchecked`` is not
     searched again: it stays unchecked for the whole call, and searching it on every later segment
-    would let one catastrophic pattern spend the whole evaluation budget of every request.
+    would let one catastrophic pattern spend the whole evaluation budget of every request. In ``rust``
+    mode a search the native engine fails on leaves its rule unchecked the same way.
     """
+    unfinished = _contained_search_errors(engine)
     candidates = [segment]
     if tool_name in _PATH_ARGUMENT_TOOLS and segment:
         # `//etc/x` and `/repo/../etc/x` open the file `/etc/x` names but dodge every rule
@@ -713,24 +1089,38 @@ def _match_segment(
         rule = entry.rule
         for candidate in restriction_candidates if rule.action in ESCALATION_ACTIONS else candidates:
             try:
-                timeout = min(ceiling, _remaining_time(deadline))
+                timeout = _engine_time_limit(engine, ceiling, _remaining_time(deadline))
             except TimeoutError:
                 if unchecked is None:
                     raise
-                unchecked.extend(remaining.rule for remaining in applicable[position:])
+                unchecked.add((remaining.rule for remaining in applicable[position:]), "budget")
                 return None
             try:
                 matched = _pattern_matches(
                     entry.compiled, candidate, timeout, match_from_start=candidate == output_command_candidate
                 )
-            except TimeoutError:
+            except unfinished as error:
+                if not isinstance(error, TimeoutError):
+                    _logger.warning(
+                        "The native engine failed searching a command-rule pattern: %s", type(error).__name__
+                    )
                 if unchecked is None:
                     raise
-                unchecked.append(rule)
+                unchecked.add([rule], _search_failure_reason(engine, error))
                 break
             if matched:
                 return rule
     return None
+
+
+def _search_failure_reason(engine: RegexEngineName, error: Exception) -> UncheckedReason:
+    """Why a search that raised ``error`` left its rule unchecked."""
+    # MemoryBudgetExceeded, and its SubjectTooLong, are TimeoutErrors, so callers that grade on a timeout grade on them.
+    if isinstance(error, MemoryError) or (
+        engine == "rust" and isinstance(error, _native_engine().MemoryBudgetExceeded)
+    ):
+        return "memory"
+    return "search_timeout" if isinstance(error, TimeoutError) else "engine_failure"
 
 
 def _unchecked_escalation(
@@ -768,7 +1158,9 @@ def _behind_unchecked_exception(
 
 
 def _decisive_match(
-    matched: Sequence[EvaluableCommandRule], denies: Sequence[tuple[EvaluableCommandRule, bool]]
+    matched: Sequence[EvaluableCommandRule],
+    denies: Sequence[tuple[EvaluableCommandRule, bool]],
+    engine: RegexEngineName,
 ) -> CommandRuleMatch | None:
     """The deny or human-review decision the matches make, or ``None`` when they make none.
 
@@ -776,7 +1168,8 @@ def _decisive_match(
     in its own check (:func:`_behind_unchecked_exception`). A deny is final only without one: such an
     exception might have matched first and spared the command. A deny whose precedence is uncertain
     that way asks a person instead, labelled as an unfinished check, so a slow exception turns into
-    neither a hard deny nor an approval. A human-review match asks a person either way.
+    neither a hard deny nor an approval. A human-review match asks a person either way. In ``rust``
+    mode an uncertain deny decides nothing, and the call is graded.
     """
     for rule, uncertain in denies:
         if not uncertain:
@@ -784,7 +1177,7 @@ def _decisive_match(
     for rule in matched:
         if rule.action == RuleAction.ESCALATE_HUMAN:
             return CommandRuleMatch(action=rule.action, label=rule.label, pattern=rule.pattern)
-    if denies:
+    if denies and _unchecked_rules_escalate(engine):
         rule = denies[0][0]
         return CommandRuleMatch(
             action=RuleAction.ESCALATE_HUMAN, label=f"{rule.label}{RULE_TIMEOUT_LABEL_SUFFIX}", pattern=rule.pattern
@@ -804,6 +1197,8 @@ def evaluate_command_rules(
     terminal_action: str | None,
     match_timeout: float | None = None,
     deadline: float | None = None,
+    *,
+    engine: RegexEngineName = "mrab",
 ) -> CommandRuleMatch | None:
     """The effective command-rule decision for one tool call, or ``None`` to grade.
 
@@ -827,14 +1222,22 @@ def evaluate_command_rules(
     anyway still decides. Otherwise, if a deny or human-review rule was left
     unchecked, the call escalates to a person (fail closed), labelled with that
     rule's label plus ``RULE_TIMEOUT_LABEL_SUFFIX``; if only allow or triage
-    rules were left unchecked, ``TimeoutError`` is raised for the caller to
-    treat as "could not evaluate" (it grades). Shell input longer than
+    rules were left unchecked, :class:`RulesLeftUnchecked` (a ``TimeoutError``)
+    is raised, listing them, for the caller to treat as "could not evaluate"
+    (it grades). Shell input longer than
     ``MAX_COMMAND_LENGTH`` is not parsed at all, because its parsing runs
     outside those budgets: if a deny or human-review rule applies to the tool
     (or to the redirect targets it could write), it escalates the same way,
     labelled with ``RULE_INPUT_TOO_LARGE_LABEL_SUFFIX``; otherwise it raises
     ``RuleEvaluationLimitError`` and the caller grades. Other tools only run
     bounded searches, so any length is evaluated.
+
+    With ``engine="rust"``, a server's choice, the native engine compiles and answers every
+    rule, and a rule it cannot check never asks a person: it refuses the pattern (an unported
+    feature, or too large to build), the compile or a search runs out of time or fails, or the
+    budget runs out before the rule. A deny or human-review match found anyway still decides, as
+    above, except a deny behind an unchecked allow or triage rule; any other evaluation with an
+    unchecked rule raises :class:`RulesLeftUnchecked`, so the call is graded.
     """
     if terminal_action is not None:
         return CommandRuleMatch(
@@ -842,7 +1245,18 @@ def evaluate_command_rules(
             label=TERMINAL_THRESHOLD_LABEL,
             pattern=TERMINAL_THRESHOLD_PATTERN,
         )
+    with _subject_scope(engine):
+        return _evaluate_command_rules(tool_name, tool_input, rules, match_timeout, deadline, engine)
 
+
+def _evaluate_command_rules(
+    tool_name: str,
+    tool_input: ToolInput,
+    rules: Sequence[EvaluableCommandRule],
+    match_timeout: float | None,
+    deadline: float | None,
+    engine: RegexEngineName,
+) -> CommandRuleMatch | None:
     deadline = (
         min(deadline, time.monotonic() + RULE_EVALUATION_BUDGET_SECONDS)
         if deadline is not None
@@ -860,15 +1274,24 @@ def evaluate_command_rules(
             return escalation
         raise RuleEvaluationLimitError("command exceeds the rule input limit")
 
+    # Rules whose check did not finish. A timeout on one segment must not stop the others: a slow
+    # first segment would otherwise hide a protected write in a later one from its deny or
+    # human-review rule. Once the whole budget is spent, nothing more runs (see below).
+    unchecked = _UncheckedRules()
     try:
-        compiled_rules = _valid_rules(rules, tool_names, deadline)
+        compiled_rules = _valid_rules(rules, tool_names, deadline, engine, unchecked)
     except TimeoutError:
         # The budget ran out before any rule ran (a caller's shared deadline): every applicable rule
         # is unchecked, so a deny or human-review rule among them still fails closed.
-        escalation = _unchecked_escalation(_rules_for(rules, tool_names))
+        applicable = _rules_for(rules, tool_names)
+        escalation = _unchecked_escalation(applicable) if _unchecked_rules_escalate(engine) else None
         if escalation is not None:
             return escalation
-        raise
+        # Rules already left unchecked keep their reason.
+        unchecked.add(applicable, "budget")
+        unchecked.drop_unreachable_write_rules(tool_name, command_str, shell_input)
+        raise unchecked.report() from None
+    unchecked.drop_unreachable_write_rules(tool_name, command_str, shell_input)
     segments = split_compound_command(command_str) if shell_input else [command_str]
     # A command that is only control operators or whitespace (";", "&&", …)
     # splits to zero segments. Nothing matched anything, so no rule may allow
@@ -889,11 +1312,8 @@ def evaluate_command_rules(
     matches: list[EvaluableCommandRule | None] = []
     # Each deny match, with whether an unchecked exception stood ahead of it in its own check.
     denies: list[tuple[EvaluableCommandRule, bool]] = []
-    order = {id(entry.rule): position for position, entry in enumerate(compiled_rules)}
-    # Rules whose search did not finish. A timeout on one segment must not stop the others: a slow
-    # first segment would otherwise hide a protected write in a later one from its deny or
-    # human-review rule. Once the whole budget is spent, nothing more runs (see below).
-    unchecked: list[EvaluableCommandRule] = []
+    # Over every rule, so one the native engine could not compile keeps its place in the priority order.
+    order = {id(rule): position for position, rule in enumerate(rules)}
     budget_spent = False
     for segment in segments:
         if time.monotonic() >= deadline:
@@ -901,7 +1321,14 @@ def evaluate_command_rules(
             break
         if segment not in segment_matches:
             found = _match_segment(
-                segment, tool_name, active_rules, match_timeout, deadline, normalize_shell=True, unchecked=unchecked
+                segment,
+                tool_name,
+                active_rules,
+                match_timeout,
+                deadline,
+                normalize_shell=True,
+                unchecked=unchecked,
+                engine=engine,
             )
             uncertain = found is not None and _behind_unchecked_exception(found, tool_name, unchecked, order)
             segment_matches[segment] = (found, uncertain)
@@ -919,7 +1346,14 @@ def evaluate_command_rules(
         # ESCALATE, never relax: this keeps compound-command allow-listing
         # working while still catching multiline destructive constructs.
         full_match = _match_segment(
-            command_str, tool_name, active_rules, match_timeout, deadline, normalize_shell=False, unchecked=unchecked
+            command_str,
+            tool_name,
+            active_rules,
+            match_timeout,
+            deadline,
+            normalize_shell=False,
+            unchecked=unchecked,
+            engine=engine,
         )
         if full_match is not None and full_match.action in ESCALATION_ACTIONS:
             matches.append(full_match)
@@ -930,7 +1364,14 @@ def evaluate_command_rules(
                 budget_spent = True
                 break
             redirect_match = _match_segment(
-                dest, "Write", active_rules, match_timeout, deadline, normalize_shell=False, unchecked=unchecked
+                dest,
+                "Write",
+                active_rules,
+                match_timeout,
+                deadline,
+                normalize_shell=False,
+                unchecked=unchecked,
+                engine=engine,
             )
             if redirect_match is not None:
                 matches.append(redirect_match)
@@ -942,21 +1383,24 @@ def evaluate_command_rules(
         # Stopping here keeps the evaluation inside its budget (a caller waiting on it may give up
         # soon after). Nothing left was checked, so every rule that could still apply, Bash and
         # Write alike, counts as unchecked.
-        unchecked.extend(entry.rule for entry in compiled_rules)
+        unchecked.add((entry.rule for entry in compiled_rules), "budget")
 
     matched_rules = [match for match in matches if match is not None]
-    decided = _decisive_match(matched_rules, denies)
+    decided = _decisive_match(matched_rules, denies, engine)
     if decided is not None:
         return decided
 
     # A deny or human-review rule that could not be checked fails closed: a person decides, as the
     # rule might have required. Unchecked allow and triage rules only cost the call its approval.
-    escalation = _unchecked_escalation(unchecked)
+    escalation = _unchecked_escalation(unchecked) if _unchecked_rules_escalate(engine) else None
     if escalation is not None:
         return escalation
 
     if unchecked:
-        raise TimeoutError("command-rule evaluation exceeded its budget")
+        # Reported after mrab mode's escalation, so a deny or human-review Write rule the budget left unchecked
+        # still escalates first.
+        unchecked.drop_unreachable_write_rules(tool_name, command_str, shell_input)
+        raise unchecked.report()
 
     if not approval_possible:
         return None

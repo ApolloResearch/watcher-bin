@@ -10,7 +10,7 @@ from copy import deepcopy
 from functools import lru_cache, partial
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import yaml
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -50,6 +50,9 @@ from watcher_sdk.settings_schema.watcher_settings_yaml_validation import (
     validate_settings_tree,
     validation_error_summary,
 )
+
+if TYPE_CHECKING:
+    from watcher_sdk.settings_schema.command_rules_eval import RegexEngineName
 
 DEFAULT_PROFILE_ID = "default"
 PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -184,7 +187,7 @@ class SettingsOverridesError(ValueError):
         return self.args[0] if self.args else ""
 
 
-def _reject_unprojectable_override_rules(data: dict[str, Any], merged: dict[str, Any]) -> None:
+def _reject_unprojectable_override_rules(data: dict[str, Any], merged: dict[str, Any], engine: RegexEngineName) -> None:
     """Refuse override-touched rules whose merged form the rule projection drops.
 
     A rule can carry a valid string `id` and pass whole-tree schema
@@ -209,7 +212,7 @@ def _reject_unprojectable_override_rules(data: dict[str, Any], merged: dict[str,
     for projected_rule in projected_rules:
         if projected_rule.id not in touched:
             continue
-        if error := rule_pattern_error(projected_rule.pattern):
+        if error := rule_pattern_error(projected_rule.pattern, engine=engine):
             raise SettingsOverridesError(f"settings_overrides rule '{projected_rule.id}': {error}")
     merged_rules = unwrap(get_path_or_none(merged, ("command_rules", "rules")))
     if not isinstance(merged_rules, list):
@@ -281,7 +284,9 @@ def merge_policy_settings(base: dict[str, Any], overlay: dict[str, Any] | None) 
     return merged
 
 
-def merge_local_overrides(base: dict[str, Any], overrides: str | dict[str, Any]) -> dict[str, Any]:
+def merge_local_overrides(
+    base: dict[str, Any], overrides: str | dict[str, Any], *, engine: RegexEngineName = "mrab"
+) -> dict[str, Any]:
     """A caller-supplied overrides document merged onto a baseline tree as a local layer.
 
     Accepts YAML text or a JSON mapping for the hook API's `settings_overrides`,
@@ -309,7 +314,8 @@ def merge_local_overrides(base: dict[str, Any], overrides: str | dict[str, Any])
     The document is first canonicalized (`unwrap_composite_wrappers`) so
     every one of these checks and the merge see one shape: a `{value: ...}`
     wrapper around a mapping or list cannot carry a rule past them. An empty
-    document returns the baseline unchanged.
+    document returns the baseline unchanged. ``engine`` checks the patterns, as
+    the caller evaluates them.
     """
     if isinstance(overrides, str):
         try:
@@ -337,7 +343,7 @@ def merge_local_overrides(base: dict[str, Any], overrides: str | dict[str, Any])
         raise SettingsOverridesError(
             f"settings_overrides produces an invalid settings tree: {validation_error_summary(e)}"
         ) from e
-    _reject_unprojectable_override_rules(data, merged)
+    _reject_unprojectable_override_rules(data, merged, engine)
     return merged
 
 

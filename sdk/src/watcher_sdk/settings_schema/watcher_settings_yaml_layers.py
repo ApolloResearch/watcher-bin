@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
+import os
 import re
+import stat
 from collections.abc import Callable, Hashable
 from copy import deepcopy
 from functools import lru_cache, partial
@@ -589,10 +592,10 @@ def settings_cache_key(
 
 def path_fingerprint(path: Path) -> tuple[int, int] | None:
     try:
-        stat = path.stat()
+        info = path.stat()
     except FileNotFoundError:
         return None
-    return stat.st_mtime_ns, stat.st_size
+    return info.st_mtime_ns, info.st_size
 
 
 def load_builtin_settings(resource_name: str) -> dict[str, Any]:
@@ -1229,11 +1232,34 @@ def load_yaml_path_lenient(path: Path, source: SettingsSource, issues: list[Sett
         return {}
 
 
+def _read_settings_file(path: Path) -> str:
+    """The text of the settings file ``path``, refusing anything that is not a regular file.
+
+    The open never waits: a named pipe at a settings path is refused at once (``O_NONBLOCK``, then
+    ``fstat`` on the same descriptor), rather than blocking every reader of the settings until some
+    process writes to it.
+
+    Raises:
+        OSError: When the file cannot be opened or read, or is not a regular file.
+        UnicodeDecodeError: When the file is not UTF-8.
+    """
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(errno.EINVAL, "Not a regular file", str(path))
+        handle = os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+    with handle:
+        return handle.read().decode("utf-8")
+
+
 def load_yaml_path_strict(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        data = load_settings_yaml(path.read_text(encoding="utf-8"))
+        data = load_settings_yaml(_read_settings_file(path))
     except YAMLError as e:
         raise ValueError(f"{path} could not be parsed: {yaml_error_summary(e)}") from e
     except (OSError, UnicodeDecodeError) as e:

@@ -32,8 +32,8 @@ ROUTES: dict[str, dict[str, Any]] = {
         "model": "gemini/gemini-2.5-flash",
         "api_base": f"{GATEWAY}/v1/projects/{GOOGLE_PROJECT}/locations/global/publishers/google",
     },
-    "openrouter-qwen": {"model": "openai/qwen/qwen3-coder", "api_base": f"{GATEWAY}/v1"},
-    "openrouter-grok": {"model": "openai/x-ai/grok-4.6", "api_base": f"{GATEWAY}/v1"},
+    "openrouter-kimi": {"model": "openai/moonshotai/kimi-k2.7-code", "api_base": f"{GATEWAY}/v1"},
+    "openrouter-deepseek": {"model": "openai/deepseek/deepseek-v4-pro", "api_base": f"{GATEWAY}/v1"},
 }
 # The Gemini route needs the gateway's Vertex project; leave it out without one.
 _DEFAULT_ROUTES = ",".join(name for name in ROUTES if name != "gemini" or GOOGLE_PROJECT)

@@ -27,6 +27,7 @@ from itertools import accumulate
 from watcher_transcript_transport.claude import (
     SplitOrderCheck,
     SuffixOrders,
+    TailTrimScan,
     _ChainWalk,
     _Clock,
     _entry_walk_key,
@@ -44,21 +45,19 @@ from watcher_transcript_transport.upload import JsonEntry
 class TailCompleteness:
     """Whether ``trim_incomplete_tail(entries[start:end], ...)`` keeps all of its entries, for any ``end``.
 
-    ``trim_incomplete_tail`` is a left fold, so one pass over ``entries[start:]``
-    answers every end. The fold extends lazily to the largest end asked. It
-    must stay the same fold as ``trim_incomplete_tail``; a property test
-    compares the two on every prefix of random transcripts. Entries must be
-    dicts, as `ClaudeSplitIndex` checks before a caller relies on this.
+    ``trim_incomplete_tail`` is a left fold (`TailTrimScan`), so one scan of
+    ``entries[start:]`` answers every end: the first ``j`` entries are complete
+    exactly when the scan has kept all ``j``. The scan extends lazily to the
+    largest end asked. Entries must be dicts, as `ClaudeSplitIndex` checks
+    before a caller relies on this.
     """
 
-    __slots__ = ("_entries", "_start", "_allow_trailing_assistant_text", "_pending", "_last_complete", "_flags")
+    __slots__ = ("_entries", "_flags", "_scan", "_start")
 
     def __init__(self, entries: list[JsonEntry], start: int, *, allow_trailing_assistant_text: bool) -> None:
         self._entries = entries
         self._start = start
-        self._allow_trailing_assistant_text = allow_trailing_assistant_text
-        self._pending: set[object] = set()
-        self._last_complete = 0
+        self._scan = TailTrimScan(allow_trailing_assistant_text=allow_trailing_assistant_text)
         # _flags[j]: whether the first j entries of the slice are complete. The empty slice is.
         self._flags = bytearray(b"\x01")
 
@@ -69,38 +68,10 @@ class TailCompleteness:
         return bool(self._flags[end - self._start])
 
     def _extend(self, end: int) -> None:
-        entries, start, flags, pending = self._entries, self._start, self._flags, self._pending
-        allow = self._allow_trailing_assistant_text
-        last_complete = self._last_complete
-        for index in range(start + len(flags) - 1, end):
-            entry = entries[index]
-            position = index - start
-            message_type = entry.get("type", "")
-            if message_type in ("progress", "file-history-snapshot"):
-                flags.append(0)
-                continue
-            if message_type == "assistant":
-                message = entry.get("message", {})
-                content = message.get("content", []) if isinstance(message, dict) else []
-                if isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "tool_use":
-                            pending.add(block.get("id", ""))
-                if allow and not pending:
-                    last_complete = position + 1
-                flags.append(last_complete == position + 1)
-                continue
-            if message_type == "user":
-                message = entry.get("message", {})
-                content = message.get("content", []) if isinstance(message, dict) else []
-                if isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "tool_result":
-                            pending.discard(block.get("tool_use_id", ""))
-            if not pending:
-                last_complete = position + 1
-            flags.append(last_complete == position + 1)
-        self._last_complete = last_complete
+        entries, flags, scan = self._entries, self._flags, self._scan
+        for index in range(self._start + len(flags) - 1, end):
+            scan.feed(entries[index])
+            flags.append(scan.complete_until == scan.count)
 
 
 class ClaudeSplitIndex:
@@ -606,7 +577,7 @@ def _leading_to_messages(tree: _WalkTree) -> set[str]:
 
 
 def _tool_ids_hashable(entry: JsonEntry) -> bool:
-    """Whether ``trim_incomplete_tail`` can put this entry's tool ids in a set (JSON lists and objects cannot)."""
+    """Whether ``trim_incomplete_tail`` can use this entry's tool ids as dict keys (JSON lists and objects cannot)."""
     message_type = entry.get("type")
     if message_type not in ("assistant", "user"):
         return True

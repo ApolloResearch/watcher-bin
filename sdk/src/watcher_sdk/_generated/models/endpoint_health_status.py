@@ -40,6 +40,9 @@ class EndpointHealthStatus:
             self_check (EndpointHealthStatusSelfCheckType0 | None | Unset): `watcher doctor` section name to `ok`, `warning`
                 or `error`, for the sections the client checks in the background. A section is missing when its check failed to
                 run; null when the client could not run the self-check at all.
+            approval_bypass_sessions (int | None | Unset): How many open agent sessions run with an approval policy or
+                sandbox that lets tool calls run without asking for approval, so Watcher records their calls but cannot grade or
+                block them first: the sessions behind the `enforcement` self-check result. Null when the client could not check.
     """
 
     observed_at: datetime.datetime
@@ -48,6 +51,7 @@ class EndpointHealthStatus:
     agents: list[EndpointHealthAgent] | None | Unset = UNSET
     delivery: EndpointHealthDelivery | None | Unset = UNSET
     self_check: EndpointHealthStatusSelfCheckType0 | None | Unset = UNSET
+    approval_bypass_sessions: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -101,6 +105,12 @@ class EndpointHealthStatus:
         else:
             self_check = self.self_check
 
+        approval_bypass_sessions: int | None | Unset
+        if isinstance(self.approval_bypass_sessions, Unset):
+            approval_bypass_sessions = UNSET
+        else:
+            approval_bypass_sessions = self.approval_bypass_sessions
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -118,6 +128,8 @@ class EndpointHealthStatus:
             field_dict["delivery"] = delivery
         if self_check is not UNSET:
             field_dict["self_check"] = self_check
+        if approval_bypass_sessions is not UNSET:
+            field_dict["approval_bypass_sessions"] = approval_bypass_sessions
 
         return field_dict
 
@@ -219,6 +231,17 @@ class EndpointHealthStatus:
 
         self_check = _parse_self_check(d.pop("self_check", UNSET))
 
+        def _parse_approval_bypass_sessions(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        approval_bypass_sessions = _parse_approval_bypass_sessions(
+            d.pop("approval_bypass_sessions", UNSET)
+        )
+
         endpoint_health_status = cls(
             observed_at=observed_at,
             enforcement_mode=enforcement_mode,
@@ -226,6 +249,7 @@ class EndpointHealthStatus:
             agents=agents,
             delivery=delivery,
             self_check=self_check,
+            approval_bypass_sessions=approval_bypass_sessions,
         )
 
         endpoint_health_status.additional_properties = d

@@ -7,6 +7,8 @@ from typing import Any, Self, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..types import UNSET, Unset
+
 T = TypeVar("T", bound="AgentInventoryHealthAgent")
 
 
@@ -44,6 +46,13 @@ class AgentInventoryHealthAgent:
         since_first_check (bool): The state may be older than `since`: it was already in place when the machine first
             checked, when it checked after a stretch without checks, or when it next read the agent's hooks after failing
             to.
+        hooks_untrusted_sessions_since (int | None | Unset): With hooks `untrusted`: how many of the agent's session
+            files on the machine changed since it stopped running Watcher's hooks (a session can have more than one), over
+            the stretch the machine estimates they have been untrusted, which can begin before `since`: from the last change
+            to the agent's hooks file before the machine first saw them untrusted, but never from before its last look at
+            another hooks state. Zero means no session file of the agent changed in that time (runs that keep no session
+            file are never counted). Null for other hooks values, when the machine could not count them completely, or from
+            a client too old to count them.
     """
 
     agent: str
@@ -53,6 +62,7 @@ class AgentInventoryHealthAgent:
     locked: bool | None
     since: datetime.datetime | None
     since_first_check: bool
+    hooks_untrusted_sessions_since: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -77,6 +87,12 @@ class AgentInventoryHealthAgent:
 
         since_first_check = self.since_first_check
 
+        hooks_untrusted_sessions_since: int | None | Unset
+        if isinstance(self.hooks_untrusted_sessions_since, Unset):
+            hooks_untrusted_sessions_since = UNSET
+        else:
+            hooks_untrusted_sessions_since = self.hooks_untrusted_sessions_since
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -90,6 +106,10 @@ class AgentInventoryHealthAgent:
                 "since_first_check": since_first_check,
             }
         )
+        if hooks_untrusted_sessions_since is not UNSET:
+            field_dict["hooks_untrusted_sessions_since"] = (
+                hooks_untrusted_sessions_since
+            )
 
         return field_dict
 
@@ -138,6 +158,17 @@ class AgentInventoryHealthAgent:
 
         since_first_check = d.pop("since_first_check")
 
+        def _parse_hooks_untrusted_sessions_since(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        hooks_untrusted_sessions_since = _parse_hooks_untrusted_sessions_since(
+            d.pop("hooks_untrusted_sessions_since", UNSET)
+        )
+
         agent_inventory_health_agent = cls(
             agent=agent,
             enabled=enabled,
@@ -146,6 +177,7 @@ class AgentInventoryHealthAgent:
             locked=locked,
             since=since,
             since_first_check=since_first_check,
+            hooks_untrusted_sessions_since=hooks_untrusted_sessions_since,
         )
 
         agent_inventory_health_agent.additional_properties = d

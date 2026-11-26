@@ -45,13 +45,18 @@ class AgentInventoryHealthCondition:
                 no status report, so whether it is online cannot be judged). Health: `no_health`, `health_stale` (the newest
                 reading of an online machine is older than one heartbeat window), `agent_off`, `agent_locked_off` (the
                 organization's settings disable the agent), `hooks_missing`, `hooks_untrusted`, `hooks_turned_off_in_agent`,
-                `setup_outdated`, `paused`, `observe`, `snoozed`, `uploads` (uploads backing up), `self_check`,
-                `health_incomplete`. Inventory: `sessions_missing` (an agent with Watcher's hooks was used on the machine but
-                none of its sessions arrived), `unmonitored_agents` (an agent without hooks was used and Watcher received none
-                of its owner's sessions for it), `no_inventory`, `inventory_stale`. Values may be added.
-            severity (AgentInventoryHealthConditionSeverity): `problem` or `warning` for something to act on; `note` for
-                something worth knowing that needs no action: an expected offline state, observe mode, an agent the organization
-                disables, a snooze that has ended or agents only a gateway could monitor.
+                `setup_outdated`, `paused`, `observe`, `snoozed`, `uploads` (uploads backing up), `decisions_lost` (decisions
+                from the last 7 days the machine stopped retrying), `approval_bypass` (open sessions bypassing Watcher's
+                approval gate), `self_check`, `health_incomplete`. Inventory: `sessions_missing` (an agent with Watcher's hooks
+                was used on the machine but none of its sessions arrived), `unmonitored_agents` (an agent without hooks was used
+                and Watcher received none of its owner's sessions for it), `no_inventory`, `inventory_stale`. Values may be
+                added.
+            severity (AgentInventoryHealthConditionSeverity): How serious it is: `problem`, `warning` or `note`. In
+                `issues`, `problem` or `warning` for something to act on, and `note` only for an offline machine's expected
+                check-in state. In `notes`, `warning` for an advisory condition that leaves the machine's group unchanged
+                (uploads backing up, decisions lost, a few sessions bypassing approvals), and `note` for something that needs no
+                action: observe mode, an agent the organization disables, a snooze that has ended, agents only a gateway could
+                monitor, or an agent whose hooks are not trusted that nobody has used since.
             agent (None | str | Unset): The agent ID, for a condition about one agent's health (`agent_off`,
                 `agent_locked_off`, the `hooks_*` codes and `setup_outdated`); its entry in `health.agents` holds the detail.
                 Null otherwise.
@@ -61,7 +66,7 @@ class AgentInventoryHealthCondition:
                 in for a check-in condition, an agent's `since`, a snooze's start, the oldest decision waiting, the health
                 reading's arrival for `health_stale`, the scan for `inventory_stale`. Null when unknown.
             expires_at (datetime.datetime | None | Unset): When time alone ends or changes this condition: the end of a
-                snooze, the 7 days after which an offline machine needs attention, the day after a scan that sessions are
+                snooze, the 7 days after which an offline machine counts as offline long, the day after a scan that sessions are
                 matched against. Null when only a new report or session can change it.
             last_known (bool | Unset): Read from a health reading that is no longer current (the machine is not online, or
                 the reading is older than one heartbeat window), so it may have changed since. Default: False.
@@ -72,12 +77,14 @@ class AgentInventoryHealthCondition:
                 otherwise.
             sections (list[AgentInventorySelfCheckFinding] | Unset): For `self_check`, the flagged sections in `watcher
                 doctor` order, leaving out those another condition already explains (`hooks` beside an agent's hooks condition,
-                `decisions` beside `uploads`, `enforcement` beside `paused`); empty otherwise.
+                `enforcement` beside `paused` or `approval_bypass`) and `decisions`, which is never listed: upload problems are
+                only ever warning notes; empty otherwise.
             unread (list[AgentInventoryUnreadValue] | Unset): For `health_incomplete`, each value the machine could not
                 read.
-            reasons (list[AgentInventoryHealthConditionReasonsItem] | Unset): For `uploads`, why: `waiting` (decisions
-                waiting that the machine's decisions self-check flagged), `gave_up` (decisions it stopped retrying) or
-                `call_records` (more than 100 records of ungraded calls waiting). Empty otherwise.
+            reasons (list[AgentInventoryHealthConditionReasonsItem] | Unset): For `uploads`, why: `waiting` (the oldest
+                decision waiting was made more than 30 minutes before the machine read it, by the machine's own clock) or
+                `call_records` (more than 100 records of ungraded calls waiting). `gave_up` is no longer sent: decisions the
+                machine stopped retrying are their own condition, `decisions_lost`. Empty otherwise.
     """
 
     code: AgentInventoryHealthConditionCode

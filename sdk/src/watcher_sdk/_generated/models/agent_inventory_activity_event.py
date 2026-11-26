@@ -44,16 +44,17 @@ class AgentInventoryActivityEvent:
                 turned-on agent's Watcher hooks were in place but the agent would not run them, with the reason in `to_value`;
                 `hooks_restored` when the hooks were back in place and running after either; `snooze_started` and `snooze_ended`
                 for a snooze of grading; `mode_changed` when the enforcement mode changed; `uploads_backing_up` when the oldest
-                decision waiting to upload became older than 30 minutes, a decision gave up, or more than 100 records of
-                ungraded calls were waiting, and `uploads_caught_up` when none of those held any more; `setup_outdated` when a
-                turned-on agent's Watcher setup (hooks installed) became older than the client's, and `setup_updated` when it
-                was current again; `self_check_flagged` when the client's background self-check's worst result became a warning
-                or an error, and `self_check_cleared` when every section was ok again; `inventory_stopped` when inventory scans
-                stopped for more than 24 hours while heartbeats kept arriving (an ongoing stop is listed only while collection
-                is on), and `inventory_resumed` when scans came back; `health_incomplete` when a health reading had a value the
-                client couldn't read (mode, snooze, upload counts, agents, or a turned-on agent's hooks or setup) and
-                `health_complete` when one was complete again; `health_missing` when heartbeats arrived without endpoint health,
-                two or more in a row, and `health_resumed` when health arrived again.
+                decision waiting to upload became older than 30 minutes or more than 100 records of ungraded calls were waiting
+                (decisions the client gave up on never count), and `uploads_caught_up` when neither held any more, whether the
+                waiting items uploaded or the client gave up on them; `setup_outdated` when a turned-on agent's Watcher setup
+                (hooks installed) became older than the client's, and `setup_updated` when it was current again;
+                `self_check_flagged` when the client's background self-check's worst result became a warning or an error, and
+                `self_check_cleared` when every section was ok again; `inventory_stopped` when inventory scans stopped for more
+                than 24 hours while heartbeats kept arriving (an ongoing stop is listed only while collection is on), and
+                `inventory_resumed` when scans came back; `health_incomplete` when a health reading had a value the client
+                couldn't read (mode, snooze, upload counts, agents, or a turned-on agent's hooks or setup) and `health_complete`
+                when one was complete again; `health_missing` when heartbeats arrived without endpoint health, two or more in a
+                row, and `health_resumed` when health arrived again.
             at (datetime.datetime): When it happened. For `went_offline`, the last report before it went offline; for
                 `inventory_stopped`, the last scan before it; for `inventory_resumed`, the first scan after it; for
                 `client_updated`, when the first report with the new version arrived; for an agent or its hooks, when the

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
 __all__ = [
+    "OpenToolCalls",
     "TailTrimScan",
     "current_trajectory",
     "current_trajectory_groups",
@@ -32,17 +33,34 @@ def trim_incomplete_tail(
     entries: list[JsonEntry],
     *,
     allow_trailing_assistant_text: bool,
+    close_superseded_calls: bool = True,
 ) -> list[JsonEntry]:
     """Trim a Claude Code suffix that ends inside a tool-use/result cycle.
 
     ``allow_trailing_assistant_text`` is true for Stop-style events, where a
     text-only assistant tail is complete, and false for mid-turn events that
     may have observed the transcript while Claude was still writing it.
+
+    A tool call stays open until its ``tool_result`` arrives, or until a later
+    model response in the same conversation starts (`OpenToolCalls`).
+    Claude Code sends the model nothing until every result of its previous
+    response is in, so after a later response the trim treats the earlier
+    calls as finished even when a result line is missing (a torn write).
+    Without that, one lost result would hold back the rest of the session
+    forever.
+
+    ``close_superseded_calls=False`` keeps a call open until its result,
+    whatever follows: the cut Watcher clients and servers made before. The
+    hook storage cut uses it, because the server computes that cut and the
+    client predicts it separately, and a server must agree with clients
+    released before the change.
     """
     if not entries:
         return entries
 
-    scan = TailTrimScan(allow_trailing_assistant_text=allow_trailing_assistant_text)
+    scan = TailTrimScan(
+        allow_trailing_assistant_text=allow_trailing_assistant_text, close_superseded_calls=close_superseded_calls
+    )
     for entry in entries:
         scan.feed(entry)
     if scan.complete_until >= len(entries):
@@ -60,25 +78,25 @@ class TailTrimScan:
     may not keep (an unterminated last line) without disturbing the original.
     """
 
-    __slots__ = ("allow_trailing_assistant_text", "complete_until", "count", "pending_tool_use_ids")
+    __slots__ = ("allow_trailing_assistant_text", "complete_until", "count", "open_calls")
 
     allow_trailing_assistant_text: bool
     complete_until: int
     count: int
-    pending_tool_use_ids: set[str]
+    open_calls: OpenToolCalls
 
-    def __init__(self, *, allow_trailing_assistant_text: bool) -> None:
+    def __init__(self, *, allow_trailing_assistant_text: bool, close_superseded_calls: bool = True) -> None:
         self.allow_trailing_assistant_text = allow_trailing_assistant_text
         self.complete_until = 0
         self.count = 0
-        self.pending_tool_use_ids = set()
+        self.open_calls = OpenToolCalls(close_superseded_calls=close_superseded_calls)
 
     def copy(self) -> TailTrimScan:
         """An independent scan at the same position."""
         other = TailTrimScan(allow_trailing_assistant_text=self.allow_trailing_assistant_text)
         other.complete_until = self.complete_until
         other.count = self.count
-        other.pending_tool_use_ids = set(self.pending_tool_use_ids)
+        other.open_calls = self.open_calls.copy()
         return other
 
     def feed(self, entry: JsonEntry) -> None:
@@ -91,13 +109,8 @@ class TailTrimScan:
             return
 
         if message_type == "assistant":
-            message = entry.get("message", {})
-            content = message.get("content", []) if isinstance(message, dict) else []
-            if isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                        self.pending_tool_use_ids.add(block.get("id", ""))
-            if self.allow_trailing_assistant_text and not self.pending_tool_use_ids:
+            self.open_calls.open(entry)
+            if self.allow_trailing_assistant_text and not self.open_calls:
                 self.complete_until = index + 1
             return
 
@@ -107,10 +120,127 @@ class TailTrimScan:
             if isinstance(content, list):
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "tool_result":
-                        self.pending_tool_use_ids.discard(block.get("tool_use_id", ""))
+                        self.open_calls.close(block.get("tool_use_id", ""))
 
-        if not self.pending_tool_use_ids:
+        if not self.open_calls:
             self.complete_until = index + 1
+
+
+# The model response an assistant entry belongs to: (is a sidechain entry, agent id, API message id).
+_ModelResponse = tuple[bool, str | None, str]
+# The model name Claude Code gives the assistant messages it writes itself rather than receives.
+_SYNTHETIC_MODEL = "<synthetic>"
+
+
+def _model_response(entry: JsonEntry, message: object) -> _ModelResponse | None:
+    """Which model response, in which conversation, an assistant entry belongs to, or None when unsure.
+
+    Claude Code writes each content block of one API response as its own
+    entry, all carrying the response's ``message.id``; a parallel batch of
+    tool calls therefore shares one id. The conversation is the main thread
+    or one child agent, whose entries carry ``isSidechain`` and the child's
+    ``agentId`` (in a child's own transcript as well). An older parent
+    transcript interleaves child entries with its own, so a turn of one
+    child says nothing about the parent's open calls or another child's:
+    closing one there could move the cut past a parent response that is
+    still being written.
+
+    None (no usable message id, a sidechain entry with no agent id, or a
+    message Claude Code wrote itself, such as an API error, marked with the
+    model ``<synthetic>``) means the entry cannot show that any earlier call
+    finished.
+    """
+    if not isinstance(message, dict) or message.get("model") == _SYNTHETIC_MODEL:
+        return None
+    message_id = message.get("id")
+    if not isinstance(message_id, str) or not message_id:
+        return None
+    if entry.get("isSidechain") is True:
+        agent_id = entry.get("agentId")
+        if not isinstance(agent_id, str) or not agent_id:
+            return None
+        return (True, agent_id, message_id)
+    return (False, None, message_id)
+
+
+class OpenToolCalls:
+    """The tool calls a Claude Code transcript has opened and not yet closed, as the tail trim tracks them.
+
+    A call closes when its ``tool_result`` arrives, or when a later model
+    response in the same conversation starts (why: `trim_incomplete_tail`;
+    what counts as a response and a conversation: `_model_response`). Calls
+    whose response is unknown stay open until their result arrives.
+
+    Every open call of a conversation belongs to its latest response, since a
+    new response closes the rest; so a new response closes that
+    conversation's open calls wholesale, and each call is closed at most
+    once. A scan therefore costs time in proportion to the blocks it reads,
+    however many calls are open, though one entry that starts a new response
+    pays for closing every call the previous one left open.
+
+    ``close_superseded_calls=False`` turns the later-response rule off (see
+    `trim_incomplete_tail`).
+    """
+
+    __slots__ = ("_by_conversation", "_close_superseded_calls", "_latest", "_opened_by")
+
+    def __init__(self, *, close_superseded_calls: bool = True) -> None:
+        self._close_superseded_calls = close_superseded_calls
+        # Each open call's id, mapped to the response that opened it (None when unknown).
+        self._opened_by: dict[object, _ModelResponse | None] = {}
+        # Each conversation's latest response id, and the open calls that response made.
+        self._latest: dict[tuple[bool, str | None], str] = {}
+        self._by_conversation: dict[tuple[bool, str | None], set[object]] = {}
+
+    def __bool__(self) -> bool:
+        return bool(self._opened_by)
+
+    def ids(self) -> frozenset[object]:
+        """The ids of the calls still open."""
+        return frozenset(self._opened_by)
+
+    def copy(self) -> OpenToolCalls:
+        """An independent copy."""
+        other = OpenToolCalls(close_superseded_calls=self._close_superseded_calls)
+        other._opened_by = dict(self._opened_by)
+        other._latest = dict(self._latest)
+        other._by_conversation = {conversation: set(calls) for conversation, calls in self._by_conversation.items()}
+        return other
+
+    def open(self, entry: JsonEntry) -> None:
+        """Fold one assistant entry in: close the calls its response supersedes, then open its own."""
+        message = entry.get("message", {})
+        response = _model_response(entry, message) if self._close_superseded_calls else None
+        if response is not None:
+            conversation = response[:2]
+            if self._latest.get(conversation) != response[2]:
+                self._latest[conversation] = response[2]
+                for call in self._by_conversation.pop(conversation, ()):
+                    if self._opened_by.get(call) is not None:
+                        del self._opened_by[call]
+        content = message.get("content", []) if isinstance(message, dict) else []
+        if not isinstance(content, list):
+            return
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                call = block.get("id", "")
+                self._forget(call)
+                self._opened_by[call] = response
+                if response is not None:
+                    self._by_conversation.setdefault(response[:2], set()).add(call)
+
+    def close(self, call: object) -> None:
+        """Close one call, as its ``tool_result`` does."""
+        self._forget(call)
+        self._opened_by.pop(call, None)
+
+    def _forget(self, call: object) -> None:
+        """Drop ``call`` from its conversation's set, if an earlier response opened it."""
+        opened_by = self._opened_by.get(call)
+        if opened_by is not None:
+            calls = self._by_conversation.get(opened_by[:2])
+            if calls is not None:
+                calls.discard(call)
 
 
 def _queued_command_prompt(entry: JsonEntry) -> str | list[JsonEntry] | None:

@@ -18,6 +18,9 @@ from watcher_sdk._generated.models.activated_monitors_response import ActivatedM
 from watcher_sdk._generated.models.admin_session_content_access_request_list_response import (
     AdminSessionContentAccessRequestListResponse,
 )
+from watcher_sdk._generated.models.agent_inventory_installation_removal_response import (
+    AgentInventoryInstallationRemovalResponse,
+)
 from watcher_sdk._generated.models.agent_relationship_request import AgentRelationshipRequest
 from watcher_sdk._generated.models.agent_relationship_response import AgentRelationshipResponse
 from watcher_sdk._generated.models.aperture_hook_accepted import ApertureHookAccepted
@@ -396,6 +399,9 @@ class WatcherClient:
     def send_installation_report(
         self, installation_id: UUID, report: InstallationReport
     ) -> InstallationReportResponse: ...
+    def remove_agent_inventory_installation(
+        self, installation_id: UUID
+    ) -> AgentInventoryInstallationRemovalResponse: ...
     def get_grading_usage(
         self,
         start_date: datetime | None = None,

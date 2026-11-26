@@ -30,13 +30,14 @@ class AgentInventoryHealthAssessment:
 
         Attributes:
             group (AgentInventoryHealthAssessmentGroup): `needs_attention` when any condition in `issues` applies to a
-                machine that is not merely offline; `offline` when it is offline for less than 7 days (asleep, shut down or no
-                reason given), which is expected for laptops; `healthy` otherwise, notes allowed.
+                machine that is not merely offline; `offline` when it is offline (asleep, shut down or no reason given), which
+                is expected for laptops, including one offline for 7 days or more (`offline_long`, a warning); `healthy`
+                otherwise, notes allowed.
             issues (list[AgentInventoryHealthCondition]): The conditions to show, worst severity first; a check-in condition
                 always comes first. For an offline machine they include its last known health, which never moves it out of
                 `offline`.
-            notes (list[AgentInventoryHealthCondition]): Conditions worth knowing that need no action, all with severity
-                `note`.
+            notes (list[AgentInventoryHealthCondition]): Conditions worth knowing that never move the machine out of its
+                group: severity `warning` for an advisory condition worth checking, `note` for something that needs no action.
             agents (list[AgentInventoryAgentHealthState]): Each agent in the health reading with its state; empty without a
                 health reading.
             health_current_until (datetime.datetime | None): While the health reading is current, when it stops being

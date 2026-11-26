@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any, Self, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.agent_inventory_health_agent import AgentInventoryHealthAgent
     from ..models.agent_inventory_health_delivery import AgentInventoryHealthDelivery
@@ -39,6 +41,10 @@ class AgentInventoryHealth:
             result (`ok`, `warning` or `error`). Sections and results may be added. A section is missing when its check
             failed to run; the whole value is null when the machine could not run the self-check.
         received_at (datetime.datetime): When the report carrying these values arrived.
+        approval_bypass_sessions (int | None | Unset): How many open agent sessions run with an approval policy or
+            sandbox that lets tool calls run without asking for approval, so Watcher records their calls but cannot grade or
+            block them first: the sessions behind the `enforcement` self-check result (a warning for one to four, an error
+            from five). Null when the machine could not check, or from a client too old to count them.
     """
 
     observed_at: datetime.datetime
@@ -48,6 +54,7 @@ class AgentInventoryHealth:
     delivery: AgentInventoryHealthDelivery | None
     self_check: AgentInventoryHealthSelfCheckType0 | None
     received_at: datetime.datetime
+    approval_bypass_sessions: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -94,6 +101,12 @@ class AgentInventoryHealth:
 
         received_at = self.received_at.isoformat()
 
+        approval_bypass_sessions: int | None | Unset
+        if isinstance(self.approval_bypass_sessions, Unset):
+            approval_bypass_sessions = UNSET
+        else:
+            approval_bypass_sessions = self.approval_bypass_sessions
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -107,6 +120,8 @@ class AgentInventoryHealth:
                 "received_at": received_at,
             }
         )
+        if approval_bypass_sessions is not UNSET:
+            field_dict["approval_bypass_sessions"] = approval_bypass_sessions
 
         return field_dict
 
@@ -202,6 +217,17 @@ class AgentInventoryHealth:
 
         received_at = datetime.datetime.fromisoformat(d.pop("received_at"))
 
+        def _parse_approval_bypass_sessions(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        approval_bypass_sessions = _parse_approval_bypass_sessions(
+            d.pop("approval_bypass_sessions", UNSET)
+        )
+
         agent_inventory_health = cls(
             observed_at=observed_at,
             enforcement_mode=enforcement_mode,
@@ -210,6 +236,7 @@ class AgentInventoryHealth:
             delivery=delivery,
             self_check=self_check,
             received_at=received_at,
+            approval_bypass_sessions=approval_bypass_sessions,
         )
 
         agent_inventory_health.additional_properties = d

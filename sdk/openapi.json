@@ -3395,6 +3395,70 @@
         }
       }
     },
+    "/v1/agent-inventory/installations/{installation_id}": {
+      "delete": {
+        "tags": [
+          "agent-inventory"
+        ],
+        "summary": "Remove Agent Inventory Installation Endpoint",
+        "description": "Remove an offline machine from the agent inventory, such as a departed person's laptop or a retired machine.\n\nThe machine disappears from the machine and people lists, the summary's counts and the activity feed. Nothing is\ndeleted: its reports stay stored, and if its Watcher client reports again the machine is listed again with its\nhistory. Removing a machine that is already removed and has not reported since changes nothing and returns\n`already_removed`. Only a machine that is not online can be removed.",
+        "operationId": "remove_agent_inventory_installation_endpoint_v1_agent_inventory_installations__installation_id__delete",
+        "parameters": [
+          {
+            "name": "installation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Installation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInventoryInstallationRemovalResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Your organization has no machine with this ID (code `installation_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationReportErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The machine is online: its Watcher client checked in within its usual interval (code `installation_online`). Only offline machines can be removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationReportErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/agent-inventory/users": {
       "get": {
         "tags": [
@@ -3876,7 +3940,7 @@
               "health_resumed"
             ],
             "title": "Kind",
-            "description": "What changed: `went_offline`, in a single machine's feed only, when the client stopped checking in: an ongoing silence once its newest report is older than its on-time window (35 minutes for a client sending the heartbeat, else 75), and a past silence when it lasted longer than 12 hours. A past silence of a client that sends no heartbeat can be a time when agent inventory was off. `client_updated` when the Watcher client's version changed, an event that never holds; `agent_turned_off` and `agent_turned_on` when an agent was turned off or on in Watcher's settings on the machine (an agent turned off that is not on the machine is not listed); `hooks_missing` when a turned-on agent's Watcher hooks became missing, whether they were installed before, the agent was installed since, or it was turned on without them; `hooks_not_running` when a turned-on agent's Watcher hooks were in place but the agent would not run them, with the reason in `to_value`; `hooks_restored` when the hooks were back in place and running after either; `snooze_started` and `snooze_ended` for a snooze of grading; `mode_changed` when the enforcement mode changed; `uploads_backing_up` when the oldest decision waiting to upload became older than 30 minutes, a decision gave up, or more than 100 records of ungraded calls were waiting, and `uploads_caught_up` when none of those held any more; `setup_outdated` when a turned-on agent's Watcher setup (hooks installed) became older than the client's, and `setup_updated` when it was current again; `self_check_flagged` when the client's background self-check's worst result became a warning or an error, and `self_check_cleared` when every section was ok again; `inventory_stopped` when inventory scans stopped for more than 24 hours while heartbeats kept arriving (an ongoing stop is listed only while collection is on), and `inventory_resumed` when scans came back; `health_incomplete` when a health reading had a value the client couldn't read (mode, snooze, upload counts, agents, or a turned-on agent's hooks or setup) and `health_complete` when one was complete again; `health_missing` when heartbeats arrived without endpoint health, two or more in a row, and `health_resumed` when health arrived again."
+            "description": "What changed: `went_offline`, in a single machine's feed only, when the client stopped checking in: an ongoing silence once its newest report is older than its on-time window (35 minutes for a client sending the heartbeat, else 75), and a past silence when it lasted longer than 12 hours. A past silence of a client that sends no heartbeat can be a time when agent inventory was off. `client_updated` when the Watcher client's version changed, an event that never holds; `agent_turned_off` and `agent_turned_on` when an agent was turned off or on in Watcher's settings on the machine (an agent turned off that is not on the machine is not listed); `hooks_missing` when a turned-on agent's Watcher hooks became missing, whether they were installed before, the agent was installed since, or it was turned on without them; `hooks_not_running` when a turned-on agent's Watcher hooks were in place but the agent would not run them, with the reason in `to_value`; `hooks_restored` when the hooks were back in place and running after either; `snooze_started` and `snooze_ended` for a snooze of grading; `mode_changed` when the enforcement mode changed; `uploads_backing_up` when the oldest decision waiting to upload became older than 30 minutes or more than 100 records of ungraded calls were waiting (decisions the client gave up on never count), and `uploads_caught_up` when neither held any more, whether the waiting items uploaded or the client gave up on them; `setup_outdated` when a turned-on agent's Watcher setup (hooks installed) became older than the client's, and `setup_updated` when it was current again; `self_check_flagged` when the client's background self-check's worst result became a warning or an error, and `self_check_cleared` when every section was ok again; `inventory_stopped` when inventory scans stopped for more than 24 hours while heartbeats kept arriving (an ongoing stop is listed only while collection is on), and `inventory_resumed` when scans came back; `health_incomplete` when a health reading had a value the client couldn't read (mode, snooze, upload counts, agents, or a turned-on agent's hooks or setup) and `health_complete` when one was complete again; `health_missing` when heartbeats arrived without endpoint health, two or more in a row, and `health_resumed` when health arrived again."
           },
           "at": {
             "type": "string",
@@ -4269,6 +4333,18 @@
             "title": "Self Check",
             "description": "The machine's background self-check: each `watcher doctor` section it ran (`database`, `target`, `hooks`, `enforcement`, `settings`, `decisions`) to its worst result (`ok`, `warning` or `error`). Sections and results may be added. A section is missing when its check failed to run; the whole value is null when the machine could not run the self-check."
           },
+          "approval_bypass_sessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Bypass Sessions",
+            "description": "How many open agent sessions run with an approval policy or sandbox that lets tool calls run without asking for approval, so Watcher records their calls but cannot grade or block them first: the sessions behind the `enforcement` self-check result (a warning for one to four, an error from five). Null when the machine could not check, or from a client too old to count them."
+          },
           "received_at": {
             "type": "string",
             "format": "date-time",
@@ -4354,6 +4430,18 @@
             "type": "boolean",
             "title": "Since First Check",
             "description": "The state may be older than `since`: it was already in place when the machine first checked, when it checked after a stretch without checks, or when it next read the agent's hooks after failing to."
+          },
+          "hooks_untrusted_sessions_since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hooks Untrusted Sessions Since",
+            "description": "With hooks `untrusted`: how many of the agent's session files on the machine changed since it stopped running Watcher's hooks (a session can have more than one), over the stretch the machine estimates they have been untrusted, which can begin before `since`: from the last change to the agent's hooks file before the machine first saw them untrusted, but never from before its last look at another hooks state. Zero means no session file of the agent changed in that time (runs that keep no session file are never counted). Null for other hooks values, when the machine could not count them completely, or from a client too old to count them."
           }
         },
         "type": "object",
@@ -4379,7 +4467,7 @@
               "offline"
             ],
             "title": "Group",
-            "description": "`needs_attention` when any condition in `issues` applies to a machine that is not merely offline; `offline` when it is offline for less than 7 days (asleep, shut down or no reason given), which is expected for laptops; `healthy` otherwise, notes allowed."
+            "description": "`needs_attention` when any condition in `issues` applies to a machine that is not merely offline; `offline` when it is offline (asleep, shut down or no reason given), which is expected for laptops, including one offline for 7 days or more (`offline_long`, a warning); `healthy` otherwise, notes allowed."
           },
           "issues": {
             "items": {
@@ -4395,7 +4483,7 @@
             },
             "type": "array",
             "title": "Notes",
-            "description": "Conditions worth knowing that need no action, all with severity `note`."
+            "description": "Conditions worth knowing that never move the machine out of its group: severity `warning` for an advisory condition worth checking, `note` for something that needs no action."
           },
           "agents": {
             "items": {
@@ -4483,6 +4571,8 @@
               "observe",
               "snoozed",
               "uploads",
+              "decisions_lost",
+              "approval_bypass",
               "self_check",
               "health_incomplete",
               "sessions_missing",
@@ -4491,7 +4581,7 @@
               "inventory_stale"
             ],
             "title": "Code",
-            "description": "What the condition is. Check-in: `reports_missing` (sessions kept arriving after reports stopped), `watcher_stopped`, `signed_out`, `offline_long` (offline 7 days or more), `asleep`, `shut_down`, `offline` (no reason given), `not_reporting` (agent inventory is off and the client sends no status report, so whether it is online cannot be judged). Health: `no_health`, `health_stale` (the newest reading of an online machine is older than one heartbeat window), `agent_off`, `agent_locked_off` (the organization's settings disable the agent), `hooks_missing`, `hooks_untrusted`, `hooks_turned_off_in_agent`, `setup_outdated`, `paused`, `observe`, `snoozed`, `uploads` (uploads backing up), `self_check`, `health_incomplete`. Inventory: `sessions_missing` (an agent with Watcher's hooks was used on the machine but none of its sessions arrived), `unmonitored_agents` (an agent without hooks was used and Watcher received none of its owner's sessions for it), `no_inventory`, `inventory_stale`. Values may be added."
+            "description": "What the condition is. Check-in: `reports_missing` (sessions kept arriving after reports stopped), `watcher_stopped`, `signed_out`, `offline_long` (offline 7 days or more), `asleep`, `shut_down`, `offline` (no reason given), `not_reporting` (agent inventory is off and the client sends no status report, so whether it is online cannot be judged). Health: `no_health`, `health_stale` (the newest reading of an online machine is older than one heartbeat window), `agent_off`, `agent_locked_off` (the organization's settings disable the agent), `hooks_missing`, `hooks_untrusted`, `hooks_turned_off_in_agent`, `setup_outdated`, `paused`, `observe`, `snoozed`, `uploads` (uploads backing up), `decisions_lost` (decisions from the last 7 days the machine stopped retrying), `approval_bypass` (open sessions bypassing Watcher's approval gate), `self_check`, `health_incomplete`. Inventory: `sessions_missing` (an agent with Watcher's hooks was used on the machine but none of its sessions arrived), `unmonitored_agents` (an agent without hooks was used and Watcher received none of its owner's sessions for it), `no_inventory`, `inventory_stale`. Values may be added."
           },
           "severity": {
             "type": "string",
@@ -4501,7 +4591,7 @@
               "note"
             ],
             "title": "Severity",
-            "description": "`problem` or `warning` for something to act on; `note` for something worth knowing that needs no action: an expected offline state, observe mode, an agent the organization disables, a snooze that has ended or agents only a gateway could monitor."
+            "description": "How serious it is: `problem`, `warning` or `note`. In `issues`, `problem` or `warning` for something to act on, and `note` only for an offline machine's expected check-in state. In `notes`, `warning` for an advisory condition that leaves the machine's group unchanged (uploads backing up, decisions lost, a few sessions bypassing approvals), and `note` for something that needs no action: observe mode, an agent the organization disables, a snooze that has ended, agents only a gateway could monitor, or an agent whose hooks are not trusted that nobody has used since."
           },
           "agent": {
             "anyOf": [
@@ -4547,7 +4637,7 @@
               }
             ],
             "title": "Expires At",
-            "description": "When time alone ends or changes this condition: the end of a snooze, the 7 days after which an offline machine needs attention, the day after a scan that sessions are matched against. Null when only a new report or session can change it."
+            "description": "When time alone ends or changes this condition: the end of a snooze, the 7 days after which an offline machine counts as offline long, the day after a scan that sessions are matched against. Null when only a new report or session can change it."
           },
           "last_known": {
             "type": "boolean",
@@ -4579,7 +4669,7 @@
             },
             "type": "array",
             "title": "Sections",
-            "description": "For `self_check`, the flagged sections in `watcher doctor` order, leaving out those another condition already explains (`hooks` beside an agent's hooks condition, `decisions` beside `uploads`, `enforcement` beside `paused`); empty otherwise."
+            "description": "For `self_check`, the flagged sections in `watcher doctor` order, leaving out those another condition already explains (`hooks` beside an agent's hooks condition, `enforcement` beside `paused` or `approval_bypass`) and `decisions`, which is never listed: upload problems are only ever warning notes; empty otherwise."
           },
           "unread": {
             "items": {
@@ -4600,7 +4690,7 @@
             },
             "type": "array",
             "title": "Reasons",
-            "description": "For `uploads`, why: `waiting` (decisions waiting that the machine's decisions self-check flagged), `gave_up` (decisions it stopped retrying) or `call_records` (more than 100 records of ungraded calls waiting). Empty otherwise."
+            "description": "For `uploads`, why: `waiting` (the oldest decision waiting was made more than 30 minutes before the machine read it, by the machine's own clock) or `call_records` (more than 100 records of ungraded calls waiting). `gave_up` is no longer sent: decisions the machine stopped retrying are their own condition, `decisions_lost`. Empty otherwise."
           }
         },
         "type": "object",
@@ -5099,6 +5189,38 @@
         ],
         "title": "AgentInventoryInstallationListResponse",
         "description": "A page of machines, the one whose newest report of any kind arrived most recently first."
+      },
+      "AgentInventoryInstallationRemovalResponse": {
+        "properties": {
+          "installation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Installation Id"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "removed",
+              "already_removed"
+            ],
+            "title": "Result",
+            "description": "`removed` when this request recorded the removal; `already_removed` when the machine was removed before and has not reported since, so nothing changed. The machine stays hidden until its Watcher client reports again, which can be at once if a report arrives while the removal is recorded."
+          },
+          "removed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Removed At",
+            "description": "When the removal was recorded; a repeated request returns the original time."
+          }
+        },
+        "type": "object",
+        "required": [
+          "installation_id",
+          "result",
+          "removed_at"
+        ],
+        "title": "AgentInventoryInstallationRemovalResponse",
+        "description": "What removing a machine from the agent inventory did."
       },
       "AgentInventoryMissedCalls": {
         "properties": {
@@ -10342,6 +10464,20 @@
             "title": "Since First Check",
             "description": "The state may be older than `since`: it was already in place when the client first checked, when it checked after a stretch without checks, or when it next read the agent's hooks after failing to.",
             "default": false
+          },
+          "hooks_untrusted_sessions_since": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hooks Untrusted Sessions Since",
+            "description": "With hooks `untrusted`: how many of the agent's session files on the machine changed since it stopped running Watcher's hooks (a session can have more than one), over the stretch the client estimates they have been untrusted, which can begin before `since`: from the last change to the agent's hooks file before the client first saw them untrusted, but never from before its last look at another hooks state. Zero means no session file of the agent changed in that time (runs that keep no session file are never counted). Null for any other hooks value, or when the client could not count them completely."
           }
         },
         "type": "object",
@@ -10543,6 +10679,20 @@
             ],
             "title": "Self Check",
             "description": "`watcher doctor` section name to `ok`, `warning` or `error`, for the sections the client checks in the background. A section is missing when its check failed to run; null when the client could not run the self-check at all."
+          },
+          "approval_bypass_sessions": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Bypass Sessions",
+            "description": "How many open agent sessions run with an approval policy or sandbox that lets tool calls run without asking for approval, so Watcher records their calls but cannot grade or block them first: the sessions behind the `enforcement` self-check result. Null when the client could not check."
           }
         },
         "type": "object",
@@ -17482,7 +17632,7 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Metadata",
-            "description": "The stored metadata of this transcript's own last stored message only, not combined across messages as the session's metadata is. For Claude Code, 'claude_code_entrypoint' and 'claude_code_entry_version' come from the transcript entry that message came from. For Codex ('originator', 'cli_version') and GitHub Copilot CLI ('cli_version') transcript files, they are the session record's values copied onto every message of the upload, so they do not show which release wrote that message. The upload's own metadata, such as 'hostname', is also included. Values can differ from the session's 'entrypoint' and 'agent_version' after a resume or an upgrade."
+            "description": "The stored metadata of this transcript's own last stored message only, not combined across messages as the session's metadata is. For Claude Code, 'claude_code_entrypoint' and 'claude_code_entry_version' come from the transcript entry that message came from. For Codex ('originator', 'cli_version') and GitHub Copilot CLI ('cli_version') transcript files, they are the session record's values copied onto every message of the upload, so they do not show which release wrote that message. A message from a Codex transcript file also holds 'effort' (the reasoning effort) and 'service_tier' as the rollout recorded them when that message was written; either is absent when the rollout had named none by then. The upload's own metadata, such as 'hostname', is also included. Values can differ from the session's 'entrypoint' and 'agent_version' after a resume or an upgrade."
           },
           "session_id": {
             "type": "string",

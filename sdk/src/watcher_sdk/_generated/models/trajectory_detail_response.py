@@ -39,7 +39,9 @@ class TrajectoryDetailResponse:
             only, not combined across messages as the session's metadata is. For Claude Code, 'claude_code_entrypoint' and
             'claude_code_entry_version' come from the transcript entry that message came from. For Codex ('originator',
             'cli_version') and GitHub Copilot CLI ('cli_version') transcript files, they are the session record's values
-            copied onto every message of the upload, so they do not show which release wrote that message. The upload's own
+            copied onto every message of the upload, so they do not show which release wrote that message. A message from a
+            Codex transcript file also holds 'effort' (the reasoning effort) and 'service_tier' as the rollout recorded them
+            when that message was written; either is absent when the rollout had named none by then. The upload's own
             metadata, such as 'hostname', is also included. Values can differ from the session's 'entrypoint' and
             'agent_version' after a resume or an upgrade.
         session_id (str):

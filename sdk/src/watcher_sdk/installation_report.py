@@ -150,6 +150,18 @@ class EndpointHealthAgent(BaseModel):
         "when it checked after a stretch without checks, or when it next read the agent's hooks after failing "
         "to.",
     )
+    hooks_untrusted_sessions_since: int | None = Field(
+        default=None,
+        ge=0,
+        le=MAX_BIGINT,
+        description="With hooks `untrusted`: how many of the agent's session files on the machine changed since it "
+        "stopped running Watcher's hooks (a session can have more than one), over the stretch the client "
+        "estimates they have been untrusted, which can begin before `since`: from the last change to the agent's "
+        "hooks file before the client first saw them untrusted, but never from before its last look at another "
+        "hooks state. Zero means no session file of the agent changed in that time "
+        "(runs that keep no session file are never counted). Null for any other hooks value, or when the client "
+        "could not count them completely.",
+    )
 
 
 class EndpointHealthDelivery(BaseModel):
@@ -208,6 +220,14 @@ class EndpointHealthStatus(BaseModel):
         description="`watcher doctor` section name to `ok`, `warning` or `error`, for the sections the client "
         "checks in the background. A section is missing when its check failed to run; null when the client could "
         "not run the self-check at all.",
+    )
+    approval_bypass_sessions: int | None = Field(
+        default=None,
+        ge=0,
+        le=MAX_BIGINT,
+        description="How many open agent sessions run with an approval policy or sandbox that lets tool calls run "
+        "without asking for approval, so Watcher records their calls but cannot grade or block them first: the "
+        "sessions behind the `enforcement` self-check result. Null when the client could not check.",
     )
 
 

@@ -4,7 +4,9 @@ from enum import StrEnum
 class AgentInventoryHealthConditionCode(StrEnum):
     AGENT_LOCKED_OFF = "agent_locked_off"
     AGENT_OFF = "agent_off"
+    APPROVAL_BYPASS = "approval_bypass"
     ASLEEP = "asleep"
+    DECISIONS_LOST = "decisions_lost"
     HEALTH_INCOMPLETE = "health_incomplete"
     HEALTH_STALE = "health_stale"
     HOOKS_MISSING = "hooks_missing"

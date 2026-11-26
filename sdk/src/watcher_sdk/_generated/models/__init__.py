@@ -58,6 +58,12 @@ from .agent_inventory_installation_list_response import (
 from .agent_inventory_installation_owner_watcher_sessions import (
     AgentInventoryInstallationOwnerWatcherSessions,
 )
+from .agent_inventory_installation_removal_response import (
+    AgentInventoryInstallationRemovalResponse,
+)
+from .agent_inventory_installation_removal_response_result import (
+    AgentInventoryInstallationRemovalResponseResult,
+)
 from .agent_inventory_missed_calls import AgentInventoryMissedCalls
 from .agent_inventory_missed_calls_by_reason import AgentInventoryMissedCallsByReason
 from .agent_inventory_presence import AgentInventoryPresence
@@ -599,6 +605,8 @@ __all__ = (
     "AgentInventoryInstallationAgentCoverageViaType0",
     "AgentInventoryInstallationListResponse",
     "AgentInventoryInstallationOwnerWatcherSessions",
+    "AgentInventoryInstallationRemovalResponse",
+    "AgentInventoryInstallationRemovalResponseResult",
     "AgentInventoryMissedCalls",
     "AgentInventoryMissedCallsByReason",
     "AgentInventoryPresence",

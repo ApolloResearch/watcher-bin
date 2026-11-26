@@ -37,6 +37,12 @@ class EndpointHealthAgent:
         since_first_check (bool | Unset): The state may be older than `since`: it was already in place when the client
             first checked, when it checked after a stretch without checks, or when it next read the agent's hooks after
             failing to. Default: False.
+        hooks_untrusted_sessions_since (int | None | Unset): With hooks `untrusted`: how many of the agent's session
+            files on the machine changed since it stopped running Watcher's hooks (a session can have more than one), over
+            the stretch the client estimates they have been untrusted, which can begin before `since`: from the last change
+            to the agent's hooks file before the client first saw them untrusted, but never from before its last look at
+            another hooks state. Zero means no session file of the agent changed in that time (runs that keep no session
+            file are never counted). Null for any other hooks value, or when the client could not count them completely.
     """
 
     agent: str
@@ -46,6 +52,7 @@ class EndpointHealthAgent:
     locked: bool | None | Unset = UNSET
     since: datetime.datetime | None | Unset = UNSET
     since_first_check: bool | Unset = False
+    hooks_untrusted_sessions_since: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -81,6 +88,12 @@ class EndpointHealthAgent:
 
         since_first_check = self.since_first_check
 
+        hooks_untrusted_sessions_since: int | None | Unset
+        if isinstance(self.hooks_untrusted_sessions_since, Unset):
+            hooks_untrusted_sessions_since = UNSET
+        else:
+            hooks_untrusted_sessions_since = self.hooks_untrusted_sessions_since
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -99,6 +112,10 @@ class EndpointHealthAgent:
             field_dict["since"] = since
         if since_first_check is not UNSET:
             field_dict["since_first_check"] = since_first_check
+        if hooks_untrusted_sessions_since is not UNSET:
+            field_dict["hooks_untrusted_sessions_since"] = (
+                hooks_untrusted_sessions_since
+            )
 
         return field_dict
 
@@ -155,6 +172,17 @@ class EndpointHealthAgent:
 
         since_first_check = d.pop("since_first_check", UNSET)
 
+        def _parse_hooks_untrusted_sessions_since(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        hooks_untrusted_sessions_since = _parse_hooks_untrusted_sessions_since(
+            d.pop("hooks_untrusted_sessions_since", UNSET)
+        )
+
         endpoint_health_agent = cls(
             agent=agent,
             enabled=enabled,
@@ -163,6 +191,7 @@ class EndpointHealthAgent:
             locked=locked,
             since=since,
             since_first_check=since_first_check,
+            hooks_untrusted_sessions_since=hooks_untrusted_sessions_since,
         )
 
         endpoint_health_agent.additional_properties = d

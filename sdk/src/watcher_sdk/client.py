@@ -26,6 +26,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 from yaml import YAMLError
 
 import watcher_sdk._generated as _generated
+import watcher_sdk._generated.api.agent_inventory.remove_agent_inventory_installation_endpoint_v1_agent_inventory_installations_installation_id_delete as _remove_agent_inventory_installation_api
 import watcher_sdk._generated.api.auth.auth_callback_v1_auth_callback_post as _auth_callback_api
 import watcher_sdk._generated.api.auth.auth_client_config_v1_auth_client_config_get as _auth_client_config_api
 import watcher_sdk._generated.api.auth.auth_device_authorize_v1_auth_device_authorize_post as _auth_device_authorize_api
@@ -93,6 +94,7 @@ import watcher_sdk._generated.api.version.version_v1_version_get as _version_api
 from watcher_sdk._generated.models import (
     ActivatedMonitorsResponse,
     AdminSessionContentAccessRequestListResponse,
+    AgentInventoryInstallationRemovalResponse,
     ApertureDelivery,
     ApertureHookAccepted,
     ApertureHookRequest,
@@ -2730,6 +2732,24 @@ class AsyncWatcherClient:
         body = _GeneratedInstallationReport.from_dict(report.model_dump(mode="json"))
         return await _send_installation_report_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
             installation_id=installation_id, client=self._generated_client, body=body
+        )
+
+    @_sdk_method
+    async def remove_agent_inventory_installation(
+        self, installation_id: UUID
+    ) -> AgentInventoryInstallationRemovalResponse:
+        """Remove an offline machine from the agent inventory, such as a departed person's laptop.
+
+        Nothing is deleted: the machine is hidden from the inventory until its Watcher client reports again.
+        Removing a machine that is already removed returns ``already_removed`` and changes nothing. Requires
+        ``agent-inventory:read`` and ``org:settings:write``.
+
+        Raises:
+            WatcherAPIError: With status 409 and code ``installation_online`` when the machine is online, or
+                404 and ``installation_not_found`` when the organization has no machine with this ID.
+        """
+        return await _remove_agent_inventory_installation_api.asyncio_detailed(  # pyright: ignore[reportReturnType]  # ty: ignore[invalid-return-type]
+            installation_id=installation_id, client=self._generated_client
         )
 
     @_sdk_method

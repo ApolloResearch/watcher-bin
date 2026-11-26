@@ -128,6 +128,7 @@ if TYPE_CHECKING:
         WatcherError,
         WatcherNotFoundError,
         WatcherRateLimitError,
+        WatcherRefreshTokenRotatedError,
         WatcherTimeoutError,
         WatcherValidationError,
     )
@@ -205,6 +206,7 @@ _EXPORTS: dict[str, str] = {
     "WatcherError": "watcher_sdk.errors",
     "WatcherNotFoundError": "watcher_sdk.errors",
     "WatcherRateLimitError": "watcher_sdk.errors",
+    "WatcherRefreshTokenRotatedError": "watcher_sdk.errors",
     "WatcherTimeoutError": "watcher_sdk.errors",
     "WatcherValidationError": "watcher_sdk.errors",
     "IntegrationAuth": "watcher_sdk.integration_auth",
@@ -275,6 +277,7 @@ __all__ = [
     "WatcherError",
     "WatcherNotFoundError",
     "WatcherRateLimitError",
+    "WatcherRefreshTokenRotatedError",
     "WatcherTimeoutError",
     "WatcherValidationError",
     # Models

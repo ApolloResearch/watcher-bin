@@ -13,6 +13,7 @@ Hierarchy::
         +-- WatcherAuthenticationError (401)
         +-- WatcherNotFoundError       (404)
         +-- WatcherRateLimitError      (429, includes retry_after)
+        +-- WatcherRefreshTokenRotatedError (503 from auth_refresh carrying a new refresh token)
 """
 
 from __future__ import annotations
@@ -129,6 +130,33 @@ class WatcherRateLimitError(WatcherAPIError):
     ) -> None:
         super().__init__(status_code, error, message, request_id, code=code, body=body)
         self.retry_after = retry_after
+
+
+class WatcherRefreshTokenRotatedError(WatcherAPIError):
+    """Raised by ``auth_refresh`` when the server rotated the refresh token but returned no access token (HTTP 503).
+
+    Save ``refresh_token`` in place of the token that was sent: it replaces
+    it. Raised only when the refresh token was passed explicitly, and never
+    retried automatically. The token is kept out of the exception's text, so
+    logging the exception does not log it.
+
+    Attributes:
+        refresh_token: The replacement refresh token the server issued.
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        error: str,
+        message: str | None = None,
+        request_id: str | None = None,
+        *,
+        refresh_token: str,
+        code: str | None = None,
+        body: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(status_code, error, message, request_id, code=code, body=body)
+        self.refresh_token = refresh_token
 
 
 # Mapping from HTTP status code to exception class

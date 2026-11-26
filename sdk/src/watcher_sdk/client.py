@@ -229,6 +229,7 @@ from watcher_sdk.errors import (
     WatcherConnectionError,
     WatcherNotFoundError,
     WatcherRateLimitError,
+    WatcherRefreshTokenRotatedError,
     WatcherTimeoutError,
     raise_for_status,
 )
@@ -591,12 +592,34 @@ def _user_from_token_response(token: TokenResponse) -> dict[str, str | None] | N
 
 
 def _is_retryable(exc: BaseException) -> bool:
-    """Determine if an exception is retryable (transient failure)."""
+    """Determine if an exception is retryable (transient failure).
+
+    ``WatcherRefreshTokenRotatedError`` is a 503 but is never retried; see its docstring.
+    """
+    if isinstance(exc, WatcherRefreshTokenRotatedError):
+        return False
     if isinstance(exc, WatcherConnectionError | WatcherTimeoutError):
         return True
     if isinstance(exc, WatcherRateLimitError):
         return True
     return isinstance(exc, WatcherAPIError) and exc.status_code in (502, 503, 504)
+
+
+def _rotated_refresh_cookie(response: httpx.Response) -> str | None:
+    """Return the refresh token a refresh route 503 set, or None.
+
+    Watcher's refresh route answers 503 with the replacement token when it
+    exchanged the old token with WorkOS but could not finish. Any other status
+    returns None. More than one refresh cookie left in the parsed cookie jar
+    is ambiguous and also returns None.
+    """
+    if response.status_code != 503:
+        return None
+    try:
+        token = response.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
+    except httpx.CookieConflict:
+        return None
+    return str(token) if token else None
 
 
 def _raise_for_response(response: Any) -> None:
@@ -742,11 +765,16 @@ class AsyncWatcherClient:
 
     # ---- Auth (Watcher API / WorkOS — refresh only in Set-Cookie) ----
 
-    async def _call_auth_raw(self, kwargs: dict[str, Any]) -> httpx.Response:
+    async def _call_auth_raw(self, kwargs: dict[str, Any], *, sent_refresh_token: bool = False) -> httpx.Response:
         """Make a raw httpx request with retry and error handling for auth endpoints.
 
         Auth endpoints need access to the raw httpx response (for ``Set-Cookie``
         headers), so they cannot use the generated ``asyncio_detailed`` functions.
+
+        Pass ``sent_refresh_token`` when the request body carries a refresh
+        token: a 503 that sets a refresh-token cookie then raises
+        :class:`WatcherRefreshTokenRotatedError`. Without a body token, a retry
+        sends the cookie jar's replacement, so the 503 is retried as usual.
         """
 
         @self._make_retry()
@@ -759,13 +787,15 @@ class AsyncWatcherClient:
             except httpx.TimeoutException as e:
                 raise WatcherTimeoutError(str(e)) from e
 
-            if response.status_code >= 400:
-                try:
-                    body = response.json()
-                except Exception:
-                    body = {"error": response.text or "Unknown error"}
-                raise_for_status(response.status_code, dict(body), response.headers.get("x-request-id"))
-
+            try:
+                _raise_for_http_error(response.status_code, response.content, response.headers)
+            except WatcherAPIError as e:
+                rotated = _rotated_refresh_cookie(response) if sent_refresh_token else None
+                if rotated is None:
+                    raise
+                raise WatcherRefreshTokenRotatedError(
+                    e.status_code, e.error, e.message, e.request_id, refresh_token=rotated, code=e.code, body=e.body
+                ) from None
             return response
 
         return await _do()
@@ -804,11 +834,16 @@ class AsyncWatcherClient:
 
         Pass ``refresh_token`` or rely on cookies already on the shared httpx client
         (e.g. after a prior ``auth_callback`` on the same :class:`AsyncWatcherClient`).
+
+        With an explicit ``refresh_token``, raises
+        :class:`WatcherRefreshTokenRotatedError` when the server rotated it but
+        returned no access token. Cookie-based calls retry instead, since the
+        shared cookie jar already holds the replacement.
         """
         kwargs = _auth_refresh_api._get_kwargs(
             body=RefreshRequest(refresh_token=refresh_token, organization_id=organization_id)
         )
-        response = await self._call_auth_raw(kwargs)
+        response = await self._call_auth_raw(kwargs, sent_refresh_token=bool(refresh_token))
 
         new_refresh = response.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
         if not new_refresh:
